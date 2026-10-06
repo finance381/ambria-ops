@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
-import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
-import { formatDate, formatPoints } from '../../lib/format'
+import { formatDate, formatDateTime, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { prepUpload } from '../../lib/uploadHelper'
 import EventDatePicker from '../../components/ui/EventDatePicker'
@@ -9,6 +8,8 @@ import VoiceInput from '../../components/ui/VoiceInput'
 import { hasPerm } from '../../lib/permissions'
 import { openOrSharePdf } from '../../lib/pdfOutput'
 import CameraCapture from '../../components/ui/CameraCapture'
+import Icon from '../../components/ui/Icon'
+import Modal from '../../components/ui/Modal'
 
 var BANK_SUB_MODES = [
   { value: 'upi', label: 'UPI' },
@@ -17,6 +18,11 @@ var BANK_SUB_MODES = [
   { value: 'paytm_card_machine', label: 'Paytm Card Machine' },
   { value: 'hdfc_card_machine', label: 'HDFC Card Machine' }
 ]
+var CARD = 'bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.05)]'
+// 16px type in every input: anything smaller makes iOS zoom the page on focus.
+var INPUT = 'w-full min-w-0 h-11 px-3 rounded-xl border border-slate-300 bg-white text-[16px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow'
+var INPUT_BAD = 'w-full min-w-0 h-11 px-3 rounded-xl border border-red-400 bg-white text-[16px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+
 var SUB_MODE_LABEL = {
   upi: 'UPI',
   bank_transfer: 'Bank Transfer',
@@ -375,298 +381,392 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     (isWasteOnly)
   )
 
+  // Photo previews for the two proof tiles, released when the file changes.
+  var [issuePreview, setIssuePreview] = useState('')
+  var [collectPreview, setCollectPreview] = useState('')
+  useEffect(function () {
+    if (!issueImage) { setIssuePreview(''); return }
+    var u = URL.createObjectURL(issueImage)
+    setIssuePreview(u)
+    return function () { URL.revokeObjectURL(u) }
+  }, [issueImage])
+  useEffect(function () {
+    if (!collectImage) { setCollectPreview(''); return }
+    var u = URL.createObjectURL(collectImage)
+    setCollectPreview(u)
+    return function () { URL.revokeObjectURL(u) }
+  }, [collectImage])
+
   // ─── RENDER ──────────────────────────────────────
+  //
+  // One look with the rest of the app: white cards with a titled head, the
+  // steps numbered, figures in tiles, icons where there were emoji, and
+  // indigo as the one colour for "do the thing". Picking a function folds
+  // the list to that one card (with a way back), the way the Expense form's
+  // picker does, so the issue and collect cards are not a screen further
+  // down behind eight other bookings.
+
+  var rateRs = ratePaise / 100
+
+  function stepHead(n, text, done, right) {
+    return (
+      <div className="flex items-center gap-2 mb-2.5">
+        <span className={'shrink-0 w-6 h-6 rounded-full inline-flex items-center justify-center text-[11.5px] font-extrabold ' +
+          (done ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white')}>
+          {done ? <Icon name="check" size={12} strokeWidth={3} /> : n}
+        </span>
+        <span className="font-display text-[14px] font-bold tracking-[-0.01em] text-slate-900">{text}</span>
+        {right && <span className="ml-auto">{right}</span>}
+      </div>
+    )
+  }
+
+  function cardHead(icon, tint, title, sub, right) {
+    return (
+      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-100">
+        <span className={'shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center ' + tint}>
+          <Icon name={icon} size={17} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-display text-[15px] font-bold tracking-[-0.01em] text-slate-900 leading-snug">{title}</span>
+          {sub && <span className="block text-[12px] font-medium text-slate-500 leading-snug">{sub}</span>}
+        </span>
+        {right}
+      </div>
+    )
+  }
+
+  function fieldLabel(text, opt) {
+    return (
+      <label className="block text-[12.5px] font-bold text-slate-700 mb-1.5">
+        {text}{opt && <span className="ml-1 font-medium text-slate-400">(optional)</span>}
+      </label>
+    )
+  }
+
+  function photoTile(file, preview, onTake, onClear, label) {
+    if (file) {
+      return (
+        <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-2">
+          {preview
+            ? <img src={preview} alt="" className="shrink-0 w-14 h-14 rounded-lg object-cover border border-white shadow-sm" />
+            : <span className="shrink-0 w-14 h-14 rounded-lg bg-white inline-flex items-center justify-center text-emerald-600"><Icon name="camera" size={20} /></span>}
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-1 text-[13px] font-bold text-emerald-800"><Icon name="checkCircle" size={14} />Photo added</span>
+            <span className="block text-[11.5px] text-emerald-700/80 truncate">{file.name}</span>
+          </span>
+          <button type="button" onClick={onTake}
+            className="shrink-0 h-9 px-3 rounded-lg border border-slate-200 bg-white text-[12.5px] font-bold text-slate-700 hover:bg-slate-50">Retake</button>
+          <button type="button" onClick={onClear} aria-label="Remove photo"
+            className="shrink-0 h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-red-600 inline-flex items-center justify-center">
+            <Icon name="close" size={13} />
+          </button>
+        </div>
+      )
+    }
+    return (
+      <button type="button" onClick={onTake}
+        className="w-full h-[64px] rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/60 hover:border-indigo-400 hover:bg-indigo-50/40 inline-flex items-center justify-center gap-2.5 text-[13.5px] font-bold text-slate-600 hover:text-indigo-700 transition-colors">
+        <span className="w-9 h-9 rounded-full bg-white border border-slate-200 inline-flex items-center justify-center text-indigo-600"><Icon name="camera" size={17} /></span>
+        {label}
+      </button>
+    )
+  }
+
+  function successNote(msg) {
+    if (!msg) return null
+    return (
+      <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-[12.5px] font-bold text-emerald-800">
+        <Icon name="checkCircle" size={15} />{msg}
+      </div>
+    )
+  }
+
+  function statTile(label, value, tone) {
+    return (
+      <div className={'min-w-0 rounded-xl px-2 py-2.5 text-center ' + (tone || 'bg-slate-50')}>
+        <p className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-slate-500">{label}</p>
+        <p className="mt-0.5 font-display text-[19px] font-extrabold tabular-nums tracking-[-0.02em] leading-none">{value}</p>
+      </div>
+    )
+  }
+
+  function primaryBtn(onClick, disabled, children, tone) {
+    return (
+      <button type="button" onClick={onClick} disabled={disabled}
+        className={'w-full h-12 rounded-xl text-white text-[14px] font-bold inline-flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100 ' +
+          (tone || 'bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.28)]')}>
+        {children}
+      </button>
+    )
+  }
+
+  var pickedOnly = eventId && events.some(function (e) { return String(e.id) === eventId })
+  var shownEvents = pickedOnly ? events.filter(function (e) { return String(e.id) === eventId }) : events
 
   return (
-    <div className="p-4 max-w-2xl mx-auto">
-      <div className="flex gap-2 mb-4 border-b border-gray-200">
-        <button type="button" onClick={function () { setView('manage') }}
-          className={"px-4 py-2 text-sm font-semibold border-b-2 -mb-px " +
-            (view === 'manage' ? "border-blue-600 text-blue-700" : "border-transparent text-gray-500")}>
-          Manage
-        </button>
-        <button type="button" onClick={function () { setView('recent') }}
-          className={"px-4 py-2 text-sm font-semibold border-b-2 -mb-px " +
-            (view === 'recent' ? "border-blue-600 text-blue-700" : "border-transparent text-gray-500")}>
-          Recent
-        </button>
+    <div className="max-w-2xl mx-auto space-y-3">
+      {/* Manage | Recent */}
+      <div className="grid grid-cols-2 p-1 rounded-xl bg-slate-100 border border-slate-200">
+        {[['manage', 'Manage', 'utensils'], ['recent', 'Recent', 'clock']].map(function (t) {
+          var on = view === t[0]
+          return (
+            <button key={t[0]} type="button" onClick={function () { setView(t[0]) }} aria-pressed={on}
+              className={'h-9 rounded-lg text-[13.5px] font-bold inline-flex items-center justify-center gap-1.5 transition-colors ' +
+                (on ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
+              <Icon name={t[2]} size={14} />{t[1]}
+            </button>
+          )
+        })}
       </div>
 
       {/* ─── MANAGE VIEW ───────────────────────────── */}
       {view === 'manage' && (
-        <div className="space-y-4">
-          <EventDatePicker label="1. Event Date" value={date}
-            onChange={function (d) { loadFunctionsForDate(d) }} />
+        <div className="space-y-3">
+          <div className={CARD + ' p-3.5'}>
+            {stepHead(1, 'Event date', !!date)}
+            <EventDatePicker value={date} collapsible placeholder="Pick the event date"
+              onChange={function (d) { loadFunctionsForDate(d) }} />
 
-          {date && (
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">2. Select Function</label>
-              {eventsLoading && <p className="text-xs text-gray-400">Loading...</p>}
-              {!eventsLoading && events.length === 0 && (
-                <p className="text-xs text-gray-400">No functions on this date</p>
-              )}
-              {events.length > 0 && (
-                <div className="space-y-1.5">
-                  {events.map(function (ev) {
-                    var selected = String(ev.id) === eventId
-                    return (
-                      <button key={ev.id} type="button" onClick={function () { selectFunction(String(ev.id), ev) }}
-                        className={"w-full text-left px-3 py-2 rounded-lg border transition-colors " +
-                          (selected ? "border-blue-600 bg-blue-50 border-2" : "border-gray-200 bg-white hover:border-gray-300")}>
-                        <div className={"text-sm font-medium " + (selected ? "text-blue-900" : "text-gray-900")}>
-                          {ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '')}
-                        </div>
-                        <div className={"text-xs " + (selected ? "text-blue-700" : "text-gray-500")}>
-                          {(ev.venue_name || '') + (ev.session ? ' · ' + ev.session : '')}
-                        </div>
-                        {(ev.department || ev.contract_no) && (
-                          <div className="flex items-center gap-1.5 mt-1">
+            {date && (
+              <div className="mt-4">
+                {stepHead(2, 'Function', !!eventId, pickedOnly && events.length > 1 ? (
+                  <button type="button" onClick={function () { setEventId(''); setEventDetail(null) }}
+                    className="text-[12px] font-bold text-indigo-600 hover:text-indigo-800">Change</button>
+                ) : null)}
+                {eventsLoading && <p className="text-[12.5px] text-slate-500">Loading functions…</p>}
+                {!eventsLoading && events.length === 0 && (
+                  <p className="rounded-xl border border-dashed border-slate-300 px-3 py-4 text-center text-[12.5px] text-slate-500">No Venue or Catering functions on this date</p>
+                )}
+                {shownEvents.length > 0 && (
+                  <div className="space-y-2">
+                    {shownEvents.map(function (ev) {
+                      var selected = String(ev.id) === eventId
+                      return (
+                        <button key={ev.id} type="button" onClick={function () { selectFunction(String(ev.id), ev) }}
+                          className={'w-full text-left rounded-xl border px-3 py-2.5 transition-all ' +
+                            (selected ? 'border-indigo-500 bg-indigo-50/70 ring-1 ring-indigo-500' : 'border-slate-200 bg-white hover:border-indigo-300')}>
+                          <div className="flex items-start justify-between gap-2">
+                            <p className={'min-w-0 text-[13.5px] font-bold leading-snug ' + (selected ? 'text-indigo-950' : 'text-slate-900')}>
+                              {ev.event_name}
+                              {ev.client_name && <span className="font-semibold text-slate-600">{' · ' + ev.client_name}</span>}
+                            </p>
                             {ev.department && (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">{ev.department}</span>
-                            )}
-                            {ev.contract_no && (
-                              <span className="text-[10px] font-mono text-gray-500">#{ev.contract_no}</span>
+                              <span className="shrink-0 text-[10.5px] font-bold uppercase tracking-[0.04em] px-1.5 py-[3px] rounded bg-indigo-100 text-indigo-700">{ev.department}</span>
                             )}
                           </div>
-                        )}
-                        {ev.created_user_name && (
-                          <div className={"text-[11px] mt-0.5 " + (selected ? "text-blue-600" : "text-gray-400")}>
-                            Contract by {ev.created_user_name}
-                          </div>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {eventDetail && (
-            <div className="rounded-lg p-4 border-2 border-amber-300 bg-amber-50 space-y-3">
-              <div>
-                <div className="text-[10px] font-semibold text-amber-800 uppercase tracking-wide">Quota</div>
-                <div className="text-base font-bold text-amber-900">
-                  {paidPax} pax + {complementary} complementary = {quota} plates
-                </div>
-              </div>
-              <div className="border-t border-amber-200 pt-2">
-                <div className="text-[10px] font-semibold text-amber-800 uppercase tracking-wide">Rate</div>
-                <div className="text-base font-bold text-amber-900">
-                  {ratePaise > 0
-                    ? '₹' + (ratePaise / 100).toLocaleString('en-IN') + ' per plate'
-                    : <span className="text-red-700">No rate on contract</span>}
-                </div>
-              </div>
-              <div className="border-t border-amber-200 pt-2 grid grid-cols-4 gap-2 text-center">
-                <div>
-                  <div className="text-[10px] font-semibold text-amber-700 uppercase">Issued</div>
-                  <div className="text-base font-bold text-amber-900">{stateLoading ? '…' : totalIssued}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-semibold text-amber-700 uppercase">Extras</div>
-                  <div className="text-base font-bold text-amber-900">{stateLoading ? '…' : extras}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-semibold text-amber-700 uppercase">Collected</div>
-                  <div className="text-base font-bold text-amber-900">{stateLoading ? '…' : totalCollectedExtras}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-semibold text-amber-700 uppercase">Due</div>
-                  <div className={"text-base font-bold " + (remaining > 0 ? "text-red-700" : "text-green-700")}>
-                    {stateLoading ? '…' : (remaining > 0 ? remaining : '✓')}
+                          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] font-medium text-slate-500">
+                            {(ev.venue_name || ev.session) && (
+                              <span className="inline-flex items-center gap-1"><Icon name="mapPin" size={12} className="text-slate-400" />{(ev.venue_name || '') + (ev.session ? ' · ' + ev.session : '')}</span>
+                            )}
+                            {ev.contract_no && <span className="font-mono text-slate-500">#{ev.contract_no}</span>}
+                            {ev.created_user_name && <span className="inline-flex items-center gap-1"><Icon name="user" size={12} className="text-slate-400" />{ev.created_user_name}</span>}
+                          </p>
+                        </button>
+                      )
+                    })}
                   </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Issue section */}
-          {eventDetail && (
-            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
-              <div className="text-sm font-bold text-gray-900">📥 Issue Plates</div>
-              <div className="text-xs text-gray-500">
-                Log plates handed out. Use negative for corrections.
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Plates to Issue</label>
-                <input type="number" step="1" inputMode="numeric" value={issuePlates}
-                  onChange={function (e) { setIssuePlates(e.target.value) }}
-                  placeholder={quota > 0 && totalIssued === 0 ? 'e.g. ' + quota : 'e.g. 50'}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-                  style={{ fontSize: '16px' }} />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Photo Proof</label>
-                {issueImage ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {issueImage.name}</span>
-                    <button type="button" onClick={function () { setIssueImage(null) }}
-                      className="text-xs text-red-500 font-bold">✕</button>
-                  </div>
-                ) : (
-                  <button type="button" onClick={function () { setCameraFor('issue') }}
-                    className="block w-full py-2 text-center text-sm text-blue-700 border-2 border-dashed border-blue-300 rounded-lg font-medium">
-                    📷 Take photo of plates
-                  </button>
                 )}
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Notes (optional)</label>
-                <input type="text" value={issueNotes} onChange={function (e) { setIssueNotes(e.target.value) }}
-                  placeholder="e.g. initial batch, top-up"
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
-                  style={{ fontSize: '16px' }} />
-              </div>
-              {issueMsg && (
-                <div className="rounded-lg p-2 border border-green-300 bg-green-50 text-xs text-green-800 font-semibold">✓ {issueMsg}</div>
-              )}
-              <button type="button" onClick={submitIssue} disabled={!canIssue}
-                className="w-full py-3 rounded-lg bg-blue-600 text-white font-semibold text-sm disabled:opacity-40">
-                {issueSaving ? 'Saving...' : 'Log Issue'}
-              </button>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Collect / Waste-log section — visible whenever any issues exist */}
-          {eventDetail && ratePaise > 0 && totalIssued > 0 && (
-            <div className={"rounded-lg border-2 p-4 space-y-3 " + (isWasteOnly ? "border-amber-300 bg-amber-50" : "border-red-300 bg-red-50")}>
-              <div className={"text-sm font-bold " + (isWasteOnly ? "text-amber-900" : "text-red-900")}>
-                {isWasteOnly ? '📋 Log Returned Plates' : '💰 Collect Extras'}
+          {/* The booking at a glance: quota, rate, and where the plates stand. */}
+          {eventDetail && (
+            <div className={CARD + ' overflow-hidden'}>
+              {cardHead('utensils', 'bg-amber-50 text-amber-600', 'Plates for this function',
+                paidPax + ' pax + ' + complementary + ' complimentary = ' + quota + ' plates',
+                <span className={'shrink-0 h-7 px-2.5 rounded-lg inline-flex items-center text-[12.5px] font-extrabold tabular-nums ' +
+                  (ratePaise > 0 ? 'bg-slate-900 text-white' : 'bg-red-50 text-red-700 border border-red-200')}>
+                  {ratePaise > 0 ? '₹' + rateRs.toLocaleString('en-IN') + ' / plate' : 'No rate'}
+                </span>)}
+              <div className="p-3 grid grid-cols-4 gap-2">
+                {statTile('Issued', stateLoading ? '…' : totalIssued, 'bg-slate-50 text-slate-900')}
+                {statTile('Extras', stateLoading ? '…' : extras, 'bg-slate-50 text-slate-900')}
+                {statTile('Collected', stateLoading ? '…' : totalCollectedExtras, 'bg-slate-50 text-slate-900')}
+                {statTile('Due', stateLoading ? '…' : (remaining > 0 ? remaining : <Icon name="check" size={18} strokeWidth={3} className="inline" />),
+                  remaining > 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700')}
               </div>
-
-              {/* Reconciliation panel */}
-              <div className="rounded-lg bg-white/70 p-2 text-[11px] space-y-0.5">
-                <div className="flex justify-between"><span className="text-gray-500">Quota</span><span className="font-semibold text-gray-800">{quota}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Total Issued</span><span className="font-semibold text-gray-800">{totalIssued}</span></div>
-                {priorReturned > 0 && <div className="flex justify-between"><span className="text-gray-500">Already Returned</span><span className="font-semibold text-gray-800">{priorReturned}</span></div>}
-                {totalCollectedExtras > 0 && <div className="flex justify-between"><span className="text-gray-500">Already Charged</span><span className="font-semibold text-gray-800">{totalCollectedExtras}</span></div>}
-                <div className="flex justify-between"><span className="text-gray-500">Consumed</span><span className="font-semibold text-gray-800">{consumed}</span></div>
-                <div className="flex justify-between border-t border-gray-200 pt-0.5 mt-0.5">
-                  <span className="text-gray-600 font-medium">Chargeable now</span>
-                  <span className={"font-bold " + (thisChargeable > 0 ? "text-red-700" : "text-gray-500")}>{thisChargeable}</span>
-                </div>
-                {waste > 0 && <div className="flex justify-between"><span className="text-amber-700">Waste (quota unused)</span><span className="font-semibold text-amber-700">{waste}</span></div>}
-              </div>
-
-              <div>
-                <label className={"block text-xs font-semibold uppercase tracking-wide mb-2 " + (isWasteOnly ? "text-amber-800" : "text-red-800")}>Plates Returned (unused)</label>
-                <input type="number" min="0" step="1" inputMode="numeric" value={collectReturned}
-                  onChange={function (e) { setCollectReturned(e.target.value) }}
-                  placeholder="0"
-                  className={"w-full px-3 py-2.5 border rounded-lg text-sm bg-white " + (isWasteOnly ? "border-amber-300" : "border-red-300")}
-                  style={{ fontSize: '16px' }} />
-                <p className="text-[10px] text-gray-500 mt-1">Plates handed out but not consumed.</p>
-              </div>
-
-              {isCollection && (
-                <div>
-                  <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Discount ₹ (optional)</label>
-                  <input type="number" min="0" step="1" inputMode="numeric" value={collectDiscount}
-                    onChange={function (e) { setCollectDiscount(e.target.value) }}
-                    placeholder="0"
-                    className="w-full px-3 py-2.5 border border-red-300 rounded-lg text-sm bg-white"
-                    style={{ fontSize: '16px' }} />
-                </div>
+              {ratePaise <= 0 && (
+                <p className="mx-3 mb-3 -mt-1 flex items-start gap-2 rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-[12px] font-semibold text-red-700">
+                  <Icon name="alert" size={14} className="shrink-0 mt-px" />The contract has no extra-plate rate, so extras cannot be collected here.
+                </p>
               )}
-              {isCollection && collectPreviewTotal > 0 && (
-                <div className="rounded-lg bg-white border border-red-200 p-2 text-xs space-y-0.5">
-                  <div className="flex justify-between text-red-800">
-                    <span>Gross ({thisChargeable} × ₹{(ratePaise / 100).toLocaleString('en-IN')})</span>
-                    <span>₹{(collectPreviewTotal / 100).toLocaleString('en-IN')}</span>
-                  </div>
-                  {Number(collectDiscount) > 0 && (
-                    <div className="flex justify-between text-red-800">
-                      <span>Discount</span>
-                      <span>− ₹{Number(collectDiscount).toLocaleString('en-IN')}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-red-900 font-bold border-t border-red-100 pt-0.5 mt-0.5">
-                    <span>Net to collect</span>
-                    <span>₹{(collectNetPreview / 100).toLocaleString('en-IN')}</span>
-                  </div>
-                </div>
-              )}
-              {isCollection && (
-                <>
-                  <div>
-                    <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Payment Mode</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button type="button" onClick={function () { setCollectMode('cash'); setCollectSubMode('') }}
-                        className={"py-2.5 rounded-lg border-2 text-sm font-semibold " +
-                          (collectMode === 'cash' ? "border-red-600 bg-red-100 text-red-900" : "border-gray-200 bg-white text-gray-600")}>
-                        💵 Cash
-                      </button>
-                      <button type="button" onClick={function () { setCollectMode('bank') }}
-                        className={"py-2.5 rounded-lg border-2 text-sm font-semibold " +
-                          (collectMode === 'bank' ? "border-red-600 bg-red-100 text-red-900" : "border-gray-200 bg-white text-gray-600")}>
-                        🏦 Bank
-                      </button>
-                    </div>
-                    {collectMode === 'bank' && (
-                      <div className="mt-2">
-                        <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Bank Method <span className="text-red-500">*</span></label>
-                        <select value={collectSubMode} onChange={function (e) { setCollectSubMode(e.target.value) }}
-                          className="w-full px-3 py-2.5 border border-red-300 rounded-lg text-sm bg-white"
-                          style={{ fontSize: '16px' }}>
-                          <option value="">Select…</option>
-                          {BANK_SUB_MODES.map(function (m) {
-                            return <option key={m.value} value={m.value}>{m.label}</option>
-                          })}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-red-800 uppercase tracking-wide mb-2">Payment Proof</label>
-                    {collectImage ? (
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-green-600 font-medium truncate flex-1">✓ {collectImage.name}</span>
-                        <button type="button" onClick={function () { setCollectImage(null) }}
-                          className="text-xs text-red-500 font-bold">✕</button>
-                      </div>
-                    ) : (
-                      <button type="button" onClick={function () { setCameraFor('collect') }}
-                        className="block w-full py-2 text-center text-sm text-red-700 border-2 border-dashed border-red-300 rounded-lg font-medium bg-white">
-                        📷 Photo of money received
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-              <div>
-                <label className={"block text-xs font-semibold uppercase tracking-wide mb-2 " + (isWasteOnly ? "text-amber-800" : "text-red-800")}>Notes (optional)</label>
-                <input type="text" value={collectNotes} onChange={function (e) { setCollectNotes(e.target.value) }}
-                  className={"w-full px-3 py-2.5 border rounded-lg text-sm bg-white " + (isWasteOnly ? "border-amber-300" : "border-red-300")}
-                  style={{ fontSize: '16px' }} />
-              </div>
-              {collectMsg && (
-                <div className="rounded-lg p-2 border border-green-300 bg-green-50 text-xs text-green-800 font-semibold">✓ {collectMsg}</div>
-              )}
-              <button type="button" onClick={submitCollect} disabled={!canCollect}
-                className={"w-full py-3 rounded-lg text-white font-semibold text-sm disabled:opacity-40 " + (isWasteOnly ? "bg-amber-600" : "bg-red-600")}>
-                {collectSaving ? 'Saving...'
-                  : isWasteOnly ? 'Log ' + thisReturned + ' Returned Plates'
-                  : isCollection ? 'Collect ' + (collectNetPreview > 0 ? '₹' + (collectNetPreview / 100).toLocaleString('en-IN') : '')
-                  : 'Enter returned plates to continue'}
-              </button>
             </div>
           )}
 
           {eventDetail && ratePaise > 0 && remaining === 0 && totalIssued > quota && (
-            <div className="rounded-lg p-3 border border-green-300 bg-green-50 text-sm text-green-800 font-semibold">
-              ✓ All extras collected for this event
+            <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-[13px] font-bold text-emerald-800">
+              <Icon name="checkCircle" size={16} />All extras collected for this function
             </div>
           )}
 
-          {/* Event history (this event only) */}
+          {/* Issue */}
+          {eventDetail && (
+            <div className={CARD + ' overflow-hidden'}>
+              {cardHead('download', 'bg-indigo-50 text-indigo-600', 'Issue plates', 'Plates handed out — a negative number corrects an earlier count')}
+              <div className="p-4 space-y-3.5">
+                <div>
+                  {fieldLabel('Plates to issue')}
+                  <input type="number" step="1" inputMode="numeric" value={issuePlates}
+                    onChange={function (e) { setIssuePlates(e.target.value) }}
+                    placeholder={quota > 0 && totalIssued === 0 ? 'e.g. ' + quota : 'e.g. 50'}
+                    className={INPUT + ' text-[18px] font-bold'} />
+                </div>
+                <div>
+                  {fieldLabel('Photo of the plates')}
+                  {photoTile(issueImage, issuePreview, function () { setCameraFor('issue') }, function () { setIssueImage(null) }, 'Take photo')}
+                </div>
+                <div>
+                  {fieldLabel('Notes', true)}
+                  <input type="text" value={issueNotes} onChange={function (e) { setIssueNotes(e.target.value) }}
+                    placeholder="e.g. first batch, top-up" className={INPUT} />
+                </div>
+                {successNote(issueMsg)}
+                {primaryBtn(submitIssue, !canIssue, issueSaving ? 'Saving…' : <><Icon name="download" size={16} />Log issue</>)}
+              </div>
+            </div>
+          )}
+
+          {/* Collect extras / log returns */}
+          {eventDetail && ratePaise > 0 && totalIssued > 0 && (
+            <div className={CARD + ' overflow-hidden'}>
+              {cardHead(isWasteOnly ? 'undo' : 'rupee', isWasteOnly ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600',
+                isWasteOnly ? 'Log returned plates' : 'Collect extras',
+                isWasteOnly ? 'Nothing to charge — this records the plates that came back' : 'Plates over the quota, charged at the contract rate')}
+              <div className="p-4 space-y-3.5">
+                {/* How the chargeable count is reached. */}
+                <div className="rounded-xl bg-slate-50 border border-slate-200 divide-y divide-slate-200/70 text-[12.5px]">
+                  {[
+                    ['Quota', quota, true],
+                    ['Total issued', totalIssued, true],
+                    ['Already returned', priorReturned, priorReturned > 0],
+                    ['Already charged', totalCollectedExtras, totalCollectedExtras > 0],
+                    ['Consumed', consumed, true],
+                  ].filter(function (x) { return x[2] }).map(function (x) {
+                    return (
+                      <div key={x[0]} className="flex items-center justify-between px-3 py-1.5">
+                        <span className="text-slate-500 font-medium">{x[0]}</span>
+                        <span className="font-bold tabular-nums text-slate-800">{x[1]}</span>
+                      </div>
+                    )
+                  })}
+                  <div className="flex items-center justify-between px-3 py-2 bg-white rounded-b-xl">
+                    <span className="font-bold text-slate-800">Chargeable now</span>
+                    <span className={'font-display text-[16px] font-extrabold tabular-nums ' + (thisChargeable > 0 ? 'text-red-600' : 'text-slate-400')}>{thisChargeable}</span>
+                  </div>
+                  {waste > 0 && (
+                    <div className="flex items-center justify-between px-3 py-1.5">
+                      <span className="text-amber-700 font-medium">Waste (quota unused)</span>
+                      <span className="font-bold tabular-nums text-amber-700">{waste}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className={'grid gap-3 ' + (isCollection ? 'grid-cols-2' : 'grid-cols-1')}>
+                  <div>
+                    {fieldLabel('Plates returned')}
+                    <input type="number" min="0" step="1" inputMode="numeric" value={collectReturned}
+                      onChange={function (e) { setCollectReturned(e.target.value) }}
+                      placeholder="0" className={INPUT} />
+                  </div>
+                  {isCollection && (
+                    <div>
+                      {fieldLabel('Discount ₹', true)}
+                      <input type="number" min="0" step="1" inputMode="numeric" value={collectDiscount}
+                        onChange={function (e) { setCollectDiscount(e.target.value) }}
+                        placeholder="0" className={discountValid ? INPUT : INPUT_BAD} />
+                    </div>
+                  )}
+                </div>
+
+                {isCollection && collectPreviewTotal > 0 && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 px-3 py-2.5 space-y-1 text-[13px]">
+                    <div className="flex justify-between text-slate-600">
+                      <span>{thisChargeable} × ₹{rateRs.toLocaleString('en-IN')}</span>
+                      <span className="tabular-nums font-semibold">₹{(collectPreviewTotal / 100).toLocaleString('en-IN')}</span>
+                    </div>
+                    {Number(collectDiscount) > 0 && (
+                      <div className="flex justify-between text-slate-600">
+                        <span>Discount</span>
+                        <span className="tabular-nums font-semibold">− ₹{Number(collectDiscount).toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-baseline pt-1.5 mt-0.5 border-t border-emerald-200">
+                      <span className="font-bold text-emerald-900">Net to collect</span>
+                      <span className="font-display text-[20px] font-extrabold tabular-nums tracking-[-0.02em] text-emerald-800">₹{(collectNetPreview / 100).toLocaleString('en-IN')}</span>
+                    </div>
+                    {!discountValid && <p className="text-[12px] font-semibold text-red-600">The discount is more than the amount</p>}
+                  </div>
+                )}
+
+                {isCollection && (
+                  <>
+                    <div>
+                      {fieldLabel('Payment mode')}
+                      <div className="grid grid-cols-2 gap-2">
+                        {[['cash', 'Cash', 'banknote'], ['bank', 'Bank', 'bank']].map(function (m) {
+                          var on = collectMode === m[0]
+                          return (
+                            <button key={m[0]} type="button" aria-pressed={on}
+                              onClick={function () { setCollectMode(m[0]); if (m[0] === 'cash') setCollectSubMode('') }}
+                              className={'h-11 rounded-xl border text-[13.5px] font-bold inline-flex items-center justify-center gap-2 transition-colors ' +
+                                (on ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50')}>
+                              <Icon name={m[2]} size={16} />{m[1]}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {collectMode === 'bank' && (
+                        <div className="mt-2.5">
+                          <p className="text-[12px] font-semibold text-slate-500 mb-1.5">Bank method <span className="text-red-500">*</span></p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {BANK_SUB_MODES.map(function (m) {
+                              var on = collectSubMode === m.value
+                              return (
+                                <button key={m.value} type="button" aria-pressed={on} onClick={function () { setCollectSubMode(m.value) }}
+                                  className={'h-9 px-3 rounded-lg border text-[12.5px] font-bold transition-colors ' +
+                                    (on ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50')}>
+                                  {m.label}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      {fieldLabel('Photo of the payment')}
+                      {photoTile(collectImage, collectPreview, function () { setCameraFor('collect') }, function () { setCollectImage(null) }, 'Photo of money received')}
+                    </div>
+                  </>
+                )}
+
+                <div>
+                  {fieldLabel('Notes', true)}
+                  <input type="text" value={collectNotes} onChange={function (e) { setCollectNotes(e.target.value) }} className={INPUT} />
+                </div>
+                {successNote(collectMsg)}
+                {primaryBtn(submitCollect, !canCollect,
+                  collectSaving ? 'Saving…'
+                    : isWasteOnly ? <><Icon name="undo" size={16} />Log {thisReturned} returned plates</>
+                    : isCollection ? <><Icon name="rupee" size={16} />Collect {collectNetPreview > 0 ? '₹' + (collectNetPreview / 100).toLocaleString('en-IN') : ''}</>
+                    : 'Enter returned plates to continue',
+                  isWasteOnly ? 'bg-amber-600 shadow-[0_2px_8px_rgba(217,119,6,0.28)]' : isCollection ? 'bg-gradient-to-b from-emerald-500 to-emerald-600 shadow-[0_2px_8px_rgba(16,185,129,0.28)]' : 'bg-slate-400')}
+              </div>
+            </div>
+          )}
+
+          {/* This function's history */}
           {eventDetail && (issues.length > 0 || collections.length > 0) && (
-            <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
-              <div className="text-xs font-bold text-gray-700 uppercase tracking-wide">Event History</div>
-              {[].concat(issues.map(function (r) { return Object.assign({}, r, { _kind: 'issue' }) }))
-                 .concat(collections.map(function (r) { return Object.assign({}, r, { _kind: 'collection' }) }))
-                 .sort(function (a, b) { return b.created_at.localeCompare(a.created_at) })
-                 .map(function (r) { return renderHistoryRow(r, profile, isAdmin, openCancel) })}
+            <div className={CARD + ' overflow-hidden'}>
+              {cardHead('list', 'bg-slate-100 text-slate-600', 'History', 'Every issue and collection for this function')}
+              <div className="divide-y divide-slate-100">
+                {[].concat(issues.map(function (r) { return Object.assign({}, r, { _kind: 'issue' }) }))
+                  .concat(collections.map(function (r) { return Object.assign({}, r, { _kind: 'collection' }) }))
+                  .sort(function (a, b) { return b.created_at.localeCompare(a.created_at) })
+                  .map(function (r) { return renderHistoryRow(r, profile, isAdmin, openCancel) })}
+              </div>
             </div>
           )}
         </div>
@@ -796,73 +896,88 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
           }
           setExporting(false)
         }
+        function chip(on, onClick, label, key) {
+          return (
+            <button key={key || label} type="button" onClick={onClick} aria-pressed={on}
+              className={'h-8 px-3 rounded-full border text-[12.5px] font-bold whitespace-nowrap transition-colors ' +
+                (on ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')}>
+              {label}
+            </button>
+          )
+        }
         return (
         <div className="space-y-3">
-          <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-2 text-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-1"><span className="text-gray-500">From</span>
-                <input type="date" value={filterFrom} onChange={function (e) { setFilterFrom(e.target.value) }}
-                  style={{ fontSize: '16px' }} className="px-2 py-1 border border-gray-300 rounded" /></label>
-              <label className="flex items-center gap-1"><span className="text-gray-500">To</span>
-                <input type="date" value={filterTo} onChange={function (e) { setFilterTo(e.target.value) }}
-                  style={{ fontSize: '16px' }} className="px-2 py-1 border border-gray-300 rounded" /></label>
+          <div className={CARD + ' p-3.5 space-y-3'}>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="min-w-0">
+                <span className="block text-[11.5px] font-bold text-slate-500 mb-1">From</span>
+                <input type="date" value={filterFrom} onChange={function (e) { setFilterFrom(e.target.value) }} className={INPUT + ' !h-10'} />
+              </label>
+              <label className="min-w-0">
+                <span className="block text-[11.5px] font-bold text-slate-500 mb-1">To</span>
+                <input type="date" value={filterTo} onChange={function (e) { setFilterTo(e.target.value) }} className={INPUT + ' !h-10'} />
+              </label>
+            </div>
+            <p className="-mt-1 text-[11.5px] text-slate-500">{filterFrom || filterTo ? '' : 'Showing the last 30 days'}
               {(filterFrom || filterTo) && (
-                <button type="button" onClick={function () { setFilterFrom(''); setFilterTo('') }}
-                  className="text-blue-600 underline">Reset dates</button>
+                <button type="button" onClick={function () { setFilterFrom(''); setFilterTo('') }} className="font-bold text-indigo-600">Reset dates</button>
               )}
-              <button type="button" onClick={exportCSV} disabled={exporting}
-                className="ml-auto px-2.5 py-1 font-bold bg-green-50 text-green-700 border border-green-200 rounded hover:bg-green-100 disabled:opacity-50">📊 CSV</button>
-              <button type="button" onClick={exportPDF} disabled={exporting}
-                className="px-2.5 py-1 font-bold bg-red-50 text-red-700 border border-red-200 rounded hover:bg-red-100 disabled:opacity-50">📄 {exporting ? 'PDF...' : 'PDF'}</button>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-gray-500">Kind:</span>
-              {['both','issue','collection'].map(function (k) {
-                return <button key={k} type="button" onClick={function () { setFilterKind(k) }}
-                  className={"px-2 py-0.5 rounded border font-semibold capitalize " +
-                    (filterKind === k ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300")}>{k}</button>
-              })}
-              <span className="text-gray-500 ml-2">Payment:</span>
-              {[['all','All'],['cash','Cash'],['bank','Bank']].map(function (p) {
-                return <button key={p[0]} type="button" onClick={function () { setFilterPaymentMode(p[0]) }}
-                  className={"px-2 py-0.5 rounded border font-semibold " +
-                    (filterPaymentMode === p[0] ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300")}>{p[1]}</button>
-              })}
-            </div>
-            {venueOptions.length > 0 && (
+            </p>
+            <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-gray-500">Venue:</span>
-                {venueOptions.map(function (v) {
-                  var active = filterVenues.indexOf(v) !== -1
-                  return <button key={v} type="button"
-                    onClick={function () {
+                <span className="w-16 shrink-0 text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-400">Kind</span>
+                {[['both', 'All'], ['issue', 'Issues'], ['collection', 'Collections']].map(function (k) {
+                  return chip(filterKind === k[0], function () { setFilterKind(k[0]) }, k[1], 'k' + k[0])
+                })}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="w-16 shrink-0 text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-400">Payment</span>
+                {[['all', 'All'], ['cash', 'Cash'], ['bank', 'Bank']].map(function (p) {
+                  return chip(filterPaymentMode === p[0], function () { setFilterPaymentMode(p[0]) }, p[1], 'p' + p[0])
+                })}
+              </div>
+              {venueOptions.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="w-16 shrink-0 text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-400">Venue</span>
+                  {venueOptions.map(function (v) {
+                    var active = filterVenues.indexOf(v) !== -1
+                    return chip(active, function () {
                       setFilterVenues(function (prev) {
                         if (prev.indexOf(v) === -1) return prev.concat([v])
                         return prev.filter(function (x) { return x !== v })
                       })
-                    }}
-                    className={"px-2 py-0.5 rounded border font-semibold " +
-                      (active ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300")}>{v}</button>
-                })}
-                {filterVenues.length > 0 && (
-                  <button type="button" onClick={function () { setFilterVenues([]) }}
-                    className="text-blue-600 underline">Clear</button>
-                )}
-              </div>
-            )}
+                    }, v, 'v' + v)
+                  })}
+                  {filterVenues.length > 0 && (
+                    <button type="button" onClick={function () { setFilterVenues([]) }} className="text-[12px] font-bold text-indigo-600 px-1">Clear</button>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+              {isAdmin ? (
+                <label className="flex items-center gap-2 text-[12.5px] font-semibold text-slate-700 cursor-pointer select-none">
+                  <input type="checkbox" checked={showAll} onChange={function (e) { setShowAll(e.target.checked) }} className="w-4 h-4 accent-indigo-600" />
+                  Everyone's entries
+                </label>
+              ) : <span />}
+              <button type="button" onClick={exportCSV} disabled={exporting}
+                className="ml-auto h-9 px-3 rounded-lg border border-slate-300 bg-white text-[12.5px] font-bold text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1.5 disabled:opacity-50">
+                <Icon name="download" size={14} />CSV
+              </button>
+              <button type="button" onClick={exportPDF} disabled={exporting}
+                className="h-9 px-3 rounded-lg bg-indigo-600 text-white text-[12.5px] font-bold hover:bg-indigo-700 inline-flex items-center gap-1.5 disabled:opacity-50">
+                <Icon name="fileText" size={14} />{exporting ? 'PDF…' : 'PDF'}
+              </button>
+            </div>
           </div>
-          {isAdmin && (
-            <label className="flex items-center gap-2 text-xs text-gray-600">
-              <input type="checkbox" checked={showAll} onChange={function (e) { setShowAll(e.target.checked) }} />
-              Show all users
-            </label>
-          )}
-          {listLoading && <p className="text-xs text-gray-400">Loading...</p>}
+
+          {listLoading && <p className="text-[13px] text-slate-500 text-center py-6">Loading…</p>}
           {!listLoading && recentGroups.length === 0 && (
-            <p className="text-xs text-gray-400">No activity in this date range</p>
+            <p className={CARD + ' px-4 py-8 text-center text-[13px] text-slate-500'}>No activity in this date range</p>
           )}
           {!listLoading && recentGroups.length > 0 && filteredGroups.length === 0 && (
-            <p className="text-xs text-gray-400">No rows match current filters</p>
+            <p className={CARD + ' px-4 py-8 text-center text-[13px] text-slate-500'}>Nothing matches these filters</p>
           )}
           {filteredGroups.map(function (g) {
             var evQuota = g.event?.total_plates || 0
@@ -886,29 +1001,34 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
             var evExtras = Math.max(0, evNetConsumed - evQuota)
             var evDue = Math.max(0, evExtras - evChargedTotal)
             return (
-              <div key={g.event_id} className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
-                <div>
-                  <div className="text-sm font-semibold text-gray-900">
-                    {g.event?.event_name || 'Event ' + g.event_id}
-                    {g.event?.client_name ? ' — ' + g.event.client_name : ''}
+              <div key={g.event_id} className={CARD + ' overflow-hidden'}>
+                <div className="px-3.5 pt-3 pb-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="min-w-0 text-[14px] font-bold text-slate-900 leading-snug">
+                      {g.event?.event_name || 'Event ' + g.event_id}
+                      {g.event?.client_name && <span className="font-semibold text-slate-600">{' · ' + g.event.client_name}</span>}
+                    </p>
+                    {evDue > 0
+                      ? <span className="shrink-0 h-6 px-2 rounded-full bg-red-50 border border-red-200 text-red-700 text-[11px] font-extrabold inline-flex items-center">Due {evDue}</span>
+                      : <span className="shrink-0 h-6 px-2 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-extrabold inline-flex items-center gap-1"><Icon name="check" size={11} strokeWidth={3} />Settled</span>}
                   </div>
-                  <div className="text-xs text-gray-500">
-                    {(g.event?.venue_name || '') + ' · ' + formatDate(g.event?.function_date || g.items[0].created_at)}
-                  </div>
-                  <div className="text-[11px] text-gray-700 mt-1">
-                    Quota <span className="font-semibold">{evQuota}</span> ({evPaid}+{evComp}) ·
-                    Issued <span className="font-semibold">{evIssuedTotal}</span>
-                    {(evReturnedTotal > 0 || evWasteTotal > 0) && (
-                      <span> · Returned <span className="font-semibold">{evReturnedTotal + evWasteTotal}</span>
-                        {evWasteTotal > 0 && <span className="text-amber-700"> ({evWasteTotal} waste)</span>}
-                      </span>
-                    )}
-                    <span> · Extras <span className="font-semibold">{evExtras}</span> ·
-                    Charged <span className="font-semibold">{evChargedTotal}</span></span>
-                    {evDue > 0 && <span className="text-red-700 font-semibold"> · Due {evDue}</span>}
+                  <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] font-medium text-slate-500">
+                    {g.event?.venue_name && <span className="inline-flex items-center gap-1"><Icon name="mapPin" size={12} className="text-slate-400" />{g.event.venue_name}</span>}
+                    <span className="inline-flex items-center gap-1"><Icon name="calendar" size={12} className="text-slate-400" />{formatDate(g.event?.function_date || g.items[0].created_at)}</span>
+                  </p>
+                  <div className="mt-2.5 grid grid-cols-4 gap-1.5">
+                    {[['Quota', evQuota, evPaid + '+' + evComp], ['Issued', evIssuedTotal, ''], ['Returned', evReturnedTotal + evWasteTotal, evWasteTotal > 0 ? evWasteTotal + ' waste' : ''], ['Extras', evExtras, evChargedTotal + ' charged']].map(function (t) {
+                      return (
+                        <div key={t[0]} className="min-w-0 rounded-lg bg-slate-50 px-1.5 py-1.5 text-center">
+                          <p className="text-[10px] font-extrabold uppercase tracking-[0.06em] text-slate-400">{t[0]}</p>
+                          <p className="font-display text-[15px] font-extrabold tabular-nums text-slate-900 leading-tight">{t[1]}</p>
+                          {t[2] && <p className="text-[10.5px] font-semibold text-slate-500 truncate">{t[2]}</p>}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
-                <div className="space-y-1.5 border-t border-gray-100 pt-2">
+                <div className="border-t border-slate-100 divide-y divide-slate-100">
                   {g._filtered.map(function (r) { return renderHistoryRow(r, profile, isAdmin, openCancel) })}
                 </div>
               </div>
@@ -918,44 +1038,42 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
         )
       })()}
 
-      {/* ─── CANCEL MODAL ──────────────────────────── */}
-      {cancelTarget && createPortal((
-        <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
-          onClick={function () { if (!cancelSaving) setCancelTarget(null) }}>
-          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
-            onClick={function (ev) { ev.stopPropagation() }}>
-            <h3 className="text-base font-bold text-gray-900">
-              Cancel {cancelTarget.type === 'issue' ? 'Issue' : 'Collection'}
-            </h3>
-            <div className="text-sm text-gray-600">
-              {cancelTarget.type === 'issue'
-                ? cancelTarget.row.plates_count + ' plates'
-                : (cancelTarget.row.extras_charged === 0
-                    ? (cancelTarget.row.plates_returned || 0) + ' returned (waste — no charge)'
-                    : cancelTarget.row.extras_charged + ' extras · ₹' + ((cancelTarget.row.total_paise - (cancelTarget.row.discount_paise || 0)) / 100).toLocaleString('en-IN') + ' · ' + (cancelTarget.row.payment_mode || '—'))}
+      {/* ─── CANCEL ────────────────────────────────── */}
+      <Modal open={!!cancelTarget} onClose={function () { if (!cancelSaving) setCancelTarget(null) }}
+        title={cancelTarget ? 'Cancel ' + (cancelTarget.type === 'issue' ? 'issue' : 'collection') : ''}
+        subtitle={cancelTarget ? (cancelTarget.type === 'issue'
+          ? cancelTarget.row.plates_count + ' plates'
+          : (cancelTarget.row.extras_charged === 0
+              ? (cancelTarget.row.plates_returned || 0) + ' returned (waste — no charge)'
+              : cancelTarget.row.extras_charged + ' extras · ₹' + ((cancelTarget.row.total_paise - (cancelTarget.row.discount_paise || 0)) / 100).toLocaleString('en-IN') + ' · ' + (cancelTarget.row.payment_mode || '—'))) : ''}>
+        {cancelTarget && (
+          <div className="space-y-3.5">
+            <p className="flex items-start gap-2 rounded-xl bg-red-50 border border-red-200 px-3 py-2.5 text-[12.5px] font-medium text-red-700 leading-relaxed">
+              <Icon name="alert" size={15} className="shrink-0 mt-px" />
+              <span>
+                {cancelTarget.type === 'issue'
+                  ? 'Marks this issue cancelled. If a collection already exists for this function, log a correction issue with negative plates instead.'
+                  : (cancelTarget.row.extras_charged === 0
+                      ? 'Marks this waste-only entry cancelled. Nothing was charged, so no wallet or ledger changes.'
+                      : 'The wallet is debited and the event ledger reversed. This cannot be undone.')}
+              </span>
+            </p>
+            <div>
+              {fieldLabel('Reason')}
+              <VoiceInput type="text" value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }}
+                placeholder="Why is this being cancelled?" className={INPUT} />
             </div>
-            <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">
-              {cancelTarget.type === 'issue'
-                ? 'Marks issue cancelled. If a collection exists for this event, log a correction issue with negative plates instead.'
-                : (cancelTarget.row.extras_charged === 0
-                    ? 'Marks this waste-only entry cancelled. No wallet or ledger changes (nothing was charged).'
-                    : 'Wallet debited and event ledger reversed. This cannot be undone.')}
-            </div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason</label>
-            <VoiceInput type="text" value={cancelReason} onChange={function (e) { setCancelReason(e.target.value) }}
-              placeholder="Why?"
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-2.5 pt-1">
               <button type="button" onClick={function () { setCancelTarget(null) }} disabled={cancelSaving}
-                className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl font-semibold">Keep</button>
+                className="flex-1 h-11 rounded-xl border border-slate-300 bg-white text-[13.5px] font-bold text-slate-700 hover:bg-slate-50">Keep it</button>
               <button type="button" onClick={confirmCancel} disabled={cancelSaving || !cancelReason.trim()}
-                className="flex-1 py-3 text-sm text-white bg-red-600 rounded-xl disabled:opacity-40 font-semibold">
-                {cancelSaving ? 'Cancelling...' : 'Confirm Cancel'}
+                className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[13.5px] font-bold disabled:opacity-40">
+                {cancelSaving ? 'Cancelling…' : 'Cancel entry'}
               </button>
             </div>
           </div>
-        </div>
-      ), document.body)}
+        )}
+      </Modal>
 
       {cameraFor && (
         <CameraCapture
@@ -971,10 +1089,12 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
 }
 
 
-// Shared row renderer for both issue and collection history entries
+// One issue or collection, as a row: an icon for its kind, what it was,
+// when and by whom, and its photo and Cancel on the right.
 function renderHistoryRow(r, profile, isAdmin, openCancel) {
   var isCancelled = r.status === 'cancelled'
   var isIssue = r._kind === 'issue'
+  var isWaste = !isIssue && r.extras_charged === 0
   var ownerId = isIssue ? r.issued_by : r.collected_by
   var canCancel = !isCancelled && (
     isAdmin ||
@@ -983,38 +1103,56 @@ function renderHistoryRow(r, profile, isAdmin, openCancel) {
   var receiptUrl = r.receipt_path
     ? supabase.storage.from('receipts').getPublicUrl(r.receipt_path).data?.publicUrl
     : null
+  var icon = isIssue ? 'download' : isWaste ? 'undo' : 'rupee'
+  var tint = isIssue ? 'bg-indigo-50 text-indigo-600' : isWaste ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
+  var net = !isIssue && !isWaste ? (r.total_paise - (r.discount_paise || 0)) / 100 : 0
   return (
-    <div key={r._kind + '_' + r.id}
-      className={"flex items-start justify-between gap-2 text-xs " + (isCancelled ? "opacity-50" : "")}>
-      <div className="flex-1 min-w-0">
-        <div className="font-medium text-gray-800">
-          {isIssue
-            ? '📥 ' + (r.plates_count > 0 ? '+' : '') + r.plates_count + ' plates'
-            : (r.extras_charged === 0
-                ? '📋 ' + r.plates_returned + ' returned (waste)'
-                : '💰 ' + r.extras_charged + ' × ₹' + (r.rate_paise / 100).toLocaleString('en-IN')
-                    + (r.plates_returned > 0 ? ' · ' + r.plates_returned + ' returned' : '')
-                    + (r.discount_paise > 0 ? ' − ₹' + (r.discount_paise / 100).toLocaleString('en-IN') + ' disc' : '')
-                    + ' = ₹' + ((r.total_paise - (r.discount_paise || 0)) / 100).toLocaleString('en-IN')
-                    + ' ' + (r.payment_mode === 'cash' ? '💵' : ('🏦 ' + (SUB_MODE_LABEL[r.payment_sub_mode] || ''))))}
-          {isCancelled && <span className="ml-2 text-red-600">— cancelled</span>}
+    <div key={r._kind + '_' + r.id} className={'flex items-start gap-3 px-3.5 py-2.5 ' + (isCancelled ? 'opacity-55' : '')}>
+      <span className={'shrink-0 mt-0.5 w-8 h-8 rounded-full inline-flex items-center justify-center ' + tint}>
+        <Icon name={icon} size={14} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <p className={'min-w-0 text-[13.5px] font-bold text-slate-900 leading-snug ' + (isCancelled ? 'line-through decoration-slate-400' : '')}>
+            {isIssue
+              ? (r.plates_count > 0 ? '+' : '') + r.plates_count + ' plates issued'
+              : isWaste ? r.plates_returned + ' returned (waste)'
+                : r.extras_charged + ' extras collected'}
+          </p>
+          {!isIssue && !isWaste && (
+            <span className="shrink-0 font-display text-[14px] font-extrabold tabular-nums text-emerald-700">₹{net.toLocaleString('en-IN')}</span>
+          )}
         </div>
-        {r.notes && <div className="text-gray-500 italic mt-0.5">"{r.notes}"</div>}
-        {isCancelled && r.cancelled_reason && <div className="text-red-600 mt-0.5">Reason: {r.cancelled_reason}</div>}
-        <div className="text-[10px] text-gray-400 mt-0.5">
-          {formatDate(r.created_at)}
-          {r._creatorName && ' · by ' + r._creatorName}
+        {!isIssue && !isWaste && (
+          <p className="text-[12px] font-medium text-slate-600 tabular-nums">
+            {r.extras_charged} × ₹{(r.rate_paise / 100).toLocaleString('en-IN')}
+            {r.plates_returned > 0 ? ' · ' + r.plates_returned + ' returned' : ''}
+            {r.discount_paise > 0 ? ' · −₹' + (r.discount_paise / 100).toLocaleString('en-IN') + ' disc' : ''}
+            {' · ' + (r.payment_mode === 'cash' ? 'Cash' : 'Bank' + (SUB_MODE_LABEL[r.payment_sub_mode] ? ' (' + SUB_MODE_LABEL[r.payment_sub_mode] + ')' : ''))}
+          </p>
+        )}
+        {r.notes && <p className="text-[12px] text-slate-500 italic mt-0.5 break-words">"{r.notes}"</p>}
+        {isCancelled && (
+          <p className="mt-0.5 text-[12px] font-semibold text-red-600">Cancelled{r.cancelled_reason ? ' — ' + r.cancelled_reason : ''}</p>
+        )}
+        <p className="mt-0.5 text-[11.5px] font-medium text-slate-400">
+          {formatDateTime(r.created_at)}{r._creatorName ? ' · ' + r._creatorName : ''}
+        </p>
+      </div>
+      {(receiptUrl || canCancel) && (
+        <div className="shrink-0 flex items-center gap-1.5">
+          {receiptUrl && (
+            <a href={receiptUrl} target="_blank" rel="noopener noreferrer" aria-label="View photo"
+              className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-indigo-600 inline-flex items-center justify-center">
+              <Icon name="eye" size={14} />
+            </a>
+          )}
+          {canCancel && (
+            <button type="button" onClick={function () { openCancel(isIssue ? 'issue' : 'collection', r) }}
+              className="h-8 px-2.5 rounded-lg border border-red-200 bg-red-50 text-red-700 text-[12px] font-bold hover:bg-red-100">Cancel</button>
+          )}
         </div>
-      </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
-        {receiptUrl && (
-          <a href={receiptUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600">📷</a>
-        )}
-        {canCancel && (
-          <button type="button" onClick={function () { openCancel(isIssue ? 'issue' : 'collection', r) }}
-            className="text-xs px-2 py-0.5 rounded border border-red-300 text-red-700 font-medium">Cancel</button>
-        )}
-      </div>
+      )}
     </div>
   )
 }
