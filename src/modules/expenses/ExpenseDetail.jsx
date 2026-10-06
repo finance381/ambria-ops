@@ -402,32 +402,13 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
   async function deleteExp() {
     if (saving) return
     setSaving(true)
-    var { error } = await supabase.from('expenses').update({
-      deleted_at: new Date().toISOString(),
-      deleted_by: profile.id,
-      delete_reason: deleteReason.trim() || null,
-    }).eq('id', exp.id)
+    // One atomic server-side call — it does the soft-delete and the refund
+    // (only when a debit actually exists to refund against) together, rather
+    // than two unguarded client-orchestrated steps.
+    var { error } = await supabase.rpc('fn_delete_expense_and_refund', {
+      p_expense_id: exp.id, p_delete_reason: deleteReason.trim() || null,
+    })
     if (error) { alert('Delete failed: ' + error.message); setSaving(false); return }
-    if (exp.status === 'recorded') {
-      try {
-        if (exp.user_id === profile?.id) {
-          await supabase.rpc('wallet_self_credit', {
-            p_amount_paise: exp.amount_paise,
-            p_description: 'Refund: deleted expense',
-            p_ref_type: 'expense_refund',
-            p_ref_id: String(exp.id),
-          })
-        } else {
-          await supabase.rpc('wallet_admin_credit', {
-            p_user_id: exp.user_id,
-            p_amount_paise: exp.amount_paise,
-            p_description: 'Refund: deleted expense',
-            p_ref_type: 'expense_refund',
-            p_ref_id: String(exp.id),
-          })
-        }
-      } catch (_) {}
-    }
     try { await logActivity('EXPENSE_DELETE', (exp.description || 'Expense') + (deleteReason.trim() ? ' | ' + deleteReason.trim() : '')) } catch (_) {}
     setSaving(false)
     onUpdated()
