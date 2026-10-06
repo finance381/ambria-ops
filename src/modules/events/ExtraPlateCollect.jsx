@@ -549,6 +549,8 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
   var [showIssueNote, setShowIssueNote] = useState(false)
   var [showCollectNote, setShowCollectNote] = useState(false)
   var [historyOpen, setHistoryOpen] = useState(false)
+  // Cancelled entries stay on record but out of sight until asked for.
+  var [showCancelled, setShowCancelled] = useState(false)
   // Recent: Kind, Payment, Venue and Everyone fold under a Filters button.
   var [recentFiltersOpen, setRecentFiltersOpen] = useState(false)
   // Recent: which functions have their entries unfolded ({ event_id: true }).
@@ -960,17 +962,30 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
               <button type="button" onClick={function () { setHistoryOpen(!historyOpen) }} aria-expanded={historyOpen}
                 className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left">
                 <Icon name="list" size={15} className="text-slate-400" />
-                <span className="flex-1 text-[13px] font-bold text-slate-800">History<span className="text-slate-400 font-semibold">{' · ' + (issues.length + collections.length)}</span></span>
+                <span className="flex-1 text-[13px] font-bold text-slate-800">History<span className="text-slate-400 font-semibold">{' · ' + (issues.concat(collections).filter(function (x) { return x.status === 'active' }).length)}</span></span>
                 <Icon name={historyOpen ? 'chevronUp' : 'chevronDown'} size={16} className="text-slate-400" />
               </button>
-              {historyOpen && (
+              {historyOpen && (function () {
+                var nCancelled = issues.concat(collections).filter(function (x) { return x.status === 'cancelled' }).length
+                var rows = [].concat(issues.map(function (r) { return Object.assign({}, r, { _kind: 'issue' }) }))
+                  .concat(collections.map(function (r) { return Object.assign({}, r, { _kind: 'collection' }) }))
+                  .filter(function (r) { return showCancelled || r.status !== 'cancelled' })
+                  .sort(function (a, b) { return b.created_at.localeCompare(a.created_at) })
+                return (
                 <div className="border-t border-slate-100 divide-y divide-slate-100">
-                  {[].concat(issues.map(function (r) { return Object.assign({}, r, { _kind: 'issue' }) }))
-                    .concat(collections.map(function (r) { return Object.assign({}, r, { _kind: 'collection' }) }))
-                    .sort(function (a, b) { return b.created_at.localeCompare(a.created_at) })
+                  {rows.length === 0 && <p className="px-3.5 py-3 text-[12.5px] text-slate-500">No active entries</p>}
+                  {rows
                     .map(function (r) { return renderHistoryRow(r, profile, isAdmin, openCancel, { issueLocked: collections.some(function (x) { return x.status === 'active' }), onCorrect: correctIssue, correctedIds: correctedIssueIds(issues), onReceipt: function (row) { printCollectionReceipt(row, eventDetail) }, receiptBusy: receiptBusy }) })}
+                  {nCancelled > 0 && (
+                    <button type="button" onClick={function () { setShowCancelled(!showCancelled) }}
+                      className="w-full px-3.5 py-2 text-left text-[12px] font-bold text-slate-500 hover:text-indigo-600 inline-flex items-center gap-1.5">
+                      <Icon name="eye" size={13} />
+                      {showCancelled ? 'Hide cancelled' : 'Show cancelled (' + nCancelled + ')'}
+                    </button>
+                  )}
                 </div>
-              )}
+                )
+              })()}
             </div>
           )}
         </div>
@@ -997,6 +1012,7 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
         nameOptions.sort()
         var filteredGroups = recentGroups.map(function (g) {
           var items = g.items.filter(function (r) {
+            if (!showCancelled && r.status === 'cancelled') return false
             if (filterKind === 'issue' && r._kind !== 'issue') return false
             if (filterKind === 'collection' && r._kind !== 'collection') return false
             if (filterPaymentMode !== 'all' && r._kind === 'collection' && r.payment_mode !== filterPaymentMode) return false
@@ -1229,6 +1245,10 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
                           Everyone's entries
                         </label>
                       )}
+                      <label className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-700 cursor-pointer select-none">
+                        <input type="checkbox" checked={showCancelled} onChange={function (e) { setShowCancelled(e.target.checked) }} className="w-4 h-4 accent-indigo-600" />
+                        Show cancelled
+                      </label>
                       {nOn > 0 && (
                         <button type="button" onClick={function () { setFilterFrom(''); setFilterTo(''); setFilterKind('both'); setFilterPaymentMode('all'); setShowAll(false) }}
                           className="ml-auto h-7 px-2.5 rounded-lg text-[12px] font-bold text-indigo-600 hover:bg-indigo-50">Reset</button>
@@ -1372,12 +1392,13 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
 
 // One issue or collection, as a row: an icon for its kind, what it was,
 // when and by whom, and its photo and Cancel on the right.
-// The issues that an active correction points at ("Correction of #123 …").
+// The issues that an active correction points at ("Correction of #<id> …";
+// ids are UUIDs).
 function correctedIssueIds(issueRows) {
   var out = {}
   ;(issueRows || []).forEach(function (x) {
     if (x.status !== 'active') return
-    var m = /^Correction of #(\d+)/.exec(x.notes || '')
+    var m = /^Correction of #([0-9a-f-]+)/i.exec(x.notes || '')
     if (m) out[m[1]] = true
   })
   return out
