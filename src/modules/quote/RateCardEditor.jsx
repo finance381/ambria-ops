@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { hasPerm } from '../../lib/permissions'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 /* ═══════════════════════════════════════════════════════
    RATE CARD EDITOR — Fully dynamic, admin-only
@@ -121,15 +122,15 @@ function CategoriesEditor({ config, onSave, saving }) {
 
   function updCat(idx, field, val) { var d = clone(cats); d[idx][field] = val; setCats(d) }
   function addCat() { setCats(cats.concat([{ label: 'New Category', color: '#6B5B4E' }])) }
-  function rmCat(idx) {
-    if (!window.confirm('Delete this category? Saved quotes (date_category), rentals, and season dates reference categories by position. Deleting shifts all later indexes and can mis-map existing data.')) return
+  async function rmCat(idx) {
+    if (!(await appConfirm('Delete this category? Saved quotes (date_category), rentals, and season dates reference categories by position. Deleting shifts all later indexes and can mis-map existing data.'))) return
     var d = clone(cats); d.splice(idx, 1); setCats(d)
   }
 
   function updSlot(idx, val) { var d = clone(slots); d[idx] = val; setSlots(d) }
   function addSlot() { setSlots(slots.concat(['New Slot'])) }
-  function rmSlot(idx) {
-    if (!window.confirm('Delete this slot? Rental grids and saved quotes reference slots by column index. Deleting shifts columns and can mis-map rates.')) return
+  async function rmSlot(idx) {
+    if (!(await appConfirm('Delete this slot? Rental grids and saved quotes reference slots by column index. Deleting shifts columns and can mis-map rates.'))) return
     var d = clone(slots); d.splice(idx, 1); setSlots(d)
   }
 
@@ -311,15 +312,15 @@ function VenuesEditor({ config, onSave, saving }) {
       decor_mode: null, sub_venues: []
     }]))
   }
-  function rmParent(pIdx) {
-    if (!window.confirm('Remove parent "' + (draft[pIdx].name || 'unnamed') + '"? Its rate cards will be orphaned.')) return
+  async function rmParent(pIdx) {
+    if (!(await appConfirm('Remove parent "' + (draft[pIdx].name || 'unnamed') + '"? Its rate cards will be orphaned.'))) return
     var d = clone(draft); d.splice(pIdx, 1); setDraft(d)
   }
-  function addSub(pIdx) {
+  async function addSub(pIdx) {
     var d = clone(draft)
     if (!Array.isArray(d[pIdx].sub_venues)) d[pIdx].sub_venues = []
     if (d[pIdx].sub_venues.length === 0 && d[pIdx].id) {
-      if (!window.confirm('Adding a sub-venue converts "' + d[pIdx].name + '" to a grouped parent. Its own rate cards will become orphaned. Continue?')) return
+      if (!(await appConfirm('Adding a sub-venue converts "' + d[pIdx].name + '" to a grouped parent. Its own rate cards will become orphaned. Continue?'))) return
       d[pIdx].decor_mode = null
     }
     d[pIdx].sub_venues.push({
@@ -327,8 +328,8 @@ function VenuesEditor({ config, onSave, saving }) {
     })
     setDraft(d)
   }
-  function rmSub(pIdx, sIdx) {
-    if (!window.confirm('Remove sub "' + (draft[pIdx].sub_venues[sIdx].name || 'unnamed') + '"? Its rate cards will be orphaned.')) return
+  async function rmSub(pIdx, sIdx) {
+    if (!(await appConfirm('Remove sub "' + (draft[pIdx].sub_venues[sIdx].name || 'unnamed') + '"? Its rate cards will be orphaned.'))) return
     var d = clone(draft); d[pIdx].sub_venues.splice(sIdx, 1); setDraft(d)
   }
 
@@ -813,8 +814,8 @@ function MenuEditor({ config, onSave, saving }) {
   useEffect(function () { setMenuLms(normalizeMenu(config.menu_lms || config.menu)) }, [config.menu_lms, config.menu])
   useEffect(function () { setFormula(clone(config.menu_formula || FORMULA_DEFAULTS)) }, [config.menu_formula])
 
-  function copyFromQc() {
-    if (window.confirm('Copy all menu structure and rates from Quote Calc? Overwrites current LMS Push values (unsaved).')) {
+  async function copyFromQc() {
+    if (await appConfirm('Copy all menu structure and rates from Quote Calc? Overwrites current LMS Push values (unsaved).')) {
       setMenuLms(clone(menuQc))
     }
   }

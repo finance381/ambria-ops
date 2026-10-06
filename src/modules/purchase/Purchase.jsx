@@ -14,6 +14,7 @@ import { prepUpload } from '../../lib/uploadHelper'
 import { hasPerm } from '../../lib/permissions'
 import { filterVisibleVendors } from '../../lib/vendorGating'
 import { useReferenceData } from '../../lib/referenceData.jsx'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 var PO_STATUS_LABELS = {
   draft: 'Draft',
@@ -388,7 +389,7 @@ function Purchase({ profile, mode }) {
     var msg = hasPurchased
       ? 'Cancel this PO? Items already purchased will need to be returned before wallet refund.'
       : 'Cancel this PO? All pending items will be cancelled.'
-    if (!confirm(msg)) return
+    if (!(await appConfirm(msg))) return
     setSaving(true)
     // Split items by status
     var pendingIds = []
@@ -426,7 +427,7 @@ function Purchase({ profile, mode }) {
     if (saving) return
     var item = activePoItems.find(function (it) { return it.id === poItemId })
     if (!item || item.status !== 'pending_return') return
-    if (!confirm('Confirm this item has been returned? Wallet will be credited ' + formatPaise(item.actual_cost_paise) + '.')) return
+    if (!(await appConfirm('Confirm this item has been returned? Wallet will be credited ' + formatPaise(item.actual_cost_paise) + '.'))) return
     setSaving(true)
     // Update item status
     var { error } = await supabase.from('purchase_order_items').update({ status: 'returned' }).eq('id', poItemId)
@@ -1377,7 +1378,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
       : allPending
     if (targetItems.length === 0) { alert('No pending items in selection'); return }
     var existing = targetItems.filter(function (it) { return it.vendor_name })
-    if (existing.length > 0 && !confirm('Overwrite vendor on ' + existing.length + ' item(s) that already has one?')) return
+    if (existing.length > 0 && !(await appConfirm('Overwrite vendor on ' + existing.length + ' item(s) that already has one?'))) return
     var ratePaise = bulkVendorRate ? Math.round(Number(bulkVendorRate) * 100) : null
     var vendorRow = (vendorList || []).find(function (v) { return v.name === vendorName })
     var vendorContact = vendorRow ? (vendorRow.phone || vendorRow.contact || null) : null
@@ -1414,7 +1415,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
       : allPending
     if (targetItems.length === 0) { alert('No pending items in selection'); return }
     var existing = targetItems.filter(function (it) { return it.expense_type_id })
-    if (existing.length > 0 && !confirm('Overwrite expense type on ' + existing.length + ' item(s) that already has one?')) return
+    if (existing.length > 0 && !(await appConfirm('Overwrite expense type on ' + existing.length + ' item(s) that already has one?'))) return
     var itemIds = targetItems.map(function (it) { return it.id })
     var { error } = await supabase.from('purchase_order_items')
       .update({ expense_type_id: typeId, expense_sub_type_id: subTypeId })
@@ -2150,7 +2151,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                           </button>
                         )}
                         {canDelete && (
-                          <button onClick={function (e) { e.stopPropagation(); if (confirm('Remove this item from PO?')) onRemoveItem(po.id, it.id) }}
+                          <button onClick={async function (e) { e.stopPropagation(); if (await appConfirm('Remove this item from PO?')) onRemoveItem(po.id, it.id) }}
                             className="text-[11px] font-semibold text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors">
                             ✕ Remove
                           </button>
@@ -2467,7 +2468,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                 </button>
               )}
               {canDelete && (
-                <button onClick={function () { if (confirm('Delete this draft PO? Items return to procurement queue.')) onDeletePo(po.id) }} disabled={saving}
+                <button onClick={async function () { if (await appConfirm('Delete this draft PO? Items return to procurement queue.')) onDeletePo(po.id) }} disabled={saving}
                   className="w-full py-3 text-sm font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors">
                   {saving ? 'Deleting...' : '🗑 Delete Draft PO'}
                 </button>

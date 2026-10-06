@@ -6,6 +6,7 @@ import Modal from '../../components/ui/Modal'
 import Icon from '../../components/ui/Icon'
 import SearchField from '../../components/ui/SearchField'
 import { CTRL, TEXTAREA, BTN_GHOST, BTN_PRIMARY, BTN_DANGER, TH, TD, CARD, Chip, Labeled, Notice, EmptyState, CHIP_INFO, CHIP_NEUTRAL } from './ui'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 var SOURCE_OPTIONS = ['', 'lms', 'contract', 'csv', 'manual', 'inbound']
 
@@ -266,7 +267,7 @@ function Lists({ profile }) {
   function openEdit(l) { setEditing(l); setFormOpen(true) }
 
   async function remove(l) {
-    if (!window.confirm('Delete "' + l.name + '"? Campaigns already sent from it keep their history; this only removes the list itself.')) return
+    if (!(await appConfirm('Delete "' + l.name + '"? Campaigns already sent from it keep their history; this only removes the list itself.'))) return
     var res = await supabase.from('wa_contact_lists').delete().eq('id', l.id)
     if (!res.error) load()
   }

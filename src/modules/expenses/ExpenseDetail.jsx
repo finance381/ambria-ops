@@ -10,6 +10,7 @@ import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import ReverseDialog from '../../components/ui/ReverseDialog'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 // Label left, value right, hairline between. A py-2 row plus a divider costs
 // ~34px where the old space-y-3 pair cost ~44px, and the rule makes a long
@@ -354,7 +355,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
 
   async function resubmit() {
     if (saving) return
-    if (!confirm('Resubmit this expense for review? ' + formatPoints(exp.amount_paise) + ' will be deducted from your wallet again.')) return
+    if (!(await appConfirm('Resubmit this expense for review? ' + formatPoints(exp.amount_paise) + ' will be deducted from your wallet again.'))) return
     setSaving(true)
     var { error } = await supabase.from('expenses').update({
       status: 'recorded',

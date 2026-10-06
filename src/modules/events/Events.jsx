@@ -9,6 +9,7 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import QuickSendDrawer from '../../components/broadcast/QuickSendDrawer'
 import SubscriberCard from '../../components/ui/SubscriberCard'
 import Icon from '../../components/ui/Icon'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 var lastSyncTime = 0
 var SYNC_COOLDOWN = 5 * 60 * 1000
@@ -252,7 +253,7 @@ function Events({ profile }) {
 
   async function submitMerge() {
     if (mergeSaving || !selectedFunction || !mergeTargetId) return
-    if (!confirm('Merge this tentative event into the selected event? This moves all its collections/ledger history and cannot be undone.')) return
+    if (!(await appConfirm('Merge this tentative event into the selected event? This moves all its collections/ledger history and cannot be undone.'))) return
     setMergeSaving(true)
     var { error } = await supabase.rpc('fn_merge_events', {
       p_tentative_id: selectedFunction.id,

@@ -25,6 +25,7 @@ import { avatarTint } from '../../lib/avatarTint'
 import { ON, OFF } from '../../lib/ui'
 import { useBodyScrollLock } from '../../lib/useBodyScrollLock'
 import ReverseDialog from '../../components/ui/ReverseDialog'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -1105,7 +1106,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
     var sourceVendors = pool.filter(function (v) { return mergeSourceIds.indexOf(v.vendor_id) !== -1 })
     var sourceNames = sourceVendors.map(function (v) { return v.vendor_name }).join(', ')
     var totalEntries = sourceVendors.reduce(function (s, v) { return s + (v.entry_count || 0) }, 0)
-    var ok = window.confirm(
+    var ok = await appConfirm(
       'Merge ' + sourceNames + ' into "' + (targetVendor ? targetVendor.vendor_name : '—') + '"?\n\n' +
       totalEntries + ' ledger entries and every expense reference will move to the target. ' +
       'The merged vendor(s) will be deactivated. This cannot be undone from here.'

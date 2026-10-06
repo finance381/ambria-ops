@@ -4,6 +4,7 @@ import { hasPerm } from '../../lib/permissions'
 import Modal from '../../components/ui/Modal'
 import Icon from '../../components/ui/Icon'
 import { CTRL, TEXTAREA, BTN_PRIMARY, TH, TD, CARD, Chip, Labeled, Notice, EmptyState, CHIP_INFO } from './ui'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 // Automatic replies for inbound messages to the number listed on the
 // website — wa-webhook checks these (in priority order) right after
@@ -146,7 +147,7 @@ function AutoReplies({ profile }) {
   }
 
   async function remove(r) {
-    if (!window.confirm('Delete "' + r.name + '"?')) return
+    if (!(await appConfirm('Delete "' + r.name + '"?'))) return
     var res = await supabase.from('wa_auto_replies').delete().eq('id', r.id)
     if (!res.error) load()
   }

@@ -4,6 +4,7 @@ import { titleCase } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { isPrivilegedRole } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 var STATUS_COLORS = {
   stored: 'bg-gray-100 text-gray-600',
@@ -279,7 +280,7 @@ function Boxes({ profile }) {
   // ── DELETE BOX ──
 
   async function deleteBox(box) {
-    if (!confirm('Delete box ' + box.code + '? All contents will be removed.')) return
+    if (!(await appConfirm('Delete box ' + box.code + '? All contents will be removed.'))) return
     setSaving(true)
     var { error } = await supabase.from('boxes').delete().eq('id', box.id)
     if (error) { alert('Delete failed: ' + error.message); setSaving(false); return }

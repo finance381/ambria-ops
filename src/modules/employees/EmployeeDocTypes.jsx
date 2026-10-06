@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 function EmployeeDocTypes({ profile }) {
   var perms = (profile && profile.permissions) || []
@@ -71,7 +72,7 @@ function EmployeeDocTypes({ profile }) {
 
   async function deleteRow(row) {
     if (saving) return
-    if (!window.confirm('Delete "' + row.label + '"? Existing employee documents of this type stay in place but will no longer appear as an option.')) return
+    if (!(await appConfirm('Delete "' + row.label + '"? Existing employee documents of this type stay in place but will no longer appear as an option.'))) return
     setSaving(true)
     var { error: e } = await supabase.from('employee_document_types').delete().eq('id', row.id)
     setSaving(false)

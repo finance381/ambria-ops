@@ -7,6 +7,7 @@ import { DEFAULT_ROLES } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import PermMatrix from '../../components/PermMatrix'
 import { generateUsersListPdf } from '../../lib/pdf'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 function Users({ profile }) {
   var [users, setUsers] = useState([])
@@ -244,7 +245,7 @@ function Users({ profile }) {
 
   async function removeSignature() {
     if (!editUser || !editUser.id || !editSignaturePath) return
-    if (!confirm('Remove signature?')) return
+    if (!(await appConfirm('Remove signature?'))) return
     setSigUploading(true); setSigError('')
     try {
       try { await supabase.storage.from('images').remove([editSignaturePath]) } catch (_) {}
@@ -1416,8 +1417,8 @@ function Users({ profile }) {
                   }
                   return (
                     <button type="button"
-                      onClick={function () {
-                        if (!window.confirm('Overwrite current permissions with the "' + editRole + '" role template? Individual toggles you set will be lost.')) return
+                      onClick={async function () {
+                        if (!(await appConfirm('Overwrite current permissions with the "' + editRole + '" role template? Individual toggles you set will be lost.'))) return
                         var nextMobile = (tpl.mobile || []).slice()
                         var nextDesktop = (tpl.desktop || []).slice()
                         if (nextMobile.indexOf('personal.profile')  === -1) nextMobile.push('personal.profile')

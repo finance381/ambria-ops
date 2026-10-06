@@ -4,6 +4,7 @@ import Modal from '../../components/ui/Modal'
 import { logActivity } from '../../lib/logger'
 import { useRealtime } from '../../lib/useRealtime'
 import { dupExists } from '../../lib/format'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 function Categories() {
   var [tab, setTab] = useState('departments')
@@ -109,7 +110,7 @@ function Categories() {
   }
 
   async function deleteDepartment(dept) {
-    if (!confirm('Delete department "' + dept.name + '"?')) return
+    if (!(await appConfirm('Delete department "' + dept.name + '"?'))) return
     var { error: err } = await supabase.from('departments').delete().eq('id', dept.id)
     if (err) { setError(err.message) } else { logActivity('DEPT_DELETE', dept.name); loadAll() }
   }
@@ -143,7 +144,7 @@ function Categories() {
   }
 
   async function deleteSubDepartment(sd) {
-    if (!confirm('Delete sub-department "' + sd.name + '"?')) return
+    if (!(await appConfirm('Delete sub-department "' + sd.name + '"?'))) return
     var { error: err } = await supabase.from('sub_departments').delete().eq('id', sd.id)
     if (err) { setError(err.message) } else { logActivity('SUB_DEPT_DELETE', sd.name); loadAll() }
   }
@@ -198,7 +199,7 @@ function Categories() {
   }
 
   async function deleteCategory(cat) {
-    if (!confirm('Delete category "' + cat.name + '"? Items using it will become uncategorized.')) return
+    if (!(await appConfirm('Delete category "' + cat.name + '"? Items using it will become uncategorized.'))) return
     var { error: err } = await supabase.from('categories').delete().eq('id', cat.id)
     if (err) { setError(err.message) } else { logActivity('CAT_DELETE', cat.name); loadAll() }
   }
@@ -349,7 +350,7 @@ function Categories() {
   }
 
   async function deleteVenue(venue) {
-    if (!confirm('Delete venue "' + venue.code + ' — ' + venue.name + '"?')) return
+    if (!(await appConfirm('Delete venue "' + venue.code + ' — ' + venue.name + '"?'))) return
     var { error: err } = await supabase.from('venues').delete().eq('id', venue.id)
     if (err) { setError(err.message) } else { loadAll() }
   }
@@ -369,7 +370,7 @@ function Categories() {
   }
 
   async function deleteSubVenue(sv) {
-    if (!confirm('Delete sub-venue "' + sv.name + '"?')) return
+    if (!(await appConfirm('Delete sub-venue "' + sv.name + '"?'))) return
     await supabase.from('sub_venues').delete().eq('id', sv.id)
     loadAll()
   }

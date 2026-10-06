@@ -7,6 +7,7 @@ import Modal from '../../components/ui/Modal'
 import Icon from '../../components/ui/Icon'
 import SearchField from '../../components/ui/SearchField'
 import { CTRL, TEXTAREA, BTN_GHOST, BTN_PRIMARY, BTN_DANGER, TH, TD, Chip, Labeled, Notice, EmptyState, CHIP_GOOD, CHIP_WARN, CHIP_BAD, CHIP_NEUTRAL } from './ui'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 // Deferred, flagged rather than built riskily: (1) "Merge duplicates" — no
 // rpc_wa_contact_merge exists in Phase 1, and hand-rolling a merge here would
@@ -199,7 +200,7 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
 
   async function optOut() {
     if (saving) return
-    if (!window.confirm('Opt this contact out of all future messages?')) return
+    if (!(await appConfirm('Opt this contact out of all future messages?'))) return
     setSaving(true)
     var res = await supabase.rpc('rpc_wa_contact_opt_out', { p_phone: contact.phone_e164, p_reason: 'manual', p_source: 'manual' })
     setSaving(false)

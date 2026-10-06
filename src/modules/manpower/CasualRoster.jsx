@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 var RATE_TYPES = [
   { value: 'unit', label: 'Unit' },
@@ -107,7 +108,7 @@ function CasualRoster({ profile }) {
   }
 
   async function deleteRow(row) {
-    if (!confirm('Delete "' + row.casual_type + '"? This fails if assignments exist.')) return
+    if (!(await appConfirm('Delete "' + row.casual_type + '"? This fails if assignments exist.'))) return
     var { error } = await supabase.from('casual_roster').delete().eq('id', row.id)
     if (error) { alert('Cannot delete: ' + error.message); return }
     try { await logActivity('CASUAL_ROLE_DELETE', row.casual_type) } catch (_) {}

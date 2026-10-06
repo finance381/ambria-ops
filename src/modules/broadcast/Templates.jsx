@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
 import { hasPerm } from '../../lib/permissions'
 import Icon from '../../components/ui/Icon'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 var CATEGORY_OPTIONS = ['marketing', 'utility', 'authentication']
 var STATUS_CHIPS = ['all', 'draft', 'pending', 'approved', 'rejected', 'disabled', 'paused']
@@ -265,7 +266,7 @@ function Templates({ profile }) {
 
   async function deleteTemplate() {
     if (saving || !form.id) return
-    if (!window.confirm('Delete "' + form.name + '"? This cannot be undone.')) return
+    if (!(await appConfirm('Delete "' + form.name + '"? This cannot be undone.'))) return
     setSaving(true); setError(''); setNotice('')
     var res = await supabase.from('wa_templates').delete().eq('id', form.id)
     setSaving(false)

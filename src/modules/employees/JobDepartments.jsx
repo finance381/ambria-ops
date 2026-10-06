@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { useRealtime } from '../../lib/useRealtime'
 import { dupExists } from '../../lib/format'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 function JobDepartments() {
   var [rows, setRows] = useState([])
@@ -82,7 +83,7 @@ function JobDepartments() {
   }
 
   async function deleteRow(row) {
-    if (!confirm('Delete job department "' + row.name + '"? Employees tagged with this dept will lose the tag.')) return
+    if (!(await appConfirm('Delete job department "' + row.name + '"? Employees tagged with this dept will lose the tag.'))) return
     setSaving(true); setError('')
     var { error: err } = await supabase.from('job_departments').delete().eq('id', row.id)
     if (err) { setError('Delete failed: ' + err.message) } else {

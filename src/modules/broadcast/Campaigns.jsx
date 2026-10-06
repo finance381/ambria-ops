@@ -6,6 +6,7 @@ import { formatDate } from '../../lib/format'
 import Icon from '../../components/ui/Icon'
 import CampaignBuilder from './CampaignBuilder.jsx'
 import { BTN_PRIMARY, TH, TD, Chip, EmptyState, CHIP_GOOD, CHIP_WARN, CHIP_BAD, CHIP_INFO, CHIP_NEUTRAL } from './ui'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 // Every status the send pipeline can leave a campaign in. `partial` means some
 // recipients failed, which is a warning and not a success — it used to share
@@ -104,7 +105,7 @@ function Campaigns({ profile, inAdmin }) {
   useEffect(function () { loadCampaigns() }, [])
 
   async function cancelCampaign(c) {
-    if (!window.confirm('Cancel this scheduled campaign?')) return
+    if (!(await appConfirm('Cancel this scheduled campaign?'))) return
     var res = await supabase.from('wa_campaigns').update({ status: 'cancelled' }).eq('id', c.id)
     if (!res.error) loadCampaigns()
   }

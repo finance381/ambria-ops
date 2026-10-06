@@ -7,6 +7,7 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import { generateChallanPdf } from '../../lib/pdf'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import CameraCapture from '../../components/ui/CameraCapture'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 var TYPE_LABELS = {
   event_dispatch: 'Event Dispatch',
@@ -785,7 +786,7 @@ function Challans({ profile }) {
   }
 
   async function deletePhoto(photo) {
-    if (!confirm('Delete this photo?')) return
+    if (!(await appConfirm('Delete this photo?'))) return
     await supabase.storage.from('challan-photos').remove([photo.storage_path])
     await supabase.from('challan_photos').delete().eq('id', photo.id)
     await loadPhotos(activeChallan.id)
@@ -1189,7 +1190,7 @@ function Challans({ profile }) {
                 </button>
               )}
               {repairDetail.repair_status !== 'returned' && repairDetail.repair_status !== 'write_off' && (
-                <button onClick={function () { if (confirm('Write off these items? This marks them as unrecoverable.')) advanceRepairStatus('write_off') }} disabled={repairSaving}
+                <button onClick={async function () { if (await appConfirm('Write off these items? This marks them as unrecoverable.')) advanceRepairStatus('write_off') }} disabled={repairSaving}
                   className="text-xs px-3 py-1.5 border border-red-300 text-red-600 rounded-lg font-semibold hover:bg-red-50 disabled:opacity-50 transition-colors">
                   ✕ Write Off
                 </button>

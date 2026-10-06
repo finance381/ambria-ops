@@ -6,6 +6,7 @@ import { isPrivilegedRole } from '../../lib/permissions'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import Icon from '../../components/ui/Icon'
 import CameraCapture from '../../components/ui/CameraCapture'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 var STATUS_LABELS = {
   pending: 'Pending',
@@ -333,7 +334,7 @@ function ProductionOrders({ profile }) {
 
   async function cancelOrder() {
     if (!activeOrder || saving) return
-    if (!confirm('Cancel this production order?')) return
+    if (!(await appConfirm('Cancel this production order?'))) return
     setSaving(true)
     var { error } = await supabase.from('production_orders').update({ status: 'cancelled' }).eq('id', activeOrder.id)
     if (error) { alert('Cancel failed: ' + error.message); setSaving(false); return }

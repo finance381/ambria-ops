@@ -166,6 +166,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { avatarTint } from '../../lib/avatarTint'
 import CameraCapture from '../../components/ui/CameraCapture'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 // Local (not UTC) y-m-d, same as the expense date picker — a straight
 // toISOString() would roll a late-night transfer back to the wrong day
@@ -1119,7 +1120,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   }
 
   async function cancelTransfer(t) {
-    if (!confirm('Cancel this transfer? ' + formatPoints(t.amount_paise) + ' will be refunded.')) return
+    if (!(await appConfirm('Cancel this transfer? ' + formatPoints(t.amount_paise) + ' will be refunded.'))) return
     var { error } = await supabase.rpc('cancel_transfer', { p_transfer_id: t.id })
     if (error) { alert('Cancel failed: ' + error.message); return }
     try { await logActivity('WALLET_TRANSFER_CANCEL', formatPoints(t.amount_paise)) } catch (_) {}

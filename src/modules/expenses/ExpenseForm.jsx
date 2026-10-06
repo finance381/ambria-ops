@@ -15,6 +15,7 @@ import CameraCapture from '../../components/ui/CameraCapture'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { deptCls, deptInk, deptOrder } from '../../lib/ui'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -429,8 +430,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   // The "clear" link sits one tap away from destroying everything typed so far,
   // with no undo. The restore banner's "Start fresh" is already a deliberate
   // choice between two buttons, so only this one asks.
-  function confirmDiscardDraft() {
-    if (!window.confirm('Clear the saved draft? Anything typed but not submitted will be lost.')) return
+  async function confirmDiscardDraft() {
+    if (!(await appConfirm('Clear the saved draft? Anything typed but not submitted will be lost.'))) return
     discardDraft()
   }
 

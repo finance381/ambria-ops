@@ -18,6 +18,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import CameraCapture from '../../components/ui/CameraCapture'
 import StoreRequisitionForm from './StoreRequisitionForm'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -2071,7 +2072,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
   }
 
   async function cancelReq() {
-    if (!confirm('Cancel this requisition? Items will be removed from the procurement queue.')) return
+    if (!(await appConfirm('Cancel this requisition? Items will be removed from the procurement queue.'))) return
     setSaving(true)
     var { error: reqErr } = await supabase.from('requisitions').update({ status: 'cancelled' }).eq('id', req.id)
     if (reqErr) { alert('Cancel failed: ' + reqErr.message); setSaving(false); return }

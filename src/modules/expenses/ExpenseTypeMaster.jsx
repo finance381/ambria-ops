@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import VoiceInput from '../../components/ui/VoiceInput'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 var FIELD_TYPES = [
   { value: 'text', label: 'Text' },
@@ -88,8 +89,8 @@ function FieldEditor({ subType, typeName, onBack, onSaved }) {
     cancelEdit()
   }
 
-  function removeField(idx) {
-    if (!confirm('Remove this field?')) return
+  async function removeField(idx) {
+    if (!(await appConfirm('Remove this field?'))) return
     setFields(fields.filter(function (_, i) { return i !== idx }))
   }
 
@@ -365,7 +366,7 @@ function SubTypeList({ expenseType, onBack }) {
   async function deleteSubType(st) {
     var count = expenseCounts[st.id] || 0
     if (count > 0) {
-      var hide = confirm('Cannot delete "' + st.name + '" — ' + count + ' expense' + (count !== 1 ? 's' : '') + ' still use' + (count === 1 ? 's' : '') + ' it.\n\nHide it instead? (removed from new-expense dropdown, history preserved)')
+      var hide = await appConfirm('Cannot delete "' + st.name + '" — ' + count + ' expense' + (count !== 1 ? 's' : '') + ' still use' + (count === 1 ? 's' : '') + ' it.\n\nHide it instead? (removed from new-expense dropdown, history preserved)', { confirmLabel: 'Hide it', danger: false })
       if (hide && st.active) {
         var { error: hErr } = await supabase.from('expense_sub_types').update({ active: false }).eq('id', st.id)
         if (hErr) { alert('Hide failed: ' + hErr.message); return }
@@ -373,7 +374,7 @@ function SubTypeList({ expenseType, onBack }) {
       }
       return
     }
-    if (!confirm('Delete "' + st.name + '"? This cannot be undone.')) return
+    if (!(await appConfirm('Delete "' + st.name + '"? This cannot be undone.'))) return
     var { error } = await supabase.from('expense_sub_types').delete().eq('id', st.id)
     if (error) { alert('Delete failed: ' + error.message); return }
     load()
@@ -574,7 +575,7 @@ function ExpenseTypeMaster({ onBack }) {
     var subCount = (t.expense_sub_types || []).length
     var msg = 'Delete "' + t.name + '"?'
     if (subCount > 0) msg += ' This will also delete ' + subCount + ' sub-type' + (subCount > 1 ? 's' : '') + '.'
-    if (!confirm(msg)) return
+    if (!(await appConfirm(msg))) return
     var { error } = await supabase.from('expense_types').delete().eq('id', t.id)
     if (error) { alert('Delete failed: ' + error.message); return }
     load()
