@@ -341,6 +341,7 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
 
     if (wasteOnly) {
       if (r <= 0) { alert('Nothing to log — enter returned plates'); return }
+      if (r > Math.max(0, totalIssued - priorReturned)) { alert('Only ' + Math.max(0, totalIssued - priorReturned) + ' plates are still out — cannot return ' + r); return }
     } else {
       if (!collectMode) { alert('Select Cash or Bank'); return }
       if (collectMode === 'bank' && !collectSubMode) { alert('Select the bank payment method'); return }
@@ -529,8 +530,12 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
   var discountValid = collectDiscountPaise <= collectPreviewTotal
   var isCollection = thisChargeable > 0
   var isWasteOnly = thisChargeable === 0 && thisReturned > 0
+  // Plates cannot come back that were never handed out: what is still out
+  // is the most that can be returned now.
+  var returnable = Math.max(0, totalIssued - priorReturned)
+  var overReturned = thisReturned > returnable
   var subModeOk = collectMode !== 'bank' || !!collectSubMode
-  var canCollect = eventDetail && !collectSaving && (
+  var canCollect = eventDetail && !collectSaving && !overReturned && (
     (isCollection && ratePaise > 0 && collectMode && subModeOk && collectImage && discountValid) ||
     (isWasteOnly)
   )
@@ -845,21 +850,41 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
 
                 {tab === 'collect' && canCollectHere && (
                   <div className="space-y-2.5">
-                    {/* How the chargeable count is reached, on one line. */}
-                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-500 tabular-nums">
-                      <span>Quota <b className="text-slate-800">{quota}</b></span>
-                      <span>Issued <b className="text-slate-800">{totalIssued}</b></span>
-                      {priorReturned > 0 && <span>Returned <b className="text-slate-800">{priorReturned}</b></span>}
-                      {totalCollectedExtras > 0 && <span>Charged <b className="text-slate-800">{totalCollectedExtras}</b></span>}
-                      <span>Used <b className="text-slate-800">{consumed}</b></span>
-                      <span className="ml-auto font-bold text-slate-700">Chargeable <b className={'font-display text-[15px] ' + (thisChargeable > 0 ? 'text-red-600' : 'text-slate-400')}>{thisChargeable}</b></span>
-                      {waste > 0 && <span className="w-full text-amber-700">Waste (quota unused) <b>{waste}</b></span>}
+                    {/* How the chargeable count is reached: the four figures
+                        in a row, then what is chargeable now. */}
+                    <div className="rounded-xl bg-slate-50 border border-slate-200 p-2">
+                      <div className="grid grid-cols-4 gap-1 text-center tabular-nums">
+                        {[['Quota', quota], ['Issued', totalIssued], ['Returned', priorReturned + thisReturned], ['Used', consumed]].map(function (t) {
+                          return (
+                            <div key={t[0]} className="min-w-0">
+                              <p className="text-[10px] font-extrabold uppercase tracking-[0.06em] text-slate-400 leading-none">{t[0]}</p>
+                              <p className={'mt-1 font-display text-[15px] font-extrabold leading-none ' + (t[0] === 'Returned' && overReturned ? 'text-red-600' : 'text-slate-800')}>{t[1]}</p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-slate-200 flex items-center justify-between gap-2">
+                        <span className="min-w-0 text-[11.5px] font-semibold text-slate-500 truncate">
+                          {waste > 0 ? <span className="text-amber-700">{waste} of the quota unused</span>
+                            : totalCollectedExtras > 0 ? totalCollectedExtras + ' already charged' : 'Plates over the quota'}
+                        </span>
+                        <span className={'shrink-0 h-7 px-2.5 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold ' +
+                          (thisChargeable > 0 ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-white text-slate-500 border border-slate-200')}>
+                          Chargeable <b className="font-display text-[15px]">{thisChargeable}</b>
+                        </span>
+                      </div>
                     </div>
+                    {priorReturned > totalIssued && (
+                      <p className="flex items-start gap-1.5 rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-[12px] font-semibold text-red-700">
+                        <Icon name="alert" size={13} className="shrink-0 mt-px" />
+                        {priorReturned} plates are logged as returned but only {totalIssued} were issued — check the history for a wrong entry.
+                      </p>
+                    )}
 
                     <div className={'grid gap-2 ' + (isCollection ? 'grid-cols-2' : 'grid-cols-1')}>
                       <input type="number" min="0" step="1" inputMode="numeric" value={collectReturned}
                         onChange={function (e) { setCollectReturned(e.target.value) }}
-                        aria-label="Plates returned" placeholder="Plates returned" className={INPUT} />
+                        aria-label="Plates returned" placeholder={returnable > 0 ? 'Returned (max ' + returnable + ')' : 'Plates returned'} className={overReturned && thisReturned > 0 ? INPUT_BAD : INPUT} />
                       {isCollection && (
                         <input type="number" min="0" step="1" inputMode="numeric" value={collectDiscount}
                           onChange={function (e) { setCollectDiscount(e.target.value) }}
