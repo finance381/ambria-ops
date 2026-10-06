@@ -19,7 +19,7 @@ import {
 
 // Decor Var Cost — the decor team's per-function cost sheets, moved off Excel
 // (see src/lib/decorVarCost.js for the sheets and their formulas, and
-// migration 00083 for the tables).
+// migration 00087 for the tables).
 //
 // The flow, one screen at a time:
 //   list    → your sheets, newest first; + New

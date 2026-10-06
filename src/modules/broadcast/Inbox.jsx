@@ -5,7 +5,7 @@ import { hasPerm } from '../../lib/permissions'
 import { formatDate } from '../../lib/format'
 import Icon from '../../components/ui/Icon'
 import SearchField from '../../components/ui/SearchField'
-import { CTRL, CARD, Chip, Notice, EmptyState, CHIP_GOOD, CHIP_NEUTRAL } from './ui'
+import { CTRL, CARD, Chip, Notice, EmptyState, CHIP_GOOD, CHIP_NEUTRAL, WaMessageBody } from './ui'
 
 // Known limitation, traced to migration 00033: rpc_wa_conversation_reply never
 // populates wa_messages.template_params, so wa-send will fail loudly
@@ -104,6 +104,8 @@ function Inbox({ profile, inAdmin }) {
   var [templates, setTemplates] = useState([])
   var [composerText, setComposerText] = useState('')
   var [templatePickerOpen, setTemplatePickerOpen] = useState(false)
+  var [pendingTemplate, setPendingTemplate] = useState(null)
+  var [templateVarValues, setTemplateVarValues] = useState({})
   var [sending, setSending] = useState(false)
   var [error, setError] = useState('')
 
@@ -116,7 +118,7 @@ function Inbox({ profile, inAdmin }) {
 
   useEffect(function () {
     loadConversations()
-    supabase.from('wa_templates').select('id, name, body_text, category, variable_count').eq('meta_status', 'approved').eq('variable_count', 0)
+    supabase.from('wa_templates').select('id, name, body_text, category, variable_count, variable_labels').eq('meta_status', 'approved')
       .then(function (res) { setTemplates(res.data || []) })
 
     var channel = supabase.channel('wa_inbox_live')
@@ -142,7 +144,7 @@ function Inbox({ profile, inAdmin }) {
   // while a thread is up, so a phone cannot switch from one to another.
   function openConversation(conv) {
     if (!inAdmin && !activeConv) pushBack(function () { setActiveConv(null) })
-    setActiveConv(conv); setComposerText(''); setTemplatePickerOpen(false); setError('')
+    setActiveConv(conv); setComposerText(''); setTemplatePickerOpen(false); setPendingTemplate(null); setError('')
     loadMessages(conv)
     supabase.rpc('rpc_wa_mark_read', { p_conversation_id: conv.id }).then(function () { loadConversations() })
   }
@@ -184,11 +186,36 @@ function Inbox({ profile, inAdmin }) {
     loadMessages(activeConv)
   }
 
-  async function sendTemplate(template) {
+  // Same auto-fill heuristic QuickSendDrawer uses — a contact opened in the
+  // Inbox doesn't carry a venue_id the way a lead handoff does, so there's
+  // nothing to guess a "venue" variable from here, just name/phone.
+  function autoTemplateValues(template) {
+    var values = {}
+    ;(template.variable_labels || []).forEach(function (label, i) {
+      var idx = String(i + 1)
+      var key = (label || '').toLowerCase()
+      if (key.indexOf('name') !== -1) values[idx] = (activeConv && activeConv.wa_contacts.name) || ''
+      else if (key.indexOf('phone') !== -1) values[idx] = (activeConv && activeConv.wa_contacts.phone_e164) || ''
+      else values[idx] = ''
+    })
+    return values
+  }
+
+  function pickTemplate(template) {
+    if (template.variable_count > 0) {
+      setPendingTemplate(template)
+      setTemplateVarValues(autoTemplateValues(template))
+    } else {
+      sendTemplate(template, {})
+    }
+  }
+
+  async function sendTemplate(template, variableValues) {
     if (sending || !activeConv) return
     setSending(true); setError('')
     var res = await supabase.rpc('rpc_wa_conversation_reply', {
       p_contact_id: activeConv.wa_contacts.id, p_body: template.body_text, p_template_id: template.id,
+      p_variable_values: variableValues || {},
     })
     if (res.error) { setSending(false); setError(res.error.message); return }
     var sessionRes = await supabase.auth.getSession()
@@ -196,6 +223,7 @@ function Inbox({ profile, inAdmin }) {
     await supabase.functions.invoke('wa-send', { body: { message_id: res.data }, headers: token ? { Authorization: 'Bearer ' + token } : {} })
     setSending(false)
     setTemplatePickerOpen(false)
+    setPendingTemplate(null)
     loadMessages(activeConv)
   }
 
@@ -290,7 +318,7 @@ function Inbox({ profile, inAdmin }) {
                       (out
                         ? 'bg-indigo-600 text-white rounded-2xl rounded-br-md'
                         : 'bg-white border border-slate-200 text-slate-800 rounded-2xl rounded-bl-md')}>
-                      <p className="whitespace-pre-wrap">{m.rendered_body || '(template message)'}</p>
+                      <WaMessageBody m={m} out={out} />
                       {m.wa_templates && (
                         <p className={'text-[10px] mt-1 ' + (out ? 'text-indigo-200' : 'text-slate-400')}>
                           Sent via template {m.wa_templates.name}
@@ -329,15 +357,15 @@ function Inbox({ profile, inAdmin }) {
                 <Notice tone="info">You do not have permission to reply in this inbox.</Notice>
               )}
 
-              {templatePickerOpen && (
+              {templatePickerOpen && !pendingTemplate && (
                 <div className="border border-slate-200 rounded-xl max-h-40 overflow-y-auto ambria-thin-scroll divide-y divide-slate-100">
                   {templates.length === 0 ? (
                     <p className="text-[11.5px] text-slate-500 px-3 py-2.5 leading-snug">
-                      No approved templates without variables. Only those can be sent from the inbox.
+                      No approved templates yet.
                     </p>
                   ) : templates.map(function (t) {
                     return (
-                      <button key={t.id} type="button" onClick={function () { sendTemplate(t) }}
+                      <button key={t.id} type="button" onClick={function () { pickTemplate(t) }}
                         disabled={sending || !canReply}
                         className="w-full text-left px-3 py-2 hover:bg-indigo-50 disabled:opacity-50 transition-colors">
                         <span className="block text-[12.5px] font-semibold text-slate-900 truncate">{t.name}</span>
@@ -348,8 +376,48 @@ function Inbox({ profile, inAdmin }) {
                 </div>
               )}
 
+              {pendingTemplate && (function () {
+                var preview = pendingTemplate.body_text
+                ;(pendingTemplate.variable_labels || []).forEach(function (label, i) {
+                  var idx = String(i + 1)
+                  preview = preview.split('{{' + idx + '}}').join(templateVarValues[idx] || ('[' + (label || idx) + ']'))
+                })
+                return (
+                  <div className="border border-indigo-200 rounded-xl p-3 space-y-2.5 bg-indigo-50/40">
+                    <p className="text-[12.5px] font-bold text-slate-900">{pendingTemplate.name}</p>
+                    {(pendingTemplate.variable_labels || []).map(function (label, i) {
+                      var idx = String(i + 1)
+                      return (
+                        <div key={idx}>
+                          <label className="block text-[10.5px] font-semibold text-slate-500 uppercase mb-1">{label || ('Variable ' + idx)}</label>
+                          <input type="text" value={templateVarValues[idx] || ''}
+                            onChange={function (ev) {
+                              var next = Object.assign({}, templateVarValues)
+                              next[idx] = ev.target.value
+                              setTemplateVarValues(next)
+                            }}
+                            className={CTRL} />
+                        </div>
+                      )
+                    })}
+                    <div className="text-[11.5px] text-slate-600 bg-white border border-slate-200 rounded-lg px-2.5 py-2 leading-snug whitespace-pre-wrap">{preview}</div>
+                    <div className="flex items-center gap-2">
+                      <button type="button" disabled={sending}
+                        onClick={function () { sendTemplate(pendingTemplate, templateVarValues) }}
+                        className="h-9 px-3.5 text-[13px] font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50">
+                        {sending ? 'Sending…' : 'Send'}
+                      </button>
+                      <button type="button" onClick={function () { setPendingTemplate(null) }}
+                        className="h-9 px-3 text-[13px] font-semibold text-slate-600">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )
+              })()}
+
               <div className="flex items-center gap-2">
-                <button type="button" onClick={function () { setTemplatePickerOpen(!templatePickerOpen) }}
+                <button type="button" onClick={function () { setTemplatePickerOpen(!templatePickerOpen); setPendingTemplate(null) }}
                   title="Send an approved template" aria-label="Send an approved template"
                   aria-expanded={templatePickerOpen}
                   className={'shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-xl border transition-colors ' +

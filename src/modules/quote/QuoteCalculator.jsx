@@ -1081,6 +1081,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
   var [inquiryMode, setInquiryMode] = useState('')
   var [priority, setPriority] = useState('')
   var [etSearch, setEtSearch] = useState('')
+  var [etFocused, setEtFocused] = useState(false)
   var [eventTypeIdx, setEventTypeIdx] = useState(0)
   var [venueId, setVenueId] = useState('')
   var [parentId, setParentId] = useState('')
@@ -2061,16 +2062,24 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
           }}>
             <div style={isDesktop ? { gridColumn: 1, gridRow: 1 } : null}>
               <div style={LABEL_ST}>Event Type</div>
-              {eventTypes.filter(function (x) { return !x.pinned }).length > 0 && (
+              {eventTypes.filter(function (x) { return !x.pinned }).length > 0 && (function () {
+                // While focused the field is a live filter (etSearch); at rest
+                // it shows what's actually picked — a quick-pick pill already
+                // shows that for a pinned type, but a non-pinned one (found
+                // only through search, e.g. Corporate) had nothing anywhere
+                // in this field confirming the click landed. Only the Live
+                // Preview panel off to the side ever showed it.
+                var etDisplay = etFocused ? etSearch : ((currentET && !currentET.pinned) ? currentET.label : '')
+                return (
               <div style={{ position: 'relative', marginBottom: 8 }}>
-                <input value={etSearch} placeholder={'Search ' + eventTypes.length + ' event types'}
+                <input value={etDisplay} placeholder={'Search ' + eventTypes.length + ' event types'}
                   onChange={function (e) { setEtSearch(e.target.value) }}
-                  onFocus={function () { setEtSearch('') }}
-                  onBlur={function () { setTimeout(function () { setEtSearch('') }, 200) }}
-                  style={Object.assign({}, inputSt(false, !!etSearch), {
-                    color: etSearch ? C.text : C.subtle,
+                  onFocus={function () { setEtFocused(true); setEtSearch('') }}
+                  onBlur={function () { setTimeout(function () { setEtFocused(false) }, 200) }}
+                  style={Object.assign({}, inputSt(false, !!etDisplay), {
+                    color: etDisplay ? C.text : C.subtle,
                   })} />
-                {etSearch !== '' && (function () {
+                {etFocused && etSearch !== '' && (function () {
                   var filtered = []
                   for (var i = 0; i < eventTypes.length; i++) {
                     if (eventTypes[i].label.toLowerCase().indexOf(etSearch.toLowerCase()) >= 0) filtered.push({ et: eventTypes[i], idx: i })
@@ -2098,7 +2107,8 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
                   )
                 })()}
               </div>
-              )}
+                )
+              })()}
               <div style={{
                 display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))',
                 gap: 7,

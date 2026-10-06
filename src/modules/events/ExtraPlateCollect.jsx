@@ -103,6 +103,12 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
   var [collectMsg, setCollectMsg] = useState('')
   var [cameraFor, setCameraFor] = useState(null) // 'issue' | 'collect' | null
 
+  // Manual plate rate (only reachable when LMS never had one on the contract)
+  var [editingRate, setEditingRate] = useState(false)
+  var [manualRateInput, setManualRateInput] = useState('')
+  var [manualRateSaving, setManualRateSaving] = useState(false)
+  var [manualRateMsg, setManualRateMsg] = useState('')
+
   // Recent
   var [recentGroups, setRecentGroups] = useState([])
   var [listLoading, setListLoading] = useState(false)
@@ -141,7 +147,7 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
     if (!d) { setEvents([]); return }
     setEventsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, client_name, session, extra_plates_charge, total_plates, complementary_plates, created_user_name, department, contract_no')
+      .select('id, event_name, function_date, venue_name, client_name, session, extra_plates_charge, manual_plate_rate_paise, total_plates, complementary_plates, created_user_name, department, contract_no')
       .eq('function_date', d)
       .in('department', ['Venue', 'Catering'])
       .is('lms_cancelled_at', null)
@@ -174,8 +180,38 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
     setCollectMode('')
     setCollectSubMode('')
     setCollectDiscount('')
+    setEditingRate(false)
+    setManualRateInput('')
+    setManualRateMsg('')
     if (row) await loadEventState(Number(fid), row)
 
+  }
+
+  async function saveManualRate() {
+    if (!eventDetail) return
+    var rupees = Number(manualRateInput)
+    if (!manualRateInput || isNaN(rupees) || rupees <= 0) { setManualRateMsg('Enter a valid rate.'); return }
+    setManualRateSaving(true)
+    setManualRateMsg('')
+    var { error } = await supabase.rpc('fn_set_event_manual_plate_rate', {
+      p_event_id: Number(eventId), p_rate_paise: Math.round(rupees * 100),
+    })
+    setManualRateSaving(false)
+    if (error) { setManualRateMsg(error.message); return }
+    setEventDetail(Object.assign({}, eventDetail, { manual_plate_rate_paise: Math.round(rupees * 100) }))
+    setEditingRate(false)
+    setManualRateInput('')
+  }
+
+  async function clearManualRate() {
+    if (!eventDetail) return
+    setManualRateSaving(true)
+    var { error } = await supabase.rpc('fn_set_event_manual_plate_rate', {
+      p_event_id: Number(eventId), p_rate_paise: null,
+    })
+    setManualRateSaving(false)
+    if (error) { setManualRateMsg(error.message); return }
+    setEventDetail(Object.assign({}, eventDetail, { manual_plate_rate_paise: null }))
   }
 
   async function loadEventState(eid, evRow) {
@@ -469,7 +505,13 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
   var quota = eventDetail ? (eventDetail.total_plates || 0) : 0
   var complementary = eventDetail ? (eventDetail.complementary_plates || 0) : 0
   var paidPax = quota - complementary
-  var ratePaise = eventDetail ? Number(eventDetail.extra_plates_charge || 0) * 2 : 0
+  // A manual rate (set below, when LMS never got one entered) is already the
+  // final per-plate figure an admin typed in — unlike the LMS field, it's not
+  // run through the *2 conversion.
+  var hasManualRate = !!(eventDetail && eventDetail.manual_plate_rate_paise != null)
+  var ratePaise = eventDetail
+    ? (hasManualRate ? Number(eventDetail.manual_plate_rate_paise) : Number(eventDetail.extra_plates_charge || 0) * 2)
+    : 0
 
   var thisReturned = Math.max(0, Math.floor(Number(collectReturned) || 0))
   var combinedReturned = priorReturned + thisReturned
@@ -701,11 +743,43 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
               </div>
               <div className="mt-2 flex items-center justify-between gap-2 text-[11.5px]">
                 <span className="font-medium text-slate-500 truncate">{paidPax} pax + {complementary} comp = <span className="font-bold text-slate-800">{quota}</span></span>
-                <span className={'shrink-0 h-6 px-2 rounded-md inline-flex items-center font-extrabold tabular-nums ' +
-                  (ratePaise > 0 ? 'bg-slate-900 text-white' : 'bg-red-50 text-red-700 border border-red-200')}>
-                  {ratePaise > 0 ? '₹' + rateRs.toLocaleString('en-IN') + '/plate' : 'No rate'}
+                <span className="shrink-0 inline-flex items-center gap-1.5">
+                  <span className={'h-6 px-2 rounded-md inline-flex items-center font-extrabold tabular-nums ' +
+                    (ratePaise > 0 ? 'bg-slate-900 text-white' : 'bg-red-50 text-red-700 border border-red-200')}>
+                    {ratePaise > 0 ? '₹' + rateRs.toLocaleString('en-IN') + '/plate' : 'No rate'}
+                    {hasManualRate && <span className="ml-1 text-[9.5px] font-bold uppercase opacity-75">manual</span>}
+                  </span>
+                  {/* A rate typed in by hand, for contracts LMS never priced
+                      (manual_plate_rate_paise — survives re-syncs). */}
+                  {isAdmin && hasManualRate && (
+                    <button type="button" onClick={clearManualRate} disabled={manualRateSaving}
+                      className="h-6 px-1.5 rounded-md text-[11px] font-bold text-slate-500 hover:text-red-600">Clear</button>
+                  )}
+                  {isAdmin && ratePaise <= 0 && !editingRate && (
+                    <button type="button" onClick={function () { setEditingRate(true) }}
+                      className="h-6 px-2 rounded-md border border-indigo-200 bg-indigo-50 text-[11px] font-bold text-indigo-700">Set rate</button>
+                  )}
                 </span>
               </div>
+              {editingRate && ratePaise <= 0 && (
+                <div className="mt-2 flex items-center gap-1.5">
+                  <div className="relative flex-1 min-w-0">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] font-bold text-slate-400 pointer-events-none">₹</span>
+                    <input type="number" step="1" inputMode="numeric" autoFocus value={manualRateInput}
+                      onChange={function (e) { setManualRateInput(e.target.value) }}
+                      onKeyDown={function (e) { if (e.key === 'Enter') saveManualRate() }}
+                      placeholder="Rate per plate" aria-label="Manual rate per plate"
+                      className={INPUT + ' !h-10 !pl-7'} />
+                  </div>
+                  <button type="button" onClick={saveManualRate} disabled={manualRateSaving}
+                    className="shrink-0 h-10 px-3 rounded-xl bg-indigo-600 text-white text-[12.5px] font-bold disabled:opacity-50">
+                    {manualRateSaving ? 'Saving…' : 'Save'}
+                  </button>
+                  <button type="button" onClick={function () { setEditingRate(false); setManualRateInput(''); setManualRateMsg('') }}
+                    className="shrink-0 h-10 px-2.5 rounded-xl border border-slate-300 bg-white text-[12.5px] font-bold text-slate-600">Cancel</button>
+                </div>
+              )}
+              {manualRateMsg && <p className="mt-1.5 text-[12px] font-semibold text-red-600">{manualRateMsg}</p>}
               <div className="mt-2 grid grid-cols-4 gap-1.5">
                 {[['Issued', totalIssued, 'bg-slate-50 text-slate-900'],
                   ['Extras', extras, 'bg-indigo-50/70 text-indigo-950'],
@@ -719,8 +793,8 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
                   )
                 })}
               </div>
-              {ratePaise <= 0 && (
-                <p className="mt-2 text-[11.5px] font-semibold text-red-600">No extra-plate rate on the contract — extras cannot be collected here.</p>
+              {ratePaise <= 0 && !editingRate && (
+                <p className="mt-2 text-[11.5px] font-semibold text-red-600">No extra-plate rate on the contract — extras cannot be collected{isAdmin ? ' until a rate is set.' : ' here.'}</p>
               )}
             </div>
           )}

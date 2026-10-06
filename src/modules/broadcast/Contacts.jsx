@@ -6,7 +6,7 @@ import { formatDate } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
 import Icon from '../../components/ui/Icon'
 import SearchField from '../../components/ui/SearchField'
-import { CTRL, TEXTAREA, BTN_GHOST, BTN_PRIMARY, BTN_DANGER, TH, TD, Chip, Labeled, Notice, EmptyState, CHIP_GOOD, CHIP_WARN, CHIP_BAD, CHIP_NEUTRAL } from './ui'
+import { CTRL, TEXTAREA, BTN_GHOST, BTN_PRIMARY, BTN_DANGER, TH, TD, Chip, Labeled, Notice, EmptyState, CHIP_GOOD, CHIP_WARN, CHIP_BAD, CHIP_NEUTRAL, WaMessageBody } from './ui'
 import { appConfirm } from '../../components/ui/AppDialog'
 
 // Deferred, flagged rather than built riskily: (1) "Merge duplicates" — no
@@ -194,7 +194,7 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
 
   useEffect(function () {
     setLoadingMsgs(true)
-    supabase.from('wa_messages').select('id, direction, rendered_body, status, created_at, template_id')
+    supabase.from('wa_messages').select('id, direction, rendered_body, status, created_at, template_id, message_type, media_path, media_mime_type, media_caption, media_filename, location_lat, location_lng, location_name')
       .eq('contact_id', contact.id).order('created_at', { ascending: false }).limit(30)
       .then(function (res) { setMessages(res.data || []); setLoadingMsgs(false) })
   }, [contact.id])
@@ -319,7 +319,7 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
                     <div key={m.id}
                       className={'text-[12px] px-2.5 py-2 rounded-xl border ' +
                         (out ? 'bg-indigo-50 border-indigo-100 text-slate-800' : 'bg-slate-50 border-slate-200 text-slate-700')}>
-                      <p className="leading-snug">{m.rendered_body || '(template message)'}</p>
+                      <WaMessageBody m={m} out={out} mutedCls="text-slate-400" />
                       <p className="flex items-center gap-1 text-[10px] text-slate-400 mt-1">
                         <Icon name={out ? 'arrowRight' : 'arrowLeft'} size={10} />
                         <span className="capitalize">{m.status}</span>
