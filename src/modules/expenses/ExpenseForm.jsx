@@ -461,6 +461,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     var { data } = await supabase.from('events')
       .select('id, event_name, function_date, contract_type, venue_name, session, client_name, department, contract_no, created_user_name')
       .eq('function_date', dateStr)
+      .is('lms_cancelled_at', null)
       .order('event_name')
     var rows = data || []
     setEvents(rows)
@@ -1358,14 +1359,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   function validateEntries() {
     if (isAdminEdit) {
       var eA = entries[0]
-      if (!eA.expenseTypeId) return 'Select expense type'
-      if (!eA.expenseSubTypeId) return 'Select sub-type'
+      if (!eA.expenseTypeId) return 'Select department'
+      if (!eA.expenseSubTypeId) return 'Select expense'
       return null
     }
     for (var i = 0; i < entries.length; i++) {
       var e = entries[i]
-      if (!e.expenseTypeId) return 'Entry ' + (i + 1) + ': Select expense type'
-      if (!e.expenseSubTypeId) return 'Entry ' + (i + 1) + ': Select sub-type'
+      if (!e.expenseTypeId) return 'Entry ' + (i + 1) + ': Select department'
+      if (!e.expenseSubTypeId) return 'Entry ' + (i + 1) + ': Select expense'
       if (!e.description.trim()) return 'Entry ' + (i + 1) + ': Add description'
       if (!e.isItemPurchase && (!e.amount || Number(e.amount) <= 0)) return 'Entry ' + (i + 1) + ': Enter valid amount'
       if (!e.expenseDate) return 'Entry ' + (i + 1) + ': Select date'
@@ -2092,7 +2093,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         <div className="p-3 rounded-lg bg-purple-50 border border-purple-200 text-purple-700 text-[13px]">
           <span className="flex items-start gap-2">
             <Icon name="wrench" size={15} className="shrink-0 mt-0.5" />
-            <span>Admin retype — only expense type &amp; sub-type will be saved. Amount, receipts, allocations, wallet remain unchanged.</span>
+            <span>Admin retype — only department &amp; expense will be saved. Amount, receipts, allocations, wallet remain unchanged.</span>
           </span>
         </div>
       )}
@@ -2111,26 +2112,26 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           <div className="border border-purple-200 rounded-xl bg-white shadow-sm p-4 space-y-3">
             <div>
               <SearchDropdown
-                label="Expense Type" labelIcon="tag"
+                label="Department" labelIcon="tag"
                 items={typeList.map(function (et) { return { label: (et.icon ? et.icon + ' ' : '') + et.name, value: String(et.id) } })}
                 value={e0.expenseTypeId}
                 onChange={function (val) { updateEntry(0, 'expenseTypeId', val) }}
-                placeholder="Search or select type..."
+                placeholder="Search or select department..."
               />
             </div>
             {e0.expenseTypeId && subs.length > 0 && (
               <div>
                 <SearchDropdown
-                  label="Sub-Type" labelIcon="split"
+                  label="Expense" labelIcon="split"
                   items={subs.map(function (st) { return { label: st.name, value: String(st.id) } })}
                   value={e0.expenseSubTypeId}
                   onChange={function (val) { updateEntry(0, 'expenseSubTypeId', val) }}
-                  placeholder="Search or select sub-type..."
+                  placeholder="Search or select expense..."
                 />
               </div>
             )}
             {e0.expenseTypeId && subs.length === 0 && (
-              <p className="text-[12px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">No sub-types configured for this type</p>
+              <p className="text-[12px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">No expenses configured for this department</p>
             )}
           </div>
         )
@@ -2287,13 +2288,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                 var typeList = isAdminEt ? expenseTypes : expenseTypes.filter(function (et) { return userEtIds.indexOf(et.id) !== -1 })
                 return (
                   <div>
-                    <FieldLabel htmlFor={'exp-type-' + idx} icon="tag" required>Expense Type</FieldLabel>
+                    <FieldLabel htmlFor={'exp-type-' + idx} icon="tag" required>Department</FieldLabel>
                     <SearchDropdown
                       id={'exp-type-' + idx}
                       items={typeList.map(function (et) { return { label: (et.icon ? et.icon + ' ' : '') + et.name, value: String(et.id) } })}
                       value={entry.expenseTypeId}
                       onChange={function (val) { updateEntry(idx, 'expenseTypeId', val) }}
-                      placeholder="Search or select type..."
+                      placeholder="Search or select department..."
                     />
                   </div>
                 )
@@ -2318,19 +2319,19 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
               {/* Sub-Type */}
               {entry.expenseTypeId && subTypesForType.length === 1 && (
                 <p className="flex items-baseline gap-1.5 text-[11px] text-slate-500">
-                  <span className="font-semibold">Sub-type</span>
+                  <span className="font-semibold">Expense</span>
                   <span className="text-slate-700">{subTypesForType[0].name}</span>
                 </p>
               )}
               {entry.expenseTypeId && subTypesForType.length > 1 && (
                 <div className="lg:max-w-md">
-                  <FieldLabel htmlFor={'exp-subtype-' + idx} icon="split" required>Sub-Type</FieldLabel>
+                  <FieldLabel htmlFor={'exp-subtype-' + idx} icon="split" required>Expense</FieldLabel>
                   <SearchDropdown
                     id={'exp-subtype-' + idx}
                     items={subTypesForType.map(function (st) { return { label: st.name, value: String(st.id) } })}
                     value={entry.expenseSubTypeId}
                     onChange={function (val) { updateEntry(idx, 'expenseSubTypeId', val) }}
-                    placeholder="Search or select sub-type..."
+                    placeholder="Search or select expense..."
                   />
                 </div>
               )}
@@ -2343,7 +2344,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
 
               {/* No sub-types warning */}
               {entry.expenseTypeId && subTypesForType.length === 0 && (
-                <p className="text-[12px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">No sub-types configured for this type. Contact admin.</p>
+                <p className="text-[12px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">No expenses configured for this department. Contact admin.</p>
               )}
 
               {/* Description */}
@@ -2805,7 +2806,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                         {a.remarks && <span className="text-slate-500 truncate italic">· "{a.remarks}"</span>}
                                       </>
                                     ),
-                                    right: formatPoints(amt),
+                                    right: amt.toLocaleString('en-IN', { maximumFractionDigits: 2 }) + ' pts',
                                   }
                                 }}
                                 renderExpanded={function (alloc, aIdx) {

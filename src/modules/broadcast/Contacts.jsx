@@ -134,6 +134,15 @@ function CsvImportModal({ open, onClose, onSaved }) {
     onClose()
   }
 
+  async function handleFileChange(ev) {
+    var file = ev.target.files && ev.target.files[0]
+    ev.target.value = '' // lets the same file be picked again after fixing it and re-uploading
+    if (!file) return
+    setError('')
+    try { setRawText(await file.text()) }
+    catch (e) { setError('Could not read that file: ' + e.message) }
+  }
+
   return (
     <Modal open={open} onClose={handleClose} title="Import Contacts from CSV" wide>
       <div className="space-y-3">
@@ -143,7 +152,14 @@ function CsvImportModal({ open, onClose, onSaved }) {
             Inserted {result.inserted}, updated {result.updated}, skipped (invalid phone) {result.skipped_invalid_phone}.
           </Notice>
         )}
-        <Labeled label="CSV content" hint="The first row must be a header row with column names.">
+        <Labeled label="CSV file">
+          <label className={BTN_GHOST + ' w-full h-10 cursor-pointer'}>
+            <Icon name="download" size={14} strokeWidth={2.2} />
+            Choose file…
+            <input type="file" accept=".csv,text/csv" onChange={handleFileChange} className="hidden" />
+          </label>
+        </Labeled>
+        <Labeled label="CSV content" hint="Loaded from the file above — the first row must be a header row with column names. You can also paste content directly here instead of choosing a file.">
           <textarea value={rawText} onChange={function (ev) { setRawText(ev.target.value) }} rows={8}
             placeholder={'phone,name\n+919876543210,Riya Sharma'}
             className={TEXTAREA + ' font-mono text-[16px] sm:text-[12px]'} />
@@ -169,6 +185,7 @@ function CsvImportModal({ open, onClose, onSaved }) {
 
 function ContactDetailDrawer({ contact, onClose, onChanged }) {
   var [phoneRevealed, setPhoneRevealed] = useState(false)
+  var [name, setName] = useState(contact.name || '')
   var [tagsText, setTagsText] = useState((contact.tags || []).join(', '))
   var [notes, setNotes] = useState(contact.notes || '')
   var [saving, setSaving] = useState(false)
@@ -189,11 +206,11 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
       .catch(function () {})
   }
 
-  async function saveTagsNotes() {
+  async function saveDetails() {
     if (saving) return
     setSaving(true)
     var tags = tagsText.split(',').map(function (t) { return t.trim() }).filter(Boolean)
-    var res = await supabase.from('wa_contacts').update({ tags: tags, notes: notes || null }).eq('id', contact.id)
+    var res = await supabase.from('wa_contacts').update({ name: name.trim() || null, tags: tags, notes: notes || null }).eq('id', contact.id)
     setSaving(false)
     if (!res.error) onChanged()
   }
@@ -222,7 +239,7 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
 
       <div className="flex-1 min-h-0 overflow-y-auto ambria-thin-scroll px-4 py-4 space-y-4">
         <div>
-          <p className="text-[17px] font-bold text-slate-900 leading-tight">{contact.name || 'Unnamed contact'}</p>
+          <p className="text-[17px] font-bold text-slate-900 leading-tight">{name.trim() || 'Unnamed contact'}</p>
           {/* A real button, not a <p onClick>: revealing a phone number is
               logged to the activity trail, so it has to be reachable from a
               keyboard and announce itself as an action. */}
@@ -241,6 +258,10 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
         </div>
 
         <div className="space-y-3 border-t border-slate-100 pt-3.5">
+          <Labeled label="Name" hint="Imported blank, or wrong? Fix it here — a CSV re-import or the contact messaging in will never overwrite a name that's already set.">
+            <input type="text" value={name} onChange={function (ev) { setName(ev.target.value) }}
+              placeholder="Unnamed contact" className={CTRL} />
+          </Labeled>
           <Labeled label="Tags" hint="Comma-separated">
             <input type="text" value={tagsText} onChange={function (ev) { setTagsText(ev.target.value) }}
               placeholder="delhi, wedding" className={CTRL} />
@@ -249,9 +270,9 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
             <textarea value={notes} onChange={function (ev) { setNotes(ev.target.value) }} rows={2}
               placeholder="Anything the next person should know" className={TEXTAREA} />
           </Labeled>
-          <button onClick={saveTagsNotes} disabled={saving} className={BTN_GHOST}>
+          <button onClick={saveDetails} disabled={saving} className={BTN_GHOST}>
             <Icon name="save" size={14} />
-            {saving ? 'Saving…' : 'Save tags & notes'}
+            {saving ? 'Saving…' : 'Save details'}
           </button>
         </div>
 
@@ -410,30 +431,53 @@ function Contacts({ profile }) {
   var [selectedIds, setSelectedIds] = useState([])
   var [addToListOpen, setAddToListOpen] = useState(false)
 
-  function loadContacts() {
-    setLoading(true)
-    supabase.from('wa_contacts').select('*').order('created_at', { ascending: false }).limit(500)
-      .then(function (res) { setContacts(res.data || []); setLoading(false) })
-  }
+  // 4000+ contacts and growing — a flat limit(500) with client-side
+  // filtering silently never showed, or searched, anything past the first
+  // 500. Search/filters now run server-side, with a real page size and
+  // total count, so they actually cover every contact.
+  var PAGE_SIZE = 50
+  var [searchDebounced, setSearchDebounced] = useState('')
+  var [totalCount, setTotalCount] = useState(0)
+  var [hasMore, setHasMore] = useState(false)
+  var [loadingMore, setLoadingMore] = useState(false)
 
   useEffect(function () {
-    loadContacts()
+    var t = setTimeout(function () { setSearchDebounced(search) }, 400)
+    return function () { clearTimeout(t) }
+  }, [search])
+
+  function loadContacts(append) {
+    if (append) setLoadingMore(true); else setLoading(true)
+    var offset = append ? contacts.length : 0
+    var q = supabase.from('wa_contacts').select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1)
+    if (sourceFilter) q = q.eq('source', sourceFilter)
+    if (optStatusFilter) q = q.eq('opt_status', optStatusFilter)
+    if (venueFilter) q = q.eq('venue_affinity', Number(venueFilter))
+    if (searchDebounced) {
+      var esc = searchDebounced.trim().replace(/[%_,]/g, '')
+      q = q.or('name.ilike.%' + esc + '%,phone_e164.ilike.%' + esc + '%')
+    }
+    q.then(function (res) {
+      var rows = res.data || []
+      if (append) setContacts(function (prev) { return prev.concat(rows) })
+      else setContacts(rows)
+      setTotalCount(res.count || 0)
+      setHasMore(offset + rows.length < (res.count || 0))
+      setLoading(false); setLoadingMore(false)
+    })
+  }
+
+  // Any filter change starts over from page one — stale rows from the
+  // previous filter would otherwise sit at the top of a "loaded so far" list.
+  useEffect(function () { loadContacts(false) }, [sourceFilter, optStatusFilter, venueFilter, searchDebounced])
+
+  useEffect(function () {
     supabase.from('venues').select('id, code, name').then(function (res) { setVenues(res.data || []) })
   }, [])
 
-  var filtered = contacts.filter(function (c) {
-    if (sourceFilter && c.source !== sourceFilter) return false
-    if (optStatusFilter && c.opt_status !== optStatusFilter) return false
-    if (venueFilter && String(c.venue_affinity) !== venueFilter) return false
-    if (search) {
-      var q = search.toLowerCase()
-      var matchesName = (c.name || '').toLowerCase().indexOf(q) !== -1
-      var matchesPhone = (c.phone_e164 || '').indexOf(search) !== -1
-      if (!matchesName && !matchesPhone) return false
-    }
-    return true
-  })
-
+  var filtered = contacts
   var filtersOn = !!(search || sourceFilter || optStatusFilter || venueFilter)
 
   function toggleSelected(id) {
@@ -482,8 +526,8 @@ function Contacts({ profile }) {
   // "0 of 0" said nothing when nothing was filtered. Say the plain count, and
   // only mention a subset when the filters are actually narrowing the list.
   var countLine = loading ? 'Loading…'
-    : filtersOn ? 'Showing ' + filtered.length + ' of ' + contacts.length
-    : contacts.length + (contacts.length === 1 ? ' contact' : ' contacts')
+    : filtersOn ? 'Showing ' + contacts.length + ' of ' + totalCount + ' matching'
+    : totalCount + (totalCount === 1 ? ' contact' : ' contacts') + (contacts.length < totalCount ? ' (' + contacts.length + ' loaded)' : '')
 
   return (
     <div className="space-y-3">
@@ -639,6 +683,13 @@ function Contacts({ profile }) {
           </table>
         </div>
       </div>
+
+      {!loading && hasMore && (
+        <button onClick={function () { loadContacts(true) }} disabled={loadingMore}
+          className="w-full py-2.5 text-[13px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-xl hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+          {loadingMore ? 'Loading…' : 'Load ' + Math.min(PAGE_SIZE, totalCount - contacts.length) + ' more'}
+        </button>
+      )}
 
       <AddToListModal open={addToListOpen} contactIds={selectedIds}
         onClose={function () { setAddToListOpen(false) }}

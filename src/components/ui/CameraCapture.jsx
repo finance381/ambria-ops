@@ -33,6 +33,12 @@ function CameraCapture({ onCapture, onClose }) {
         if (videoRef.current) {
           videoRef.current.srcObject = stream
           videoRef.current.onloadedmetadata = function () { setReady(true) }
+          // autoplay alone doesn't reliably start a stream assigned to
+          // srcObject after mount on every mobile browser — an explicit
+          // play() is the standard fix, and a rejected promise here (e.g.
+          // a stray autoplay policy) shouldn't surface as an uncaught error.
+          var playPromise = videoRef.current.play()
+          if (playPromise && playPromise.catch) playPromise.catch(function () {})
         }
       })
       .catch(function (err) {
@@ -85,7 +91,15 @@ function CameraCapture({ onCapture, onClose }) {
   }
 
   return createPortal((
-    <div className="fixed inset-0 z-[9998] bg-black flex flex-col">
+    <div className="fixed inset-0 z-[9998] bg-black flex flex-col"
+      // A portal's DOM node sits outside whatever rendered it, but React
+      // still bubbles its events up through the component tree — not the
+      // DOM tree. Every caller here is a modal with its own backdrop
+      // "click outside closes" handler, so without this, pressing the
+      // shutter (or Retake/Use Photo/Cancel) bubbled straight through to
+      // that handler and closed the modal underneath instead of doing
+      // anything in here.
+      onClick={function (ev) { ev.stopPropagation() }}>
       <div className="flex items-center justify-between px-4 py-3 text-white shrink-0">
         <button type="button" onClick={onClose} className="text-sm font-semibold px-2 py-1">Cancel</button>
         <span className="text-sm font-semibold">Take Photo</span>

@@ -12,6 +12,7 @@ import { deptInk, STATUS_RAIL } from '../../lib/ui'
 import Icon from '../../components/ui/Icon'
 import SearchField from '../../components/ui/SearchField'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import EnteredMark from '../../components/ui/EnteredMark'
 import { hasPerm } from '../../lib/permissions'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
@@ -63,7 +64,9 @@ var _savedFilters = {
 
 function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, profile, isAdmin }) {
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
+  var canMarkEntered = hasPerm(profile?.permsNew, 'finance.wallet.mark_entered')
   var [checkingExpId, setCheckingExpId] = useState(null)
+  var [enteringExpId, setEnteringExpId] = useState(null)
   // Which cards have their allocation/payment breakdown expanded — collapsed
   // by default so a long list of purchases doesn't take a screen each.
   var [expandedIds, setExpandedIds] = useState({})
@@ -159,7 +162,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
       : 'expense_allocations(department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id, remarks)'
 
     var query = supabase.from('expenses')
-      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, delete_reason, deleted_by, checked_by, checked_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), ' + allocEmbed)
+      .select('id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, delete_reason, deleted_by, checked_by, checked_at, tally_entered_by, tally_entered_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), ' + allocEmbed)
       // id tiebreaker: batch-submitted expenses share one created_at, and
       // without it a later UPDATE (e.g. toggling checked_by) can shuffle ties
       // on the next fetch/page.
@@ -267,6 +270,22 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
       return Object.assign({}, x, {
         checked_by: nowChecked ? profile.id : null,
         checked_at: nowChecked ? new Date().toISOString() : null,
+      })
+    }) })
+  }
+
+  async function toggleExpenseEntered(exp) {
+    if (enteringExpId) return
+    setEnteringExpId(exp.id)
+    var { data, error } = await supabase.rpc('fn_toggle_expense_tally_entered', { p_expense_id: exp.id })
+    setEnteringExpId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowEntered = !!data
+    setAllExps(function (prev) { return prev.map(function (x) {
+      if (x.id !== exp.id) return x
+      return Object.assign({}, x, {
+        tally_entered_by: nowEntered ? profile.id : null,
+        tally_entered_at: nowEntered ? new Date().toISOString() : null,
       })
     }) })
   }
@@ -947,6 +966,18 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                     <span className="block text-[15.5px] font-bold text-slate-900 tabular-nums">
                       {formatPoints(exp.amount_paise)}
                     </span>
+                    {!exp.deleted_at && (exp.tally_entered_by || canMarkEntered) && (
+                      <span className="mt-1 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
+                        <EnteredMark
+                          entered={!!exp.tally_entered_by}
+                          enteredAt={exp.tally_entered_at}
+                          canToggle={canMarkEntered}
+                          canUnenter={exp.tally_entered_by === profile?.id || isAdmin}
+                          busy={enteringExpId === exp.id}
+                          onToggle={function () { toggleExpenseEntered(exp) }}
+                        />
+                      </span>
+                    )}
                     {!exp.deleted_at && (exp.checked_by || canMarkChecked) && (
                       <span className="mt-1 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
                         <CheckedStamp

@@ -14,6 +14,7 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import EnteredMark from '../../components/ui/EnteredMark'
 
 // Every real cash/bank movement in the system, from whichever source recorded it:
 // money paid out (vendor payments/deductions, salary payments/adjustments, wallet-funded
@@ -204,6 +205,7 @@ function PaymentsLedger({ profile }) {
   var canView = hasPerm(permsNew, 'finance.payments')
   var isAdmin = hasPerm(permsNew, 'admin.dashboard')
   var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
+  var canMarkEntered = hasPerm(permsNew, 'finance.wallet.mark_entered')
 
   // events.venue_name is a plain LMS-synced text field with no venue_id —
   // matching it against this app's own venues master by name is the only way
@@ -238,6 +240,7 @@ function PaymentsLedger({ profile }) {
   var [detailTarget, setDetailTarget] = useState(null) // { row, event, collectorName, loading } — vendor/salary/collection rows
   var [enlargedImg, setEnlargedImg] = useState(null)
   var [checkingKey, setCheckingKey] = useState(null)
+  var [enteringKey, setEnteringKey] = useState(null)
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { load() })
 
   async function load() {
@@ -247,7 +250,7 @@ function PaymentsLedger({ profile }) {
     var [ledgerRes, collectRes, expWalletRes] = await Promise.all([
       supabase
         .from('ledger_entries')
-        .select('id, ledger_type, party_id, entry_date, created_at, description, debit_paise, ref_id, ref_type, metadata, created_by, checked_by, checked_at')
+        .select('id, ledger_type, party_id, entry_date, created_at, description, debit_paise, ref_id, ref_type, metadata, created_by, checked_by, checked_at, tally_entered_by, tally_entered_at')
         .in('ledger_type', ['vendor', 'user_salary'])
         .in('ref_type', ['vendor_payment', 'vendor_deduction', 'salary_payment', 'salary_adjustment'])
         // Was a .filter() on the result: every row came over the wire and the
@@ -261,7 +264,7 @@ function PaymentsLedger({ profile }) {
         .limit(1000),
       supabase
         .from('wallet_transactions')
-        .select('id, created_at, amount_paise, description, payment_mode, receipt_no, reference_id, performed_by, status, received_image_path, checked_by, checked_at')
+        .select('id, created_at, amount_paise, description, payment_mode, bank_payment_type, receipt_no, reference_id, performed_by, status, received_image_path, checked_by, checked_at, tally_entered_by, tally_entered_at')
         .eq('reference_type', 'collection')
         .not('payment_mode', 'is', null)
         .neq('status', 'cancelled')
@@ -336,7 +339,7 @@ function PaymentsLedger({ profile }) {
       collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id, extras_charged, plates_returned, discount_paise, events(id, event_name, client_name, function_date, venue_name, session)').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
       profileIds.length > 0 ? supabase.from('profiles').select('id, name').in('id', profileIds) : Promise.resolve({ data: [] }),
       candidateEventIds.length > 0 ? supabase.from('events').select('id, event_name, client_name, function_date, venue_name, session').in('id', candidateEventIds) : Promise.resolve({ data: [] }),
-      expenseIdsForCheck.length > 0 ? supabase.from('expenses').select('id, checked_by, checked_at').in('id', expenseIdsForCheck) : Promise.resolve({ data: [] }),
+      expenseIdsForCheck.length > 0 ? supabase.from('expenses').select('id, checked_by, checked_at, tally_entered_by, tally_entered_at').in('id', expenseIdsForCheck) : Promise.resolve({ data: [] }),
     ])
 
     var vendorNames = {}; (vRes.data || []).forEach(function (v) { vendorNames[v.id] = v.name })
@@ -351,9 +354,9 @@ function PaymentsLedger({ profile }) {
     // profiles fetch above.
     var checkedByIds = []
     function wantCheckerName(id) { if (id && profileNames[id] == null && checkedByIds.indexOf(id) === -1) checkedByIds.push(id) }
-    ledgerRows.forEach(function (r) { wantCheckerName(r.checked_by) })
-    collectRows.forEach(function (w) { wantCheckerName(w.checked_by) })
-    Object.keys(expCheckById).forEach(function (id) { wantCheckerName(expCheckById[id].checked_by) })
+    ledgerRows.forEach(function (r) { wantCheckerName(r.checked_by); wantCheckerName(r.tally_entered_by) })
+    collectRows.forEach(function (w) { wantCheckerName(w.checked_by); wantCheckerName(w.tally_entered_by) })
+    Object.keys(expCheckById).forEach(function (id) { wantCheckerName(expCheckById[id].checked_by); wantCheckerName(expCheckById[id].tally_entered_by) })
     if (checkedByIds.length > 0) {
       var checkerRes = await supabase.from('profiles').select('id, name').in('id', checkedByIds)
       ;(checkerRes.data || []).forEach(function (p) { profileNames[p.id] = p.name })
@@ -395,6 +398,9 @@ function PaymentsLedger({ profile }) {
         checked_by: r.checked_by,
         checked_at: r.checked_at,
         _checkedByName: (r.checked_by && profileNames[r.checked_by]) || null,
+        tally_entered_by: r.tally_entered_by,
+        tally_entered_at: r.tally_entered_at,
+        _enteredByName: (r.tally_entered_by && profileNames[r.tally_entered_by]) || null,
         _checkId: r.id,
       })
     })
@@ -411,6 +417,7 @@ function PaymentsLedger({ profile }) {
         logged_at: w.created_at,
         direction: meta.direction,
         mode: w.payment_mode,
+        _bankPaymentType: w.bank_payment_type || null,
         amount_paise: w.amount_paise || 0,
         party_name: partyName,
         collector_name: (w.performed_by && profileNames[w.performed_by]) || '',
@@ -430,6 +437,9 @@ function PaymentsLedger({ profile }) {
         checked_by: w.checked_by,
         checked_at: w.checked_at,
         _checkedByName: (w.checked_by && profileNames[w.checked_by]) || null,
+        tally_entered_by: w.tally_entered_by,
+        tally_entered_at: w.tally_entered_at,
+        _enteredByName: (w.tally_entered_by && profileNames[w.tally_entered_by]) || null,
         _checkId: w.id,
       })
     })
@@ -459,6 +469,9 @@ function PaymentsLedger({ profile }) {
         checked_by: expChecked ? expChecked.checked_by : null,
         checked_at: expChecked ? expChecked.checked_at : null,
         _checkedByName: (expChecked && expChecked.checked_by && profileNames[expChecked.checked_by]) || null,
+        tally_entered_by: expChecked ? expChecked.tally_entered_by : null,
+        tally_entered_at: expChecked ? expChecked.tally_entered_at : null,
+        _enteredByName: (expChecked && expChecked.tally_entered_by && profileNames[expChecked.tally_entered_by]) || null,
         _checkId: expId,
       })
     })
@@ -485,6 +498,22 @@ function PaymentsLedger({ profile }) {
     var params = {}; params[paramName] = row._checkId
     var { error } = await supabase.rpc(rpcName, params)
     setCheckingKey(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    load()
+  }
+
+  async function toggleEntered(row) {
+    if (enteringKey || !row._checkId) return
+    setEnteringKey(row.key)
+    var rpcName = row.source === 'collection' ? 'fn_toggle_wallet_tally_entered'
+      : row.source === 'expense' ? 'fn_toggle_expense_tally_entered'
+      : 'fn_toggle_ledger_tally_entered'
+    var paramName = row.source === 'collection' ? 'p_transaction_id'
+      : row.source === 'expense' ? 'p_expense_id'
+      : 'p_entry_id'
+    var params = {}; params[paramName] = row._checkId
+    var { error } = await supabase.rpc(rpcName, params)
+    setEnteringKey(null)
     if (error) { alert('Could not update: ' + error.message); return }
     load()
   }
@@ -939,7 +968,16 @@ function PaymentsLedger({ profile }) {
                         {timeOf(r.logged_at) && <span className="inline-flex items-center gap-1"><Icon name="clock" size={12} className="text-slate-400" />{timeOf(r.logged_at)}</span>}
                         {who && <span className="inline-flex items-center gap-1 min-w-0"><Icon name="user" size={12} className="text-slate-400" /><span className="truncate">{who}</span></span>}
                       </p>
-                      <span className="shrink-0" onClick={function (ev) { ev.stopPropagation() }}>
+                      <span className="shrink-0 flex items-center gap-1.5" onClick={function (ev) { ev.stopPropagation() }}>
+                        <EnteredMark
+                          entered={!!r.tally_entered_by}
+                          enteredByName={r._enteredByName}
+                          enteredAt={r.tally_entered_at}
+                          canToggle={canMarkEntered}
+                          canUnenter={r.tally_entered_by === profile.id || isAdmin}
+                          busy={enteringKey === r.key}
+                          onToggle={function () { toggleEntered(r) }}
+                        />
                         <CheckedStamp
                           variant="stamp"
                           compact
@@ -965,15 +1003,14 @@ function PaymentsLedger({ profile }) {
                 jammed against their own edges. Proportions instead, so the
                 slack is shared out and every column's spare space reads as
                 padding rather than as a hole in one of them. */}
-            <table className="w-full min-w-[960px] table-fixed">
+            <table className="w-full min-w-[860px] table-fixed">
               <colgroup>
                 <col className="w-[3%]" />
                 <col className="w-[32%]" />
                 <col className="w-[18%]" />
                 <col className="w-[8%]" />
                 <col className="w-[14%]" />
-                <col className="w-[14%]" />
-                <col className="w-[11%]" />
+                <col className="w-[25%]" />
               </colgroup>
               <thead className="sticky top-0 z-10 bg-slate-50 border-y border-slate-200">
                 <tr>
@@ -987,7 +1024,6 @@ function PaymentsLedger({ profile }) {
                     )
                   })}
                   <th className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">Amount (pts)</th>
-                  <th className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">Checked</th>
                 </tr>
               </thead>
               <tbody>
@@ -1105,22 +1141,36 @@ function PaymentsLedger({ profile }) {
                       </td>
 
                       <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
-                        <span data-notranslate className={'text-[14px] font-bold tabular-nums ' + (isIn ? 'text-emerald-700' : 'text-rose-700')}>
+                        <span data-notranslate className={'block text-[14px] font-bold tabular-nums ' + (isIn ? 'text-emerald-700' : 'text-rose-700')}>
                           {isIn ? '+ ' : '− '}{pts(r.amount_paise || 0)}
                         </span>
-                      </td>
-
-                      <td className="px-3 py-2.5 align-top text-right whitespace-nowrap" onClick={function (ev) { ev.stopPropagation() }}>
-                        <CheckedStamp
-                          variant="stamp"
-                          checked={!!r.checked_by}
-                          checkerName={r._checkedByName}
-                          checkedAt={r.checked_at}
-                          canToggle={canMarkChecked}
-                          canUncheck={r.checked_by === profile.id || isAdmin}
-                          busy={checkingKey === r.key}
-                          onToggle={function () { toggleChecked(r) }}
-                        />
+                        {((canMarkEntered || r.tally_entered_by) || (canMarkChecked || r.checked_by)) && (
+                          <span className="mt-1.5 inline-flex items-center justify-end gap-2" onClick={function (ev) { ev.stopPropagation() }}>
+                            {(canMarkEntered || r.tally_entered_by) && (
+                              <EnteredMark
+                                entered={!!r.tally_entered_by}
+                                enteredByName={r._enteredByName}
+                                enteredAt={r.tally_entered_at}
+                                canToggle={canMarkEntered}
+                                canUnenter={r.tally_entered_by === profile.id || isAdmin}
+                                busy={enteringKey === r.key}
+                                onToggle={function () { toggleEntered(r) }}
+                              />
+                            )}
+                            {(canMarkChecked || r.checked_by) && (
+                              <CheckedStamp
+                                variant="stamp"
+                                checked={!!r.checked_by}
+                                checkerName={r._checkedByName}
+                                checkedAt={r.checked_at}
+                                canToggle={canMarkChecked}
+                                canUncheck={r.checked_by === profile.id || isAdmin}
+                                busy={checkingKey === r.key}
+                                onToggle={function () { toggleChecked(r) }}
+                              />
+                            )}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   )
@@ -1182,6 +1232,9 @@ function PaymentsLedger({ profile }) {
                 <div className="flex justify-between"><span className="text-gray-500">Party</span><span className="font-medium text-gray-800">{r.party_name}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Date</span><span className="font-medium text-gray-800">{formatDate(r.date)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Mode</span><span className="font-medium text-gray-800">{r.mode === 'cash' ? 'Cash' : 'Bank'}</span></div>
+                {r._bankPaymentType && (
+                  <div className="flex justify-between"><span className="text-gray-500">Payment Type</span><span className="font-medium text-gray-800">{r._bankPaymentType}</span></div>
+                )}
                 {r.description && (
                   <div className="flex justify-between gap-3"><span className="text-gray-500 flex-shrink-0">Description</span><span className="font-medium text-gray-800 text-right">{r.description}</span></div>
                 )}

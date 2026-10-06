@@ -20,6 +20,13 @@ function daysBetween(a, b) {
   return Math.abs(Math.round((d2 - d1) / (1000 * 60 * 60 * 24)))
 }
 
+// contract_type is LMS's own indoor/outdoor flag (its raw field is literally
+// called lead_type, "I" or "O" — see sync-events' mapRow), not a contract
+// classification — decode it rather than show the bare letter.
+function venueTypeLabel(v) {
+  return v === 'I' ? 'Indoor' : v === 'O' ? 'Outdoor' : v
+}
+
 function groupEvents(events) {
   var sorted = events.slice().sort(function (a, b) {
     return new Date(a.function_date || a.contract_date || 0) - new Date(b.function_date || b.contract_date || 0)
@@ -391,7 +398,7 @@ function Events({ profile }) {
                 {group.functions.map(function (f) {
                   return (
                     <div key={f.id} className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 rounded px-2 py-1.5">
-                      <span className="font-medium text-gray-800 truncate flex-1">{f.event_name || f.contract_type || '—'}</span>
+                      <span className="font-medium text-gray-800 truncate flex-1">{f.event_name || '—'}</span>
                       {f.is_tentative && (
                         <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full flex-shrink-0 bg-amber-100 text-amber-700">Tentative</span>
                       )}
@@ -506,7 +513,7 @@ function Events({ profile }) {
                       <div className="flex items-center justify-between">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <h5 className="font-semibold text-gray-800 text-sm truncate">{f.event_name || f.contract_type || '—'}</h5>
+                            <h5 className="font-semibold text-gray-800 text-sm truncate">{f.event_name || '—'}</h5>
                             {f.is_tentative && <Badge color="amber">Tentative</Badge>}
                             {f.department && <Badge color="indigo">{f.department}</Badge>}
                           </div>
@@ -529,7 +536,7 @@ function Events({ profile }) {
 
       {/* ═══ FUNCTION DETAIL MODAL ═══ */}
       <Modal open={!!selectedFunction} onClose={function () { setSelectedFunction(null); setShowLedger(false) }}
-        title={selectedFunction?.event_name || selectedFunction?.contract_type || ''} wide>
+        title={selectedFunction?.event_name || ''} wide>
         {selectedFunction && (
           <div className="space-y-5">
             {selectedFunction.is_tentative && (
@@ -543,7 +550,7 @@ function Events({ profile }) {
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                 {selectedFunction.contract_no && <span><strong>Contract:</strong> #{selectedFunction.contract_no}</span>}
                 {(selectedFunction.function_date || selectedFunction.contract_date) && <span><strong>Event Date:</strong> {formatDate(selectedFunction.function_date || selectedFunction.contract_date)}</span>}
-                {selectedFunction.contract_type && <span><strong>Type:</strong> {selectedFunction.contract_type}</span>}
+                {selectedFunction.contract_type && <span><strong>Venue:</strong> {venueTypeLabel(selectedFunction.contract_type)}</span>}
                 {selectedFunction.department && <span><strong>Dept:</strong> {selectedFunction.department}</span>}
                 {selectedFunction.function_type && <span><strong>Function:</strong> {selectedFunction.function_type}</span>}
               </div>

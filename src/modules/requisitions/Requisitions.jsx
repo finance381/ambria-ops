@@ -17,7 +17,6 @@ import { pushBack, goBack as navBack } from '../../lib/backNav'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import CameraCapture from '../../components/ui/CameraCapture'
-import StoreRequisitionForm from './StoreRequisitionForm'
 import { appConfirm } from '../../components/ui/AppDialog'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
@@ -47,9 +46,7 @@ function Requisitions({ profile, onBack }) {
   var [loading, setLoading] = useState(true)
   var [loadingMore, setLoadingMore] = useState(false)
   var [pendingReceiptsCount, setPendingReceiptsCount] = useState(0)
-  var [storeReqs, setStoreReqs] = useState([])
-  var [storeReqsLoading, setStoreReqsLoading] = useState(true)
-  useRealtime(['requisitions', 'requisition_items', 'expenses', 'store_requisitions'], function () { loadMyReqs(false); loadApprovalReqs(false); loadAllReqs(false); loadReceiptsCount(); loadStoreReqs() })
+  useRealtime(['requisitions', 'requisition_items', 'expenses'], function () { loadMyReqs(false); loadApprovalReqs(false); loadAllReqs(false); loadReceiptsCount() })
   var [detailReq, setDetailReq] = useState(null)
   var [detailItems, setDetailItems] = useState([])
   var [statusFilter, setStatusFilter] = useState('')
@@ -277,29 +274,6 @@ function Requisitions({ profile, onBack }) {
     setLoadingMore(false)
   }
 
-  // Minimal for now — the user explicitly wants the real list view (filters,
-  // detail drill-in, per-department breakdown) designed as its own pass once
-  // submit + stock deduction are confirmed working.
-  async function loadStoreReqs() {
-    setStoreReqsLoading(true)
-    var { data } = await supabase.from('store_requisitions')
-      .select('id, date_from, date_to, total_paise, created_at, created_by')
-      .order('created_at', { ascending: false })
-      .limit(50)
-    var rows = data || []
-    var uids = []
-    rows.forEach(function (r) { if (r.created_by && uids.indexOf(r.created_by) === -1) uids.push(r.created_by) })
-    if (uids.length > 0) {
-      var { data: names } = await supabase.rpc('get_profile_names', { p_ids: uids })
-      var map = {}
-      ;(names || []).forEach(function (n) { map[n.id] = n.name })
-      rows = rows.map(function (r) { return Object.assign({}, r, { _createdByName: map[r.created_by] || null }) })
-    }
-    setStoreReqs(rows)
-    setStoreReqsLoading(false)
-  }
-  useEffect(function () { loadStoreReqs() }, [])
-
   async function openDetail(req) {
     pushBack(function () { setView(req._fromApprove ? 'approve' : 'list'); setDetailReq(null); setDetailItems([]) })
     setDetailReq(req)
@@ -371,19 +345,6 @@ function Requisitions({ profile, onBack }) {
   }
 
   // ═══════════════════════════════════════════════
-  // STORE REQUISITION FORM
-  // ═══════════════════════════════════════════════
-  if (view === 'storereq_form') {
-    return (
-      <StoreRequisitionForm
-        profile={profile}
-        onCancel={function () { setView('storereq') }}
-        onDone={function () { setView('storereq'); loadStoreReqs() }}
-      />
-    )
-  }
-
-  // ═══════════════════════════════════════════════
   // DETAIL VIEW
   // ═══════════════════════════════════════════════
   if (view === 'detail' && detailReq) {
@@ -412,23 +373,17 @@ function Requisitions({ profile, onBack }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-gray-900">Requisitions</h2>
-          <p className="text-xs text-gray-400">{view === 'approve' ? approvalReqs.length + ' pending approval' : view === 'all' ? allReqs.length + ' total (all users)' : view === 'storereq' ? storeReqs.length + ' store requisitions' : myReqs.length + ' requests'}</p>
+          <p className="text-xs text-gray-400">{view === 'approve' ? approvalReqs.length + ' pending approval' : view === 'all' ? allReqs.length + ' total (all users)' : myReqs.length + ' requests'}</p>
         </div>
-        {view === 'storereq' ? (
-          <button onClick={function () { setView('storereq_form') }}
-            className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
-            + New Store Requisition
-          </button>
-        ) : (
-          <button onClick={function () { pushBack(function () { setView('list'); setEditReq(null); setEditItems([]) }); setEditReq(null); setEditItems([]); setView('form') }}
-            className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
-            + New Request
-          </button>
-        )}
+        <button onClick={function () { pushBack(function () { setView('list'); setEditReq(null); setEditItems([]) }); setEditReq(null); setEditItems([]); setView('form') }}
+          className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
+          + New Request
+        </button>
       </div>
 
-      {/* Tabs: My Requests | Pending Approval | Item Receipts | All | Store Requisition */}
-      <div className="flex bg-gray-100 rounded-lg p-0.5 flex-wrap">
+      {/* Tabs: My Requests | Pending Approval | Item Receipts | All */}
+      {(showApproveTab || isItemReceiver) && (
+        <div className="flex bg-gray-100 rounded-lg p-0.5">
           <button onClick={function () { setView('list'); setStatusFilter('') }}
             className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (view === 'list' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
             My Requests
@@ -461,11 +416,8 @@ function Requisitions({ profile, onBack }) {
               All
             </button>
           )}
-          <button onClick={function () { setView('storereq') }}
-            className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (view === 'storereq' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
-            Store Requisition
-          </button>
-      </div>
+        </div>
+      )}
 
       {/* Search + Filters — My / Approvals / All tabs */}
       {(view === 'list' || view === 'approve' || view === 'all') && (
@@ -616,43 +568,14 @@ function Requisitions({ profile, onBack }) {
         <ItemReceipts profile={profile} onCountChange={setPendingReceiptsCount} />
       )}
 
-      {/* Store Requisition tab — a bare list for now; the real list view
-          (filters, drill-in detail, per-department breakdown) is a separate
-          pass once submit + stock deduction are confirmed working. */}
-      {view === 'storereq' && (
-        storeReqsLoading ? (
-          <p className="text-gray-400 text-sm text-center py-8">Loading...</p>
-        ) : storeReqs.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-            <p className="text-gray-400 text-sm">No store requisitions yet</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {storeReqs.map(function (r) {
-              return (
-                <div key={r.id} className="bg-white border border-gray-200 rounded-xl p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">{formatDate(r.date_from)} – {formatDate(r.date_to)}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">{r._createdByName || '—'} · {formatDate(r.created_at)}</p>
-                    </div>
-                    <p className="text-sm font-bold text-indigo-600 whitespace-nowrap">{formatPoints(r.total_paise || 0)}</p>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )
-      )}
-
-      {/* List (hidden in receipts / storereq views) */}
-      {view !== 'receipts' && view !== 'storereq' && displayList.length === 0 && (
+      {/* List (hidden in receipts view) */}
+      {view !== 'receipts' && displayList.length === 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
           <p className="text-gray-400 text-sm">{view === 'approve' ? 'No pending approvals' : view === 'all' ? 'No requisitions match filter' : 'No requisitions yet'}</p>
         </div>
       )}
 
-      {view !== 'receipts' && view !== 'storereq' && <div className="space-y-3">
+      {view !== 'receipts' && <div className="space-y-3">
         {displayList.map(function (req) {
           return (
             <div key={req.id}
@@ -690,7 +613,7 @@ function Requisitions({ profile, onBack }) {
       </div>}
 
       {/* Load More */}
-      {view !== 'receipts' && view !== 'storereq' && displayHasMore && (
+      {view !== 'receipts' && displayHasMore && (
         <button onClick={function () {
           if (view === 'approve') loadApprovalReqs(true)
           else if (view === 'all') loadAllReqs(true)
@@ -889,6 +812,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     var { data } = await supabase.from('events')
       .select('id, event_name, contract_date, function_date, contract_type, venue_name, session, client_name')
       .eq('function_date', dateStr)
+      .is('lms_cancelled_at', null)
       .order('event_name')
     var rows = data || []
     setEvents(rows)

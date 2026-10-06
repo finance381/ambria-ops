@@ -14,7 +14,7 @@ function Dashboard() {
   async function loadStats() {
     var [itemsRes, eventsRes, boxesRes, expensesRes, purchaseRes] = await Promise.all([
       supabase.from('inventory_items').select('id, qty, blocked, type'),
-      supabase.from('events').select('id'),
+      supabase.from('events').select('id').is('lms_cancelled_at', null),
       supabase.from('boxes').select('id'),
       supabase.from('expenses').select('id, amount_paise, status'),
       supabase.from('purchase_requests').select('id, status'),

@@ -102,10 +102,24 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       .select('id, event_name, function_date, venue_name, client_name, session, extra_plates_charge, total_plates, complementary_plates, created_user_name, department, contract_no')
       .eq('function_date', d)
       .in('department', ['Venue', 'Catering'])
+      .is('lms_cancelled_at', null)
       .order('event_name')
     setEvents(data || [])
     setEventsLoading(false)
     if (data && data.length === 1) selectFunction(String(data[0].id), data[0])
+  }
+
+  function clearFunctionSelection() {
+    setEventId('')
+    setEventDetail(null)
+    setIssues([])
+    setCollections([])
+    setIssueMsg('')
+    setCollectMsg('')
+    setCollectReturned('')
+    setCollectMode('')
+    setCollectSubMode('')
+    setCollectDiscount('')
   }
 
   async function selectFunction(fid, rowMaybe) {
@@ -530,8 +544,8 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
 
             {date && (
               <div className="mt-4">
-                {stepHead(2, 'Function', !!eventId, pickedOnly && events.length > 1 ? (
-                  <button type="button" onClick={function () { setEventId(''); setEventDetail(null) }}
+                {stepHead(2, 'Function', !!eventId, pickedOnly ? (
+                  <button type="button" onClick={clearFunctionSelection}
                     className="text-[12px] font-bold text-indigo-600 hover:text-indigo-800">Change</button>
                 ) : null)}
                 {eventsLoading && <p className="text-[12.5px] text-slate-500">Loading functions…</p>}

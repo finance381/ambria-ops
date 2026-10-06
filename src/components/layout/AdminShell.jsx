@@ -32,6 +32,7 @@ function prefetchTab(cfg) {
 
 var RateCardEditor = lazyTab(function () { return import('../../modules/quote/RateCardEditor') })
 var Events = lazyTab(function () { return import('../../modules/events/Events') })
+var ContractList = lazyTab(function () { return import('../../modules/events/ContractList') })
 var ExtraPlateCollect = lazyTab(function () { return import('../../modules/events/ExtraPlateCollect') })
 var AdminItems = lazyTab(function () { return import('../../modules/inventory/AdminItems') })
 var Categories = lazyTab(function () { return import('../../modules/categories/Categories') })
@@ -57,6 +58,7 @@ PurchaseReceive.load = Purchase.load
 var Calendar = lazyTab(function () { return import('../../modules/calendar/Calendar') })
 var Vendors = lazyTab(function () { return import('../../modules/vendors/Vendors') })
 var Requisitions = lazyTab(function () { return import('../../modules/requisitions/Requisitions') })
+var StoreRequisitions = lazyTab(function () { return import('../../modules/requisitions/StoreRequisitions') })
 var CasualRoster = lazyTab(function () { return import('../../modules/manpower/CasualRoster') })
 var Analytics = lazyTab(function () { return import('../../modules/analytics/Analytics') })
 var Overview = lazyTab(function () { return import('../../modules/overview/Overview') })
@@ -143,6 +145,7 @@ function SubTabs({ tabs, active, onChange, large }) {
 var SUB_TAB_CONFIG = {
   events: [
     { key: 'events',       label: 'Events',        icon: 'calendar', component: Events,            perm: 'events.list' },
+    { key: 'contracts',    label: 'Contracts',     icon: 'fileText', component: ContractList,      perm: 'events.list' },
     { key: 'extra_plates', label: 'Extra Plates',  icon: 'utensils', component: ExtraPlateCollect, perm: 'events.extra_plate_collect' },
   ],
   inventory: [
@@ -157,7 +160,7 @@ var SUB_TAB_CONFIG = {
     { key: 'categories',         label: 'Categories',      icon: 'tag',        component: Categories,         perm: 'admin.masters' },
     { key: 'job_departments',    label: 'Job Departments', icon: 'users',      component: JobDepartments,     perm: 'admin.masters' },
     { key: 'ratecard',           label: 'Rate Card',       icon: 'calculator', component: RateCardEditor,     anyPerm: ['admin.masters','events.ratecard'] },
-    { key: 'staff_roles',        label: 'Casual Roster',   icon: 'idCard',     component: CasualRoster,       perm: 'admin.masters' },
+    { key: 'staff_roles',        label: 'Casual Roster',   icon: 'idCard',     component: CasualRoster,       anyPerm: ['admin.masters', 'hr.casual_roster'] },
     { key: 'expense_types',      label: 'Expense Types',   icon: 'receipt',    component: ExpenseTypesMaster, perm: 'admin.masters' },
     { key: 'employee_doc_types', label: 'Employee Docs',   icon: 'fileText',   component: EmployeeDocTypes,   perm: 'admin.masters' },
   ],
@@ -169,6 +172,7 @@ var SUB_TAB_CONFIG = {
   ],
   procurement: [
     { key: 'requisitions', label: 'Requisitions',    icon: 'fileText', component: Requisitions, perm: 'procurement.requisitions' },
+    { key: 'storereq',     label: 'Store Requisition', icon: 'box',    component: StoreRequisitions, perm: 'procurement.requisitions' },
     { key: 'purchase',     label: 'Purchase Orders', icon: 'cart',     component: Purchase,     perm: 'procurement.purchase_orders' },
     { key: 'vendors',      label: 'Vendors',         icon: 'truck',    component: Vendors,      perm: 'procurement.vendors' },
   ],
@@ -203,7 +207,7 @@ function subTabAllowed(cfg, permsNew) {
   return true
 }
 
-function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpense, onDeepLinkHandled, onSubTabMeta, navNonce, invSubDept, onInvSubDeptChange, largeTabs }) {
+function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpense, onDeepLinkHandled, onSubTabMeta, navNonce, invSubDept, onInvSubDeptChange, largeTabs, deepLinkTransferId, deepLinkContractId }) {
   var permsNew = profile.permsNew || []
   var visibleConfig = config.filter(function (c) { return subTabAllowed(c, permsNew) })
 
@@ -238,7 +242,7 @@ function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpe
       setSub(activeSubTab)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSubTab, deepLinkExpense, navNonce])
+  }, [activeSubTab, deepLinkExpense, deepLinkTransferId, deepLinkContractId, navNonce])
 
   var _isAllowed = visibleConfig.find(function (c) { return c.key === sub }) != null
   var Active = _isAllowed ? config.find(function (c) { return c.key === sub })?.component : null
@@ -254,6 +258,8 @@ function TabbedSection({ config, profile, onNavigate, activeSubTab, deepLinkExpe
         {Active && <Active profile={profile} onNavigate={onNavigate} inAdmin
           onNavigateToExpenses={function (expenseId, mode) { onNavigate('expenses', 'expenses', expenseId ? { id: expenseId, mode: mode } : null) }}
           deepLinkExpense={deepLinkExpense} onDeepLinkHandled={onDeepLinkHandled}
+          deepLinkTransferId={deepLinkTransferId}
+          deepLinkContractId={deepLinkContractId}
           invSubDept={invSubDept} navNonce={navNonce} onInvSubDeptChange={onInvSubDeptChange} />}
       </Suspense>
     </div>
@@ -277,8 +283,9 @@ var ADMIN_TABS = [
     // Including it just showed this tab to quote-only users with nothing
     // behind it to open.
     anyPerm: ['events.list','events.extra_plate_collect'] },
-  { key: 'masters',     label: 'Masters',     icon: 'settings',   perm: 'admin.masters',
-    blurb: 'The lists every other screen picks from.' },
+  { key: 'masters',     label: 'Masters',     icon: 'settings',
+    blurb: 'The lists every other screen picks from.',
+    anyPerm: ['admin.masters', 'hr.casual_roster'] },
   { key: 'users',       label: 'Users',       icon: 'users',
     blurb: 'Accounts, roles, employees and the activity trail.',
     anyPerm: ['admin.users','hr.employees'] },
@@ -367,6 +374,8 @@ function makeTabbedModule(configKey) {
   return function (props) {
     return <TabbedSection config={SUB_TAB_CONFIG[configKey]} profile={props.profile} onNavigate={props.onNavigate} activeSubTab={props.activeSubTab}
       deepLinkExpense={props.deepLinkExpense} onDeepLinkHandled={props.onDeepLinkHandled} onSubTabMeta={props.onSubTabMeta}
+      deepLinkTransferId={props.deepLinkTransferId}
+      deepLinkContractId={props.deepLinkContractId}
       navNonce={props.navNonce} invSubDept={props.invSubDept} onInvSubDeptChange={props.onInvSubDeptChange}
       largeTabs={configKey === 'inventory'} />
   }
@@ -409,19 +418,25 @@ function AdminShell({ profile, onSignOut }) {
   // Set by onNavigate's 3rd arg when a ledger screen sends the user to a
   // specific expense's edit/Raise JV view instead of just the Expenses tab.
   var [deepLinkExpense, setDeepLinkExpense] = useState(null)
+  var [deepLinkTransferId, setDeepLinkTransferId] = useState(null)
+  var [deepLinkContractId, setDeepLinkContractId] = useState(null)
 
   // Resolves a notification's `link` string — same simple string formats
   // Shell.jsx's mobile equivalent uses, since there's no URL router here either.
   function navigateFromNotification(link) {
     if (link === 'broadcast:inbox') {
       setActive('broadcast'); setSubTab('inbox'); setDeepLinkExpense(null)
-    } else if (link === 'wallet') {
+    } else if (link === 'wallet' || (link && link.indexOf('wallet:') === 0)) {
       setActive('expenses'); setSubTab('wallet'); setDeepLinkExpense(null)
+      setDeepLinkTransferId(link.indexOf('wallet:') === 0 ? link.slice('wallet:'.length) : null)
     } else if (link && link.indexOf('expense:') === 0) {
       setActive('expenses'); setSubTab('expenses')
       setDeepLinkExpense({ id: link.slice('expense:'.length), mode: null })
     } else if (link === 'events') {
       setActive('events'); setSubTab(null); setDeepLinkExpense(null)
+    } else if (link && link.indexOf('contracts:') === 0) {
+      setActive('events'); setSubTab('contracts'); setDeepLinkExpense(null)
+      setDeepLinkContractId(link.slice('contracts:'.length))
     }
   }
 
@@ -798,6 +813,8 @@ function AdminShell({ profile, onSignOut }) {
               activeSubTab={subTab} inAdmin
               deepLinkExpense={deepLinkExpense}
               onDeepLinkHandled={function () { setDeepLinkExpense(null) }}
+              deepLinkTransferId={deepLinkTransferId}
+              deepLinkContractId={deepLinkContractId}
               onSubTabMeta={setSubTabMeta}
               navNonce={navNonce} invSubDept={invSubDept} onInvSubDeptChange={setInvSubDept} />
           </Suspense>

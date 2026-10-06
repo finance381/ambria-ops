@@ -28,8 +28,8 @@ var DECOR_LABELS = ['Premium', 'Standard', 'Banquet']
 var DJ_LABELS = ['Std DJ - No LED', 'DJ + LED']
 var SLOTS = ['Dinner', 'Sundowner', 'Lunch']
 var CAT_LABELS = ["King's Date", 'Perfect Comp', 'Filler']
-var CAT_COLORS = ['#B45309', '#BE123C', '#475569']
-var CAT_BG = ['#FFFBEB', '#FFF1F2', '#F1F5F9']
+var CAT_COLORS = ['#B91C1C', '#1D4ED8', '#15803D']
+var CAT_BG = ['#FEF2F2', '#EFF6FF', '#F0FDF4']
 var FALLBACK_MODES = ['Walk-in', 'Phone', 'WhatsApp']
 // Sidebar support card target. Set this to a real number to activate the button.
 var SUPPORT_PHONE = ''

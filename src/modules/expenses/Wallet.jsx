@@ -4,7 +4,7 @@ import WalletManager from './WalletManager'
 import { goBack as navBack } from '../../lib/backNav'
 import { hasPerm } from '../../lib/permissions'
 
-function Wallet({ profile, inAdmin, onNavigateToExpenses }) {
+function Wallet({ profile, inAdmin, onNavigateToExpenses, deepLinkTransferId }) {
   var [walletBalance, setWalletBalance] = useState(0)
   var [myWallet, setMyWallet] = useState(null)
   var [loading, setLoading] = useState(true)
@@ -48,6 +48,7 @@ function Wallet({ profile, inAdmin, onNavigateToExpenses }) {
       onBalanceChange={setWalletBalance}
       onNavigateToExpenses={onNavigateToExpenses}
       inAdmin={inAdmin}
+      deepLinkTransferId={deepLinkTransferId}
     />
   )
 }

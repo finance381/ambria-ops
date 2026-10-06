@@ -15,6 +15,7 @@ import { deptOrder, deptCls, deptHex, CARD, FIELD_SEARCH } from '../../lib/ui'
 import { avatarTint } from '../../lib/avatarTint'
 import { DeptChip } from '../../components/ui/Badge'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import EnteredMark from '../../components/ui/EnteredMark'
 
 var ENTRY_TYPES = [
   { key: 'all', label: 'All' },
@@ -203,6 +204,7 @@ function EventLedger(props) {
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.event')
   var isSysAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
+  var canMarkEntered = hasPerm(profile?.permsNew, 'finance.wallet.mark_entered')
   // The five tabs measure 598px and a 390px phone gives 358, so on a phone
   // two of them were always off the end of a scrolling row, and Documents and
   // Plates were not missing so much as invisible. There each tab takes an
@@ -213,6 +215,8 @@ function EventLedger(props) {
   var [tabEdges, setTabEdges] = useState({ left: false, right: false })
   var [checkingExpId, setCheckingExpId] = useState(null)
   var [checkingTxnId, setCheckingTxnId] = useState(null)
+  var [enteringExpId, setEnteringExpId] = useState(null)
+  var [enteringTxnId, setEnteringTxnId] = useState(null)
   var [printingDocId, setPrintingDocId] = useState(null)
   var [collDetail, setCollDetail] = useState(null)
   var [currentEventIds, setCurrentEventIds] = useState([])
@@ -272,6 +276,7 @@ function EventLedger(props) {
       .gte('function_date', start)
       .lte('function_date', end)
       .is('merged_into_id', null)
+      .is('lms_cancelled_at', null)
       .order('event_name')
       .then(function (res) {
         if (!alive) return
@@ -400,10 +405,10 @@ function EventLedger(props) {
     var expenseDateById = {}
     var expenseCheckById = {}
     if (expIds.length > 0) {
-      var { data: expRows } = await supabase.from('expenses').select('id, expense_date, checked_by, checked_at').in('id', expIds)
+      var { data: expRows } = await supabase.from('expenses').select('id, expense_date, checked_by, checked_at, tally_entered_by, tally_entered_at').in('id', expIds)
       ;(expRows || []).forEach(function (e) {
         expenseDateById[e.id] = e.expense_date
-        expenseCheckById[e.id] = { checked_by: e.checked_by, checked_at: e.checked_at }
+        expenseCheckById[e.id] = { checked_by: e.checked_by, checked_at: e.checked_at, tally_entered_by: e.tally_entered_by, tally_entered_at: e.tally_entered_at }
       })
     }
     // Collection entries carry a wallet_transactions.id in reference_id — that
@@ -415,7 +420,7 @@ function EventLedger(props) {
     var wtById = {}
     if (collTxnIds.length > 0) {
       var { data: wtRows } = await supabase.from('wallet_transactions')
-        .select('id, amount_paise, payment_mode, receipt_no, status, performed_by, received_image_path, checked_by, checked_at')
+        .select('id, amount_paise, payment_mode, bank_payment_type, receipt_no, status, performed_by, received_image_path, checked_by, checked_at, tally_entered_by, tally_entered_at')
         .in('id', collTxnIds)
       ;(wtRows || []).forEach(function (w) {
         wtById[w.id] = w
@@ -433,6 +438,8 @@ function EventLedger(props) {
       var chk = r.entry_type === 'expense' ? expenseCheckById[Number(r.reference_id)] : null
       r._checkedBy = chk ? chk.checked_by : null
       r._checkedAt = chk ? chk.checked_at : null
+      r._enteredBy = chk ? chk.tally_entered_by : null
+      r._enteredAt = chk ? chk.tally_entered_at : null
       var wt = r.entry_type === 'collection' ? wtById[r.reference_id] : null
       if (wt) {
         r._wt = wt
@@ -475,6 +482,41 @@ function EventLedger(props) {
     setCollDetail(function (prev) {
       if (!prev || prev.row.reference_id !== txnId) return prev
       var wt = Object.assign({}, prev.row._wt, { checked_by: nowChecked ? profile.id : null, checked_at: nowChecked ? new Date().toISOString() : null })
+      return Object.assign({}, prev, { row: Object.assign({}, prev.row, { _wt: wt }) })
+    })
+  }
+
+  async function toggleExpenseEntered(expenseId) {
+    if (enteringExpId) return
+    setEnteringExpId(expenseId)
+    var { data, error } = await supabase.rpc('fn_toggle_expense_tally_entered', { p_expense_id: expenseId })
+    setEnteringExpId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowEntered = !!data
+    setEntries(function (prev) { return prev.map(function (r) {
+      if (r.entry_type !== 'expense' || Number(r.reference_id) !== expenseId) return r
+      return Object.assign({}, r, {
+        _enteredBy: nowEntered ? profile.id : null,
+        _enteredAt: nowEntered ? new Date().toISOString() : null,
+      })
+    }) })
+  }
+
+  async function toggleCollectionEntered(txnId) {
+    if (enteringTxnId) return
+    setEnteringTxnId(txnId)
+    var { data, error } = await supabase.rpc('fn_toggle_wallet_tally_entered', { p_transaction_id: txnId })
+    setEnteringTxnId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowEntered = !!data
+    setEntries(function (prev) { return prev.map(function (r) {
+      if (r.entry_type !== 'collection' || r.reference_id !== txnId) return r
+      var wt = Object.assign({}, r._wt, { tally_entered_by: nowEntered ? profile.id : null, tally_entered_at: nowEntered ? new Date().toISOString() : null })
+      return Object.assign({}, r, { _wt: wt })
+    }) })
+    setCollDetail(function (prev) {
+      if (!prev || prev.row.reference_id !== txnId) return prev
+      var wt = Object.assign({}, prev.row._wt, { tally_entered_by: nowEntered ? profile.id : null, tally_entered_at: nowEntered ? new Date().toISOString() : null })
       return Object.assign({}, prev, { row: Object.assign({}, prev.row, { _wt: wt }) })
     })
   }
@@ -801,6 +843,7 @@ function EventLedger(props) {
           var isClickable = isExpRow || isCollRow
           var person = rowPerson(e)
           var on = isExpRow ? e._checkedBy : (isCollRow ? e._wt.checked_by : null)
+          var onEntered = isExpRow ? e._enteredBy : (isCollRow ? e._wt.tally_entered_by : null)
           return (
             <div key={e.id} onClick={function () { openRow(e) }}
               className={'px-4 py-3 ' + (isClickable ? 'cursor-pointer active:bg-indigo-50/60' : '')}>
@@ -830,8 +873,19 @@ function EventLedger(props) {
                 {person && <span className="whitespace-nowrap">{person}</span>}
               </div>
 
-              {(isExpRow || isCollRow) && (canMarkChecked || on) && (
-                <span className="mt-2 flex" onClick={function (ev) { ev.stopPropagation() }}>
+              {(isExpRow || isCollRow) && (canMarkChecked || on || canMarkEntered || onEntered) && (
+                <span className="mt-2 flex items-center gap-2" onClick={function (ev) { ev.stopPropagation() }}>
+                  <EnteredMark
+                    entered={!!onEntered}
+                    enteredAt={isExpRow ? e._enteredAt : e._wt.tally_entered_at}
+                    canToggle={canMarkEntered}
+                    canUnenter={onEntered === profile?.id || isSysAdmin}
+                    busy={isExpRow ? enteringExpId === Number(e.reference_id) : enteringTxnId === e.reference_id}
+                    onToggle={function () {
+                      if (isExpRow) toggleExpenseEntered(Number(e.reference_id))
+                      else toggleCollectionEntered(e.reference_id)
+                    }}
+                  />
                   <CheckedStamp
                     variant="stamp"
                     checked={!!on}
@@ -926,10 +980,22 @@ function EventLedger(props) {
                         the Type cell it was a chip among chips. */}
                     {(function () {
                       var on = isExpRow ? e._checkedBy : (isCollRow ? e._wt.checked_by : null)
+                      var onEntered = isExpRow ? e._enteredBy : (isCollRow ? e._wt.tally_entered_by : null)
                       if (!isExpRow && !isCollRow) return null
-                      if (!canMarkChecked && !on) return null
+                      if ((!canMarkChecked && !on) && (!canMarkEntered && !onEntered)) return null
                       return (
-                        <span className="mt-1 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
+                        <span className="mt-1 flex items-center justify-end gap-2" onClick={function (ev) { ev.stopPropagation() }}>
+                          <EnteredMark
+                            entered={!!onEntered}
+                            enteredAt={isExpRow ? e._enteredAt : e._wt.tally_entered_at}
+                            canToggle={canMarkEntered}
+                            canUnenter={onEntered === profile?.id || isSysAdmin}
+                            busy={isExpRow ? enteringExpId === Number(e.reference_id) : enteringTxnId === e.reference_id}
+                            onToggle={function () {
+                              if (isExpRow) toggleExpenseEntered(Number(e.reference_id))
+                              else toggleCollectionEntered(e.reference_id)
+                            }}
+                          />
                           <CheckedStamp
                             variant="stamp"
                             checked={!!on}
@@ -1136,7 +1202,15 @@ function EventLedger(props) {
             looks. The department stays beside the PDF it files. */}
         {(function () {
           var depts = contracts.filter(function (c) { return c.department })
-          var withPdf = contracts.filter(function (c) { return c.pdf_link })[0]
+          // LMS's own pdf_link for a Catering contract opens its menu PDF,
+          // not a contract — there's no separate contract document for
+          // Catering on their end at all (confirmed against the live API).
+          // Prefer a real contract from another department when one's also
+          // on this event; only fall back to Catering's (mislabelled) link
+          // if that's the only pdf_link going.
+          var withPdfList = contracts.filter(function (c) { return c.pdf_link })
+          var withPdf = withPdfList.find(function (c) { return c.department !== 'Catering' }) || withPdfList[0]
+          var isMenuPdf = withPdf && withPdf.department === 'Catering'
           if (depts.length === 0 && !withPdf) return null
           return (
             <div className="mt-2.5 flex items-center justify-between gap-3">
@@ -1157,7 +1231,8 @@ function EventLedger(props) {
               </div>
               {withPdf && (
                 <a href={withPdf.pdf_link} target="_blank" rel="noopener noreferrer"
-                  title="Open the LMS contract PDF" aria-label="Open the LMS contract PDF"
+                  title={isMenuPdf ? 'Open the LMS menu PDF' : 'Open the LMS contract PDF'}
+                  aria-label={isMenuPdf ? 'Open the LMS menu PDF' : 'Open the LMS contract PDF'}
                   className="shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 active:bg-slate-50 transition-colors">
                   <Icon name="fileText" size={16} className="block" />
                 </a>
@@ -1291,13 +1366,18 @@ function EventLedger(props) {
                   this screen edits an event — they arrive from LMS — so the
                   slot carries the one thing it can actually open. */}
               {(function () {
-                var withPdf = contracts.filter(function (c) { return c.pdf_link })[0]
+                // Same preference-over-Catering rule as the card header above —
+                // Catering's pdf_link opens a menu, not a contract.
+                var withPdfList = contracts.filter(function (c) { return c.pdf_link })
+                var withPdf = withPdfList.find(function (c) { return c.department !== 'Catering' }) || withPdfList[0]
                 if (!withPdf) return null
+                var isMenuPdf = withPdf.department === 'Catering'
                 return (
                   <>
                     <span aria-hidden="true" className="w-px h-6 bg-slate-200" />
                     <a href={withPdf.pdf_link} target="_blank" rel="noopener noreferrer"
-                      title="Open the LMS contract PDF" aria-label="Open the LMS contract PDF"
+                      title={isMenuPdf ? 'Open the LMS menu PDF' : 'Open the LMS contract PDF'}
+                      aria-label={isMenuPdf ? 'Open the LMS menu PDF' : 'Open the LMS contract PDF'}
                       className="w-9 h-9 inline-flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:text-indigo-700 hover:border-indigo-300 hover:bg-indigo-50 transition-colors">
                       <Icon name="fileText" size={16} />
                     </a>
@@ -2037,6 +2117,12 @@ function EventLedger(props) {
                   <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Mode</div>
                   <div className="text-[15px] font-bold text-slate-900">{wt.payment_mode || '—'}</div>
                 </div>
+                {wt.bank_payment_type && (
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Payment Type</div>
+                    <div className="text-[15px] font-bold text-slate-900">{wt.bank_payment_type}</div>
+                  </div>
+                )}
                 <div>
                   <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Collected by</div>
                   <div className="text-[15px] font-bold text-slate-900">{r._collectorName || '—'}</div>
@@ -2057,6 +2143,19 @@ function EventLedger(props) {
                   className="block w-full rounded-xl border border-slate-200 overflow-hidden hover:border-indigo-300 transition-colors">
                   <img src={imgUrl} alt="Receipt" className="w-full" />
                 </button>
+              )}
+              {(wt.tally_entered_by || canMarkEntered) && (
+                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                  <span className="text-[12px] font-semibold text-slate-500">Entered in Tally</span>
+                  <EnteredMark
+                    entered={!!wt.tally_entered_by}
+                    enteredAt={wt.tally_entered_at}
+                    canToggle={canMarkEntered}
+                    canUnenter={wt.tally_entered_by === profile?.id || isSysAdmin}
+                    busy={enteringTxnId === r.reference_id}
+                    onToggle={function () { toggleCollectionEntered(r.reference_id) }}
+                  />
+                </div>
               )}
               {(wt.checked_by || canMarkChecked) && (
                 <div className="flex items-center justify-between pt-3 border-t border-slate-100">

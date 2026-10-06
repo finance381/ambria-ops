@@ -162,6 +162,7 @@ import { pushBack, goBack } from '../../lib/backNav'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import EnteredMark from '../../components/ui/EnteredMark'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { avatarTint } from '../../lib/avatarTint'
@@ -304,6 +305,10 @@ var TXN_SORTS = {
 // the ledger_entries row for that specific payment (proof images, deduction reason, etc.)
 var PAYMENT_REF_TYPES = ['vendor_payment', 'vendor_deduction', 'salary_payment', 'salary_adjustment']
 
+// A bank collection's specific receiving channel — distinct from the
+// cash/bank split, which is already its own field.
+var BANK_PAYMENT_TYPES = ['UPI', 'NEFT', 'HDFC Credit Card Machine', 'Paytm Credit Card Machine', 'Cheque']
+
 // expenses.status — mirrors Ledgers.jsx's drill-view badges so an expense's
 // acknowledgment state is visible here too, not just after drilling into the ledger.
 var EXP_STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: 'Acknowledged', deducted: 'Deducted' }
@@ -314,16 +319,19 @@ var EXP_STATUS_COLORS = {
   deducted: 'bg-indigo-100 text-indigo-700',
 }
 
-function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange, onOpenExpense, onNavigateToExpenses, inAdmin }) {
+function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, onClose, onBalanceChange, onOpenExpense, onNavigateToExpenses, inAdmin, deepLinkTransferId }) {
   var permsNew = (profile && profile.permsNew) || []
   var canCreateTentativeEvent = hasPerm(permsNew, 'events.list.create_tentative')
   var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
+  var canMarkEntered = hasPerm(permsNew, 'finance.wallet.mark_entered')
   // Cancelling/rejecting a transfer used to be open to either party to it;
   // now admin/auditor or an explicit grant only — being the sender or
   // recipient no longer qualifies on its own.
   var canCancelTransfer = isAdmin || isAuditor || hasPerm(permsNew, 'finance.wallet.cancel_transfer')
   var [checkingTxnId, setCheckingTxnId] = useState(null)
   var [checkingExpId, setCheckingExpId] = useState(null)
+  var [enteringTxnId, setEnteringTxnId] = useState(null)
+  var [enteringExpId, setEnteringExpId] = useState(null)
   // Which transaction rows have their allocation breakdown expanded —
   // collapsed by default so the History list fits more rows on screen.
   var [expandedTxnIds, setExpandedTxnIds] = useState({})
@@ -466,6 +474,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (collectEventId) scrollToTopOf(collectBalanceRef.current)
   }, [collectEventId])
   var [collectMode, setCollectMode] = useState('')
+  var [collectBankPaymentType, setCollectBankPaymentType] = useState('')
   var [collectBalance, setCollectBalance] = useState(null)
   var [collectBalanceLoading, setCollectBalanceLoading] = useState(false)
   var [showActualCash, setShowActualCash] = useState(false)
@@ -540,6 +549,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setWalletView('dashboard')
     loadRecentTxns(myWallet)
   }, [myWallet, isAdmin, isAuditor])
+
+  // A transfer notification names a transfer, not a screen — it always means
+  // "my own wallet, the transactions list, scrolled to this one" regardless
+  // of role, so this doesn't branch on isAdmin the way the plain myWallet
+  // effect above does.
+  useEffect(function () {
+    if (!deepLinkTransferId || !myWallet) return
+    setWalletProfiles(function (prev) { var n = Object.assign({}, prev); n[profile.id] = profile; return n })
+    openWalletTxns(myWallet, null, null, 'transfer')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkTransferId, myWallet])
 
   function refreshBalance() {
     supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
@@ -637,7 +657,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (expRefIds.length > 0) {
       var expIdsNum = expRefIds.map(function (x) { return Number(x) }).filter(function (n) { return !isNaN(n) })
       var { data: eData } = await supabase.from('expenses')
-        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, checked_by, checked_at, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+        .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, checked_by, checked_at, tally_entered_by, tally_entered_at, deleted_at, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
         .in('id', expIdsNum)
       var eMap = {}
       var evIds = {}
@@ -781,7 +801,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
     try {
       var query = supabase.from('wallet_transactions')
-        .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode, cancel_wallet_tx_id, cancelled_at, cancelled_by, cancelled_reason, checked_by, checked_at')
+        .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode, bank_payment_type, cancel_wallet_tx_id, cancelled_at, cancelled_by, cancelled_reason, checked_by, checked_at, tally_entered_by, tally_entered_at')
         .eq('wallet_id', wid)
         .order('created_at', { ascending: false })
         .limit(500)
@@ -791,11 +811,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       if (f) query = query.gte('created_at', f + 'T00:00:00')
       if (t) query = query.lte('created_at', t + 'T23:59:59')
       if (rt) query = query.eq('reference_type', rt)
-      var { data } = await query
+      var { data, error } = await query
       if (!current()) return
+      if (error) { alert('Failed to load transactions: ' + error.message); setTxnsLoading(false); return }
       var txns = data || []
       var cpIds = {}
-      txns.forEach(function (t) { if (t.checked_by) cpIds[t.checked_by] = true })
+      txns.forEach(function (t) { if (t.checked_by) cpIds[t.checked_by] = true; if (t.tally_entered_by) cpIds[t.tally_entered_by] = true })
 
       var tRefIds = txns.filter(function (t) { return t.reference_type === 'transfer' && t.reference_id }).map(function (t) { return t.reference_id })
       var expRefIds = txns.filter(function (tt) {
@@ -819,7 +840,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           : none,
         expIdsNum.length > 0
           ? supabase.from('expenses')
-              .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, acknowledged_by, acknowledged_at, deleted_at, receipt_path, receipt_paths, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+              .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, checked_by, checked_at, tally_entered_by, tally_entered_at, acknowledged_by, acknowledged_at, deleted_at, receipt_path, receipt_paths, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
               .in('id', expIdsNum)
           : none,
         // Matched on ref_id, not id — see openPaymentDetail for why.
@@ -865,6 +886,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         eMap[e.id] = e
         if (e.event_id) evIds[e.event_id] = true
         if (e.checked_by) cpIds[e.checked_by] = true
+        if (e.tally_entered_by) cpIds[e.tally_entered_by] = true
         if (e.acknowledged_by) cpIds[e.acknowledged_by] = true
       })
       setExpenseRefs(eMap)
@@ -1178,12 +1200,59 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     }
   }
 
+  async function toggleWalletEntered(t) {
+    if (enteringTxnId) return
+    setEnteringTxnId(t.id)
+    var { data, error } = await supabase.rpc('fn_toggle_wallet_tally_entered', { p_transaction_id: t.id })
+    setEnteringTxnId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowEntered = !!data
+    setWalletTxns(function (prev) { return prev.map(function (x) {
+      if (x.id !== t.id) return x
+      return Object.assign({}, x, {
+        tally_entered_by: nowEntered ? profile.id : null,
+        tally_entered_at: nowEntered ? new Date().toISOString() : null,
+      })
+    }) })
+    if (nowEntered && profile && profile.id) {
+      setWalletProfiles(function (prev) {
+        if (prev[profile.id]) return prev
+        var next = Object.assign({}, prev); next[profile.id] = { id: profile.id, name: profile.name }; return next
+      })
+    }
+  }
+
+  async function toggleExpenseEntered(expId) {
+    if (enteringExpId) return
+    setEnteringExpId(expId)
+    var { data, error } = await supabase.rpc('fn_toggle_expense_tally_entered', { p_expense_id: expId })
+    setEnteringExpId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowEntered = !!data
+    setExpenseRefs(function (prev) {
+      if (!prev[expId]) return prev
+      var next = Object.assign({}, prev)
+      next[expId] = Object.assign({}, next[expId], {
+        tally_entered_by: nowEntered ? profile.id : null,
+        tally_entered_at: nowEntered ? new Date().toISOString() : null,
+      })
+      return next
+    })
+    if (nowEntered && profile && profile.id) {
+      setWalletProfiles(function (prev) {
+        if (prev[profile.id]) return prev
+        var next = Object.assign({}, prev); next[profile.id] = { id: profile.id, name: profile.name }; return next
+      })
+    }
+  }
+
   async function openCollectModal() {
     setCollectModal(true)
     setCollectDate('')
     setCollectEvents([])
     setCollectEventId('')
     setCollectMode('')
+    setCollectBankPaymentType('')
     setCollectBalance(null)
     setCollectAmount('')
     setCollectDesc('')
@@ -1200,6 +1269,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       .select('id, event_name, function_date, venue_name, client_name, session, contact_person, contact_number, secondary_contact, created_user_name, department, contract_no, is_tentative')
       .eq('function_date', dateStr)
       .is('merged_into_id', null)
+      .is('lms_cancelled_at', null)
       .order('event_name')
     setCollectEvents(data || [])
     setCollectFunctionsLoading(false)
@@ -1569,7 +1639,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </div>
             <div>
               <p className="text-[10px] uppercase text-gray-500">Payment</p>
-              <p className="font-medium text-gray-800">{t.payment_mode ? t.payment_mode.toUpperCase() : '—'}</p>
+              <p className="font-medium text-gray-800">
+                {t.payment_mode ? t.payment_mode.toUpperCase() : '—'}
+                {t.bank_payment_type ? ' · ' + t.bank_payment_type : ''}
+              </p>
             </div>
             {t.receipt_no && (
               <div>
@@ -1766,6 +1839,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!collectMode) { alert('Select Cash or Bank'); return }
     if (!collectAmount || Number(collectAmount) <= 0) { alert('Enter amount'); return }
     if (collectMode === 'bank' && !collectImage) { alert('Receipt photo is required for bank collections'); return }
+    if (collectMode === 'bank' && !collectBankPaymentType) { alert('Select a payment type'); return }
     setCollectSaving(true)
     var amountRupees = Math.round(Number(collectAmount) * 100)
     var imagePath = null
@@ -1784,7 +1858,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       p_payment_mode: collectMode,
       p_amount_paise: amountRupees,
       p_description: desc,
-      p_receipt_path: imagePath
+      p_receipt_path: imagePath,
+      p_bank_payment_type: collectMode === 'bank' ? collectBankPaymentType : null
     })
     if (error) { alert('Collection failed: ' + error.message); setCollectSaving(false); return }
     if (data && data.over_agreed) {
@@ -2287,7 +2362,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var colCashP = collectBalance ? Number(collectBalance.collected_cash_paise || 0) : 0
     var colBankP = collectBalance ? Number(collectBalance.collected_bank_paise || 0) : 0
     var taxP = collectBalance ? Number(collectBalance.tax_amount_paise || 0) : 0
-    var canSubmit = collectEventId && collectMode && collectAmount && Number(collectAmount) > 0 && (collectMode === 'cash' || collectImage) && !collectSaving
+    var canSubmit = collectEventId && collectMode && collectAmount && Number(collectAmount) > 0 && (collectMode === 'cash' || collectImage) && (collectMode === 'cash' || collectBankPaymentType) && !collectSaving
     return (
       <BottomSheet open={true} onClose={function () { setCollectModal(false) }} title="Collect Payment">
         <div className="space-y-4">
@@ -2430,7 +2505,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">3. Payment Mode</label>
               <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={function () { setCollectMode('cash') }}
+                <button type="button" onClick={function () { setCollectMode('cash'); setCollectBankPaymentType('') }}
                   aria-pressed={collectMode === 'cash'}
                   className={"h-12 inline-flex items-center justify-center gap-2 rounded-xl border text-[14px] font-bold transition-colors " +
                     (collectMode === 'cash' ? "border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300")}>
@@ -2448,9 +2523,21 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </div>
           )}
 
+          {collectEventId && collectMode === 'bank' && (
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">4. Payment Type</label>
+              <select value={collectBankPaymentType} onChange={function (e) { setCollectBankPaymentType(e.target.value) }}
+                className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                style={{ fontSize: '16px' }}>
+                <option value="">Select…</option>
+                {BANK_PAYMENT_TYPES.map(function (t) { return <option key={t} value={t}>{t}</option> })}
+              </select>
+            </div>
+          )}
+
           {collectEventId && (
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">4. Amount Received</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">{collectMode === 'bank' ? '5' : '4'}. Amount Received</label>
               <input type="number" min="1" step="any" inputMode="decimal" value={collectAmount}
                 onChange={function (e) { setCollectAmount(e.target.value) }}
                 placeholder="0" className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -2460,7 +2547,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
           {collectEventId && (
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">5. Description</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">{collectMode === 'bank' ? '6' : '5'}. Description</label>
               <VoiceInput type="text" value={collectDesc} onChange={function (e) { setCollectDesc(e.target.value) }}
                 placeholder="e.g. Advance payment, Final settlement..."
                 maxLength="300" className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -2469,7 +2556,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
           {collectEventId && (
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">6. Receipt Photo {collectMode === 'bank' && <span className="text-red-500">*</span>}{collectMode === 'cash' && <span className="text-gray-400 normal-case">(optional)</span>}</label>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{collectMode === 'bank' ? '7' : '6'}. Receipt Photo {collectMode === 'bank' && <span className="text-red-500">*</span>}{collectMode === 'cash' && <span className="text-gray-400 normal-case">(optional)</span>}</label>
               {collectImage ? (
                 <div className="flex items-center gap-2 px-3 py-2.5 border border-green-300 bg-green-50 rounded-lg">
                   <Icon name="checkCircle" size={16} className="shrink-0 text-emerald-600" />
@@ -3076,9 +3163,18 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         if (isCancelled) return null
                         var chk = isExpRow ? xp : t
                         if (!chk) return null
-                        if (!canMarkChecked && !chk.checked_by) return null
+                        if ((!canMarkChecked && !chk.checked_by) && (!canMarkEntered && !chk.tally_entered_by)) return null
                         return (
-                          <span className="mt-1 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
+                          <span className="mt-1 flex items-center justify-end gap-1.5" onClick={function (ev) { ev.stopPropagation() }}>
+                            <EnteredMark
+                              entered={!!chk.tally_entered_by}
+                              enteredByName={chk.tally_entered_by && walletProfiles[chk.tally_entered_by] ? walletProfiles[chk.tally_entered_by].name : null}
+                              enteredAt={chk.tally_entered_at}
+                              canToggle={canMarkEntered}
+                              canUnenter={chk.tally_entered_by === profile.id || isAdmin || isAuditor}
+                              busy={isExpRow ? enteringExpId === t.reference_id : enteringTxnId === t.id}
+                              onToggle={function () { if (isExpRow) toggleExpenseEntered(t.reference_id); else toggleWalletEntered(t) }}
+                            />
                             <CheckedStamp
                               variant="stamp"
                               checked={!!chk.checked_by}
@@ -3727,10 +3823,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var rowBorderClass = isCancelled
       ? "border-gray-200 opacity-50"
       : (t.status === 'pending' ? "border-amber-300 bg-amber-50/30" : "border-gray-200")
+    // A notification's deep link names the transfer it's about, not this
+    // specific wallet_transactions row — the sender's debit and the
+    // recipient's credit are two different rows sharing one reference_id,
+    // so either side's own row matches and gets the same visual landing spot.
+    var isDeepLinkTarget = t.reference_type === 'transfer' && deepLinkTransferId && t.reference_id === deepLinkTransferId
     return (
       <div key={t.id}
+        ref={isDeepLinkTarget ? function (el) { if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }) } : null}
         onClick={handleRowClick}
-        className={"bg-white border rounded-xl px-3.5 py-3 " + rowBorderClass + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
+        className={"bg-white border rounded-xl px-3.5 py-3 " + (isDeepLinkTarget ? "border-indigo-400 ring-2 ring-indigo-200 bg-indigo-50/40" : rowBorderClass) + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
         {/* justify-between was never doing the split — the left column is
             flex-1 and already pushes the figures right — so the row can simply
             gain a third child at the front. */}
@@ -3774,7 +3876,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               </p>
               {t.reference_type === 'collection' && t.payment_mode && (
                 <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
-                  {t.payment_mode}
+                  {t.payment_mode}{t.bank_payment_type ? ' · ' + t.bank_payment_type : ''}
                 </span>
               )}
               {t.status === 'pending' && (
@@ -4105,36 +4207,58 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               // Nothing is drawn for someone who cannot mark a row and is
               // looking at one nobody has marked — CheckedStamp returns null
               // there, and an empty wrapper would still spend its margin.
-              if (!canMarkChecked && !chk.checked_by) return null
+              if ((!canMarkChecked && !chk.checked_by) && (!canMarkEntered && !chk.tally_entered_by)) return null
               return (
               /* The artwork, not the chip: a chip beside an amount reads as
                  one more label, and this is a verdict on the figure above it.
                  Unchecked it stays the small dashed prompt either way — a
                  160px empty circle asking to be pressed would be a lot of
                  furniture for an action most rows never take. */
-              <div className="mt-2 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
+              <div className="mt-2 flex items-center justify-end gap-2" onClick={function (ev) { ev.stopPropagation() }}>
                 {isExpRow ? (
-                  <CheckedStamp
-                    variant="stamp"
-                    checked={!!expenseRefs[t.reference_id].checked_by}
-                    checkerName={expenseRefs[t.reference_id].checked_by && walletProfiles[expenseRefs[t.reference_id].checked_by] ? walletProfiles[expenseRefs[t.reference_id].checked_by].name : null}
-                    checkedAt={expenseRefs[t.reference_id].checked_at}
-                    canToggle={canMarkChecked}
-                    canUncheck={expenseRefs[t.reference_id].checked_by === profile.id || isAdmin || isAuditor}
-                    busy={checkingExpId === t.reference_id}
-                    onToggle={function (ev) { ev.stopPropagation(); toggleExpenseCheck(t.reference_id) }}
-                  />
+                  <>
+                    <EnteredMark
+                      entered={!!expenseRefs[t.reference_id].tally_entered_by}
+                      enteredByName={expenseRefs[t.reference_id].tally_entered_by && walletProfiles[expenseRefs[t.reference_id].tally_entered_by] ? walletProfiles[expenseRefs[t.reference_id].tally_entered_by].name : null}
+                      enteredAt={expenseRefs[t.reference_id].tally_entered_at}
+                      canToggle={canMarkEntered}
+                      canUnenter={expenseRefs[t.reference_id].tally_entered_by === profile.id || isAdmin || isAuditor}
+                      busy={enteringExpId === t.reference_id}
+                      onToggle={function (ev) { ev.stopPropagation(); toggleExpenseEntered(t.reference_id) }}
+                    />
+                    <CheckedStamp
+                      variant="stamp"
+                      checked={!!expenseRefs[t.reference_id].checked_by}
+                      checkerName={expenseRefs[t.reference_id].checked_by && walletProfiles[expenseRefs[t.reference_id].checked_by] ? walletProfiles[expenseRefs[t.reference_id].checked_by].name : null}
+                      checkedAt={expenseRefs[t.reference_id].checked_at}
+                      canToggle={canMarkChecked}
+                      canUncheck={expenseRefs[t.reference_id].checked_by === profile.id || isAdmin || isAuditor}
+                      busy={checkingExpId === t.reference_id}
+                      onToggle={function (ev) { ev.stopPropagation(); toggleExpenseCheck(t.reference_id) }}
+                    />
+                  </>
                 ) : (
-                  <CheckedStamp
-                    variant="stamp"
-                    checked={!!t.checked_by}
-                    checkerName={t.checked_by && walletProfiles[t.checked_by] ? walletProfiles[t.checked_by].name : null}
-                    checkedAt={t.checked_at}
-                    canToggle={canMarkChecked}
-                    canUncheck={t.checked_by === profile.id || isAdmin || isAuditor}
-                    busy={checkingTxnId === t.id}
-                    onToggle={function (ev) { ev.stopPropagation(); toggleWalletCheck(t) }}
-                  />
+                  <>
+                    <EnteredMark
+                      entered={!!t.tally_entered_by}
+                      enteredByName={t.tally_entered_by && walletProfiles[t.tally_entered_by] ? walletProfiles[t.tally_entered_by].name : null}
+                      enteredAt={t.tally_entered_at}
+                      canToggle={canMarkEntered}
+                      canUnenter={t.tally_entered_by === profile.id || isAdmin || isAuditor}
+                      busy={enteringTxnId === t.id}
+                      onToggle={function (ev) { ev.stopPropagation(); toggleWalletEntered(t) }}
+                    />
+                    <CheckedStamp
+                      variant="stamp"
+                      checked={!!t.checked_by}
+                      checkerName={t.checked_by && walletProfiles[t.checked_by] ? walletProfiles[t.checked_by].name : null}
+                      checkedAt={t.checked_at}
+                      canToggle={canMarkChecked}
+                      canUncheck={t.checked_by === profile.id || isAdmin || isAuditor}
+                      busy={checkingTxnId === t.id}
+                      onToggle={function (ev) { ev.stopPropagation(); toggleWalletCheck(t) }}
+                    />
+                  </>
                 )}
               </div>
               )

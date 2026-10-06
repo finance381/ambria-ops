@@ -14,11 +14,13 @@ import { hasPerm } from '../../lib/permissions'
 var Inventory = lazy(function () { return import('../../modules/inventory/Inventory') })
 var InventoryForm = lazy(function () { return import('../../modules/inventory/InventoryForm') })
 var Events = lazy(function () { return import('../../modules/events/Events') })
+var ContractList = lazy(function () { return import('../../modules/events/ContractList') })
 var ExtraPlateCollect = lazy(function () { return import('../../modules/events/ExtraPlateCollect') })
 var AdminReview = lazy(function () { return import('../../modules/categories/AdminReview') })
 var DeptReview = lazy(function () { return import('../../modules/categories/DeptReview') })
 var QuoteCalculator = lazy(function () { return import('../../modules/quote/QuoteCalculator') })
 var Requisitions = lazy(function () { return import('../../modules/requisitions/Requisitions') })
+var StoreRequisitions = lazy(function () { return import('../../modules/requisitions/StoreRequisitions') })
 var Purchase = lazy(function () { return import('../../modules/purchase/Purchase') })
 var Expenses = lazy(function () { return import('../../modules/expenses/Expenses') })
 var Ledgers = lazy(function () { return import('../../modules/expenses/Ledgers') })
@@ -89,6 +91,7 @@ var GROUPS = [
   {
     key: 'events', label: 'Events', icon: 'calendar', items: [
       { key: 'events.list', label: 'Events', icon: 'calendar', tab: 'events' },
+      { key: 'events.list', id: 'events.contracts', label: 'Contracts', icon: 'fileText', tab: 'contracts', noBadge: true },
       { key: 'events.extra_plate_collect', label: 'Extra Plates', icon: 'utensils', tab: 'extra_plates' },
     ]
   },
@@ -106,6 +109,7 @@ var GROUPS = [
   {
     key: 'procurement', label: 'Procurement', icon: 'cart', items: [
       { key: 'procurement.requisitions', label: 'Requisitions', icon: 'inbox', tab: 'requisitions' },
+      { key: 'procurement.requisitions', id: 'procurement.storereq', label: 'Store Requisition', icon: 'box', tab: 'storereq', noBadge: true },
       { key: 'procurement.purchase_orders', label: 'Purchase Orders', icon: 'cart', tab: 'purchase' },
       { key: 'procurement.vendors', label: 'Vendors', icon: 'building', tab: 'vendors' },
     ]
@@ -182,6 +186,8 @@ function Shell({ profile, onSignOut }) {
   // Set by navigateToExpenses when a ledger screen sends the user to a specific
   // expense's edit/Raise JV view instead of just the Expenses tab.
   var [deepLinkExpense, setDeepLinkExpense] = useState(null)
+  var [deepLinkTransferId, setDeepLinkTransferId] = useState(null)
+  var [deepLinkContractId, setDeepLinkContractId] = useState(null)
   var [menuOpen, setMenuOpen] = useState(false)
   var [menuPos, setMenuPos] = useState(null)
   var menuBtnRef = useRef(null)
@@ -291,16 +297,22 @@ function Shell({ profile, onSignOut }) {
       var fromGroup = activeGroup, fromTab = tab, fromSub = subTab
       pushBack(function () { setActiveGroup(fromGroup); setTab(fromTab); setSubTab(fromSub) })
       setActiveGroup('broadcast'); setTab('broadcast'); setSubTab('inbox')
-    } else if (link === 'wallet') {
+    } else if (link === 'wallet' || (link && link.indexOf('wallet:') === 0)) {
       var fromGroup2 = activeGroup, fromTab2 = tab, fromSub2 = subTab
       pushBack(function () { setActiveGroup(fromGroup2); setTab(fromTab2); setSubTab(fromSub2) })
       setActiveGroup('expenses'); setTab('wallet'); setSubTab(null)
+      setDeepLinkTransferId(link.indexOf('wallet:') === 0 ? link.slice('wallet:'.length) : null)
     } else if (link && link.indexOf('expense:') === 0) {
       navigateToExpenses(link.slice('expense:'.length), null)
     } else if (link === 'events') {
       var fromGroup3 = activeGroup, fromTab3 = tab, fromSub3 = subTab
       pushBack(function () { setActiveGroup(fromGroup3); setTab(fromTab3); setSubTab(fromSub3) })
       setActiveGroup('events'); setTab('events'); setSubTab(null)
+    } else if (link && link.indexOf('contracts:') === 0) {
+      var fromGroup4 = activeGroup, fromTab4 = tab, fromSub4 = subTab
+      pushBack(function () { setActiveGroup(fromGroup4); setTab(fromTab4); setSubTab(fromSub4) })
+      setActiveGroup('events'); setTab('contracts'); setSubTab(null)
+      setDeepLinkContractId(link.slice('contracts:'.length))
     }
   }
 
@@ -815,6 +827,9 @@ function Shell({ profile, onSignOut }) {
         {tab === 'events' && (
           <Events profile={profile} />
         )}
+        {tab === 'contracts' && (
+          <ContractList profile={profile} deepLinkContractId={deepLinkContractId} />
+        )}
         {tab === 'extra_plates' && (
           <ExtraPlateCollect profile={profile} />
         )}
@@ -836,8 +851,11 @@ function Shell({ profile, onSignOut }) {
         {tab === 'requisitions' && (
           <Requisitions profile={profile} onBack={goBack} />
         )}
+        {tab === 'storereq' && (
+          <StoreRequisitions profile={profile} />
+        )}
         {tab === 'wallet' && (
-          <Wallet profile={profile} onNavigateToExpenses={navigateToExpenses} />
+          <Wallet profile={profile} onNavigateToExpenses={navigateToExpenses} deepLinkTransferId={deepLinkTransferId} />
         )}
         {tab === 'expenses' && (
           <Expenses profile={profile} deepLinkExpense={deepLinkExpense} onDeepLinkHandled={function () { setDeepLinkExpense(null) }} />

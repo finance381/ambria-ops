@@ -5,13 +5,14 @@ import { pushBack } from '../../lib/backNav'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { openOrSharePdf } from '../../lib/pdfOutput'
 import { plainParticularsLines, plainDateLines, makeStatementCellHooks } from '../../lib/pdfStatementTable'
-import { hasPerm } from '../../lib/permissions'
+import { hasPerm, isPrivilegedRole } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import SearchField from '../../components/ui/SearchField'
 import Icon, { glyphForLabel } from '../../components/ui/Icon'
 import ledgerBg from '../../assets/ledger-bg.webp'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import EnteredMark from '../../components/ui/EnteredMark'
 import BottomSheet from '../../components/ui/BottomSheet'
 
 var STATUS_LABELS = { recorded: 'Recorded', flagged: 'Resubmit', acknowledged: 'Acknowledged', deducted: 'Deducted' }
@@ -296,9 +297,23 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.expense')
   var isSysAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
+  var canMarkEntered = hasPerm(profile?.permsNew, 'finance.wallet.mark_entered')
   var [checkingExpId, setCheckingExpId] = useState(null)
-  var scopeDeptIds = isAdmin ? null : (profile?.event_dept_ids || [])
-  var hasScope = !isAdmin && scopeDeptIds && scopeDeptIds.length > 0
+  var [enteringExpId, setEnteringExpId] = useState(null)
+  // 'finance.ledgers.expense' is the one permission that both opens this
+  // screen and (previously) stood in for "isAdmin" here, so every user who
+  // could see the page at all also tripped the admin bypass and no scoping
+  // ever applied. Row-level restriction has to key off the role plus the
+  // per-user data scope chosen in Users.jsx > Expense tab instead.
+  var isPrivileged = isPrivilegedRole(profile)
+  var ledgerScope = (profile?.dataScopes && profile.dataScopes['finance.ledgers.expense']) || 'all'
+  var scopeUserId = !isPrivileged && ledgerScope === 'own' ? profile?.id : null
+  var scopeExpenseTypeIds = !isPrivileged && ledgerScope === 'own_expense_type' ? (profile?.expense_type_ids || []) : null
+  function applyLedgerScope(q) {
+    if (scopeUserId) q = q.eq('user_id', scopeUserId)
+    if (scopeExpenseTypeIds) q = q.in('expense_type_id', scopeExpenseTypeIds)
+    return q
+  }
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadDrill(false) }, onNavigateToExpenses)
 
   // Date state
@@ -401,7 +416,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   // The scope as one string, so both effects can be compared on it. An array
   // in a dependency list is a new array every render; joined, it changes only
   // when the scope does.
-  var scopeKey = (scopeDeptIds || []).join(',')
+  var scopeKey = ledgerScope + ':' + (scopeUserId || '') + ':' + (scopeExpenseTypeIds || []).join(',')
 
   useEffect(function () {
     isFirstLoad.current = true
@@ -492,7 +507,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         .gte('expense_date', dateFrom)
         .lte('expense_date', dateTo)
         .range(from, from + pageSize - 1)
-      if (hasScope) q = q.in('department_id', scopeDeptIds)
+      q = applyLedgerScope(q)
       if (userFilter) q = q.eq('user_id', userFilter)
       if (venueFilter) q = q.eq('venue_id', Number(venueFilter))
       var page = await q
@@ -592,7 +607,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         .order('expense_date', { ascending: false })
         .order('created_at', { ascending: false })
         .range(from, from + pageSize - 1)
-      if (hasScope) q = q.in('department_id', scopeDeptIds)
+      q = applyLedgerScope(q)
       if (userFilter) q = q.eq('user_id', userFilter)
       if (venueFilter) q = q.eq('venue_id', Number(venueFilter))
       if (filter) {
@@ -670,7 +685,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       .order('expense_date', { ascending: false })
       .order('created_at', { ascending: false })
       .range(offset, offset + DRILL_LIMIT)
-    if (hasScope) q = q.in('department_id', scopeDeptIds)
+    q = applyLedgerScope(q)
     if (userFilter) q = q.eq('user_id', userFilter)
     if (venueFilter) q = q.eq('venue_id', Number(venueFilter))
     if (drillGroup.deptId) q = q.eq('department_id', drillGroup.deptId)
@@ -707,7 +722,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     var metaMap = {}
     if (rows.length > 0) {
       var eIds = Array.from(new Set(rows.map(function (r) { return r.expense_id }).filter(function (v) { return v != null })))
-      var cols = 'id, checked_by, checked_at' + (extraFields.length > 0 ? ', metadata' : '')
+      var cols = 'id, checked_by, checked_at, tally_entered_by, tally_entered_at' + (extraFields.length > 0 ? ', metadata' : '')
       var expRes = await supabase.from('expenses').select(cols).in('id', eIds)
       if (!current()) return
       var checkMap = {}
@@ -717,7 +732,10 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       })
       rows = rows.map(function (r) {
         var c = checkMap[r.expense_id]
-        return Object.assign({}, r, { _checkedBy: c ? c.checked_by : null, _checkedAt: c ? c.checked_at : null })
+        return Object.assign({}, r, {
+          _checkedBy: c ? c.checked_by : null, _checkedAt: c ? c.checked_at : null,
+          _enteredBy: c ? c.tally_entered_by : null, _enteredAt: c ? c.tally_entered_at : null,
+        })
       })
     }
 
@@ -802,6 +820,22 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       return Object.assign({}, r, {
         _checkedBy: nowChecked ? profile.id : null,
         _checkedAt: nowChecked ? new Date().toISOString() : null,
+      })
+    }) })
+  }
+
+  async function toggleExpenseEntered(expenseId) {
+    if (enteringExpId) return
+    setEnteringExpId(expenseId)
+    var { data, error } = await supabase.rpc('fn_toggle_expense_tally_entered', { p_expense_id: expenseId })
+    setEnteringExpId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowEntered = !!data
+    setDrillRows(function (prev) { return prev.map(function (r) {
+      if (r.expense_id !== expenseId) return r
+      return Object.assign({}, r, {
+        _enteredBy: nowEntered ? profile.id : null,
+        _enteredAt: nowEntered ? new Date().toISOString() : null,
       })
     }) })
   }
@@ -1253,6 +1287,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   if (drillGroup) {
     // Whether this list needs a column for the stamp at all.
     var anyDrillChecked = drillRows.some(function (r) { return !!r._checkedBy })
+    var anyDrillEntered = drillRows.some(function (r) { return !!r._enteredBy })
     return (
       <div className="space-y-4">
         <LedgerBackdrop inAdmin={inAdmin} />
@@ -1504,6 +1539,19 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                           stamp will occupy, rather than up among the status
                           chips where it read as one more label. Nothing is
                           drawn for someone who cannot mark a row. */}
+                      {(anyDrillEntered || canMarkEntered) && (
+                        <span className="flex items-center justify-center"
+                          onClick={function (ev) { ev.stopPropagation() }}>
+                          <EnteredMark
+                            entered={!!r._enteredBy}
+                            enteredAt={r._enteredAt}
+                            canToggle={canMarkEntered}
+                            canUnenter={r._enteredBy === profile?.id || isSysAdmin}
+                            busy={enteringExpId === r.expense_id}
+                            onToggle={function () { toggleExpenseEntered(r.expense_id) }}
+                          />
+                        </span>
+                      )}
                       {(anyDrillChecked || canMarkChecked) && (
                         <span className="flex items-center justify-center"
                           onClick={function (ev) { ev.stopPropagation() }}>

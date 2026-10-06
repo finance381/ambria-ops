@@ -3,6 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints, titleCase } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { useRealtime } from '../../lib/useRealtime'
+import { hasPerm } from '../../lib/permissions'
+import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal'
 import Modal from '../../components/ui/Modal'
 import InventoryForm from '../inventory/InventoryForm'
 
@@ -24,6 +26,12 @@ function ItemReceipts({ profile, onCountChange }) {
   var [dateTo, setDateTo] = useState('')
   var [matchState, setMatchState] = useState('') // '' | 'matched' | 'new'
   var [submitterOptions, setSubmitterOptions] = useState([])
+
+  // "View expense" from the Receive Item modal — same shared overlay every
+  // ledger tab already opens an expense into, not a real new tab (this app
+  // has no URL routing to deep-link one open to).
+  var isAdmin = hasPerm(profile?.permsNew, 'finance.expenses.approve')
+  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadReceipts(false) })
 
   // Debounce search
   useEffect(function () {
@@ -193,13 +201,15 @@ function ItemReceipts({ profile, onCountChange }) {
       {activeReceipt && (
         <ReceiveModal receipt={activeReceipt} profile={profile}
           onClose={function () { setActiveReceipt(null) }}
-          onDone={handleReceiveDone} />
+          onDone={handleReceiveDone}
+          onOpenExpense={openExpenseDetail} />
       )}
+      {expenseDetailModal}
     </div>
   )
 }
 
-function ReceiveModal({ receipt, profile, onClose, onDone }) {
+function ReceiveModal({ receipt, profile, onClose, onDone, onOpenExpense }) {
   var ir = receipt.item_receipt || {}
   var [mode, setMode] = useState('match')
   var [saving, setSaving] = useState(false)
@@ -335,6 +345,12 @@ function ReceiveModal({ receipt, profile, onClose, onDone }) {
               <p className="text-[11px] text-gray-400 uppercase">Description</p>
               <p className="text-xs text-gray-700 mt-0.5">{receipt.description}</p>
             </div>
+          )}
+          {onOpenExpense && (
+            <button type="button" onClick={function () { onOpenExpense(receipt.id) }}
+              className="mt-2 pt-2 border-t border-gray-200 w-full text-left text-xs font-bold text-indigo-600 hover:text-indigo-800">
+              View expense detail →
+            </button>
           )}
         </div>
 
