@@ -7,9 +7,11 @@ import EventDatePicker from '../../components/ui/EventDatePicker'
 import VoiceInput from '../../components/ui/VoiceInput'
 import { hasPerm } from '../../lib/permissions'
 import { openOrSharePdf } from '../../lib/pdfOutput'
+import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
 import CameraCapture from '../../components/ui/CameraCapture'
 import Icon from '../../components/ui/Icon'
 import Modal from '../../components/ui/Modal'
+import platesBg from '../../assets/extra-plates-bg.webp'
 
 var BANK_SUB_MODES = [
   { value: 'upi', label: 'UPI' },
@@ -31,7 +33,44 @@ var SUB_MODE_LABEL = {
   hdfc_card_machine: 'HDFC Card'
 }
 
-function ExtraPlateCollect({ profile, onBalanceChange }) {
+// The ground behind Extra Plates on the phone: the photograph of a laid
+// table (dark stone, gold-rimmed plates in the corners, leaves at the edge)
+// filling the screen behind the cards, the way the Event ledger and the
+// Item List carry theirs. The wall colour is the photo's own mid-tone, so
+// an overscroll or a slow load shows the same ground rather than a white
+// flash. Phone only; the admin console keeps its plain page.
+var PLATES_WALL = '#3F3D30'
+
+function PlatesBackdrop() {
+  useEffect(function () {
+    var b = document.body
+    var h = document.documentElement
+    var prevBg = b.style.backgroundColor
+    var prevHtmlBg = h.style.backgroundColor
+    var prevOver = b.style.overscrollBehaviorY
+    b.style.backgroundColor = PLATES_WALL
+    h.style.backgroundColor = PLATES_WALL
+    b.style.overscrollBehaviorY = 'none'
+    return function () {
+      b.style.backgroundColor = prevBg
+      h.style.backgroundColor = prevHtmlBg
+      b.style.overscrollBehaviorY = prevOver
+    }
+  }, [])
+  return (
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10"
+      style={{
+        backgroundColor: PLATES_WALL,
+        backgroundImage: 'url(' + platesBg + ')',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        minHeight: '100lvh',
+      }} />
+  )
+}
+
+function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
 
   var isAdmin = hasPerm(profile?.permsNew, 'events.extra_plate_collect')
   var [view, setView] = useState('manage')
@@ -70,7 +109,10 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
   var [showAll, setShowAll] = useState(false)
   var [filterFrom, setFilterFrom] = useState('')
   var [filterTo, setFilterTo] = useState('')
-  var [filterVenues, setFilterVenues] = useState([])
+  // Recent's two searches: who made the entry, and the venue.
+  var [searchBy, setSearchBy] = useState('')
+  var [searchVenue, setSearchVenue] = useState('')
+  var [byFocus, setByFocus] = useState(false)
   var [filterKind, setFilterKind] = useState('both')  // both | issue | collection
   var [filterPaymentMode, setFilterPaymentMode] = useState('all')  // all | cash | bank
   var [exporting, setExporting] = useState(false)
@@ -168,12 +210,12 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     var toISO = filterTo ? filterTo + 'T23:59:59' : null
 
     var iQ = supabase.from('extra_plate_issues')
-      .select('id, event_id, plates_count, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, issued_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge)')
+      .select('id, event_id, plates_count, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, issued_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge, contract_no, created_user_name)')
       .gte('created_at', fromISO)
       .order('created_at', { ascending: false })
       .limit(1000)
     var cQ = supabase.from('extra_plate_collections')
-      .select('id, event_id, extras_charged, plates_returned, rate_paise, total_paise, discount_paise, payment_mode, payment_sub_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge)')
+      .select('id, event_id, extras_charged, plates_returned, rate_paise, total_paise, discount_paise, payment_mode, payment_sub_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge, contract_no, created_user_name)')
       .gte('created_at', fromISO)
       .order('created_at', { ascending: false })
       .limit(1000)
@@ -326,6 +368,62 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     loadEventState(Number(eventId), eventDetail)
   }
 
+  // A collection's receipt — the same PDF the Event ledger prints for an
+  // extra-plates collection (EP-<id>, the collector's name and signature).
+  // The contract fields come from the function in hand (Manage) or from the
+  // row's own joined event (Recent).
+  var [receiptBusy, setReceiptBusy] = useState(null)
+  async function printCollectionReceipt(r, ev) {
+    if (receiptBusy) return
+    setReceiptBusy(r.id)
+    try {
+      ev = ev || {}
+      var receivedByName = ''
+      var signatureUrl = null
+      if (r.collected_by) {
+        var { data: pr } = await supabase.from('profiles').select('name, signature_path').eq('id', r.collected_by).maybeSingle()
+        if (pr) {
+          receivedByName = pr.name || ''
+          if (pr.signature_path) {
+            var { data: signed } = await supabase.storage.from('images').createSignedUrl(pr.signature_path, 300)
+            signatureUrl = signed?.signedUrl || null
+          }
+        }
+      }
+      var disc = r.discount_paise || 0
+      await generateCollectionReceiptPdf({
+        receiptNo: 'EP-' + r.id,
+        paymentMode: r.payment_mode,
+        amountRupees: r.total_paise - disc,
+        discountPaise: disc,
+        description: r.extras_charged + ' extra plates × ' + formatPoints(r.rate_paise) + (r.notes ? ' — ' + r.notes : ''),
+        createdAt: r.created_at,
+        contractNo: ev.contract_no || null,
+        clientName: ev.client_name || '',
+        eventDate: ev.function_date || '',
+        dealBy: ev.created_user_name || '',
+        receivedByName: receivedByName,
+        signatureUrl: signatureUrl,
+      })
+    } catch (e) {
+      alert('Receipt failed: ' + (e && e.message ? e.message : e))
+    }
+    setReceiptBusy(null)
+  }
+
+  // Correcting an issue that can no longer be cancelled: open the Issue form
+  // with the count reversed (+100 is undone by -100, -100 by +100) and a
+  // note naming the entry it corrects by its number, which is how the
+  // history knows that entry has been dealt with.
+  function correctIssue(row) {
+    setActionTab('issue')
+    setIssuePlates(String(-row.plates_count))
+    setIssueNotes('Correction of #' + row.id + ' (' + (row.plates_count > 0 ? '+' : '') + row.plates_count + ' plates, ' + formatDateTime(row.created_at) + ')')
+    setShowIssueNote(true)
+    setIssueMsg('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   function openCancel(type, row) {
     setCancelTarget({ type: type, row: row })
     setCancelReason('')
@@ -398,6 +496,20 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
   // Photo previews for the two proof tiles, released when the file changes.
   var [issuePreview, setIssuePreview] = useState('')
   var [collectPreview, setCollectPreview] = useState('')
+  // Compact phone layout: which form shows (null = Issue), whether
+  // each notes box is open, and whether the history is unfolded.
+  var [actionTab, setActionTab] = useState(null)
+  var [showIssueNote, setShowIssueNote] = useState(false)
+  var [showCollectNote, setShowCollectNote] = useState(false)
+  var [historyOpen, setHistoryOpen] = useState(false)
+  // Recent: Kind, Payment, Venue and Everyone fold under a Filters button.
+  var [recentFiltersOpen, setRecentFiltersOpen] = useState(false)
+  // Recent: which functions have their entries unfolded ({ event_id: true }).
+  var [openGroups, setOpenGroups] = useState({})
+  function toggleGroup(id) {
+    setOpenGroups(function (m) { var n = Object.assign({}, m); n[id] = !m[id]; return n })
+  }
+  useEffect(function () { setActionTab(null); setHistoryOpen(false); setShowIssueNote(false); setShowCollectNote(false) }, [eventId])
   useEffect(function () {
     if (!issueImage) { setIssuePreview(''); return }
     var u = URL.createObjectURL(issueImage)
@@ -435,21 +547,6 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     )
   }
 
-  function cardHead(icon, tint, title, sub, right) {
-    return (
-      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-100">
-        <span className={'shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center ' + tint}>
-          <Icon name={icon} size={17} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block font-display text-[15px] font-bold tracking-[-0.01em] text-slate-900 leading-snug">{title}</span>
-          {sub && <span className="block text-[12px] font-medium text-slate-500 leading-snug">{sub}</span>}
-        </span>
-        {right}
-      </div>
-    )
-  }
-
   function fieldLabel(text, opt) {
     return (
       <label className="block text-[12.5px] font-bold text-slate-700 mb-1.5">
@@ -458,32 +555,45 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     )
   }
 
-  function photoTile(file, preview, onTake, onClear, label) {
+  // A square camera button that sits beside its number; once a photo is
+  // taken it shows the photo, with a small × to take it off.
+  function photoButton(file, preview, onTake, onClear) {
     if (file) {
       return (
-        <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-2">
-          {preview
-            ? <img src={preview} alt="" className="shrink-0 w-14 h-14 rounded-lg object-cover border border-white shadow-sm" />
-            : <span className="shrink-0 w-14 h-14 rounded-lg bg-white inline-flex items-center justify-center text-emerald-600"><Icon name="camera" size={20} /></span>}
-          <span className="min-w-0 flex-1">
-            <span className="flex items-center gap-1 text-[13px] font-bold text-emerald-800"><Icon name="checkCircle" size={14} />Photo added</span>
-            <span className="block text-[11.5px] text-emerald-700/80 truncate">{file.name}</span>
-          </span>
-          <button type="button" onClick={onTake}
-            className="shrink-0 h-9 px-3 rounded-lg border border-slate-200 bg-white text-[12.5px] font-bold text-slate-700 hover:bg-slate-50">Retake</button>
+        <div className="relative shrink-0">
+          <button type="button" onClick={onTake} aria-label="Retake photo"
+            className="w-11 h-11 rounded-xl overflow-hidden border-2 border-emerald-400 bg-emerald-50 inline-flex items-center justify-center">
+            {preview ? <img src={preview} alt="" className="w-full h-full object-cover" /> : <Icon name="check" size={18} className="text-emerald-600" />}
+          </button>
           <button type="button" onClick={onClear} aria-label="Remove photo"
-            className="shrink-0 h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-red-600 inline-flex items-center justify-center">
-            <Icon name="close" size={13} />
+            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-slate-900 text-white inline-flex items-center justify-center shadow">
+            <Icon name="close" size={9} strokeWidth={3} />
           </button>
         </div>
       )
     }
     return (
-      <button type="button" onClick={onTake}
-        className="w-full h-[64px] rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/60 hover:border-indigo-400 hover:bg-indigo-50/40 inline-flex items-center justify-center gap-2.5 text-[13.5px] font-bold text-slate-600 hover:text-indigo-700 transition-colors">
-        <span className="w-9 h-9 rounded-full bg-white border border-slate-200 inline-flex items-center justify-center text-indigo-600"><Icon name="camera" size={17} /></span>
-        {label}
+      <button type="button" onClick={onTake} aria-label="Take photo"
+        className="shrink-0 w-11 h-11 rounded-xl border-2 border-dashed border-indigo-300 bg-indigo-50/60 text-indigo-600 hover:bg-indigo-50 inline-flex items-center justify-center">
+        <Icon name="camera" size={18} />
       </button>
+    )
+  }
+
+  function noteField(value, setValue, open, setOpen, placeholder) {
+    if (!open && !value) {
+      return (
+        <button type="button" onClick={function () { setOpen(true) }}
+          className="text-[12px] font-bold text-slate-500 hover:text-indigo-600 inline-flex items-center gap-1">
+          <Icon name="plus" size={11} strokeWidth={2.6} />Add a note
+        </button>
+      )
+    }
+    return (
+      <input type="text" value={value} autoFocus={open && !value}
+        onChange={function (e) { setValue(e.target.value) }}
+        onBlur={function () { if (!value.trim()) setOpen(false) }}
+        placeholder={placeholder} className={INPUT + ' !h-10'} />
     )
   }
 
@@ -492,15 +602,6 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     return (
       <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-[12.5px] font-bold text-emerald-800">
         <Icon name="checkCircle" size={15} />{msg}
-      </div>
-    )
-  }
-
-  function statTile(label, value, tone) {
-    return (
-      <div className={'min-w-0 rounded-xl px-2 py-2.5 text-center ' + (tone || 'bg-slate-50')}>
-        <p className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-slate-500">{label}</p>
-        <p className="mt-0.5 font-display text-[19px] font-extrabold tabular-nums tracking-[-0.02em] leading-none">{value}</p>
       </div>
     )
   }
@@ -515,11 +616,10 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
     )
   }
 
-  var pickedOnly = eventId && events.some(function (e) { return String(e.id) === eventId })
-  var shownEvents = pickedOnly ? events.filter(function (e) { return String(e.id) === eventId }) : events
 
   return (
     <div className="max-w-2xl mx-auto space-y-3">
+      {!inAdmin && <PlatesBackdrop />}
       {/* Manage | Recent */}
       <div className="grid grid-cols-2 p-1 rounded-xl bg-slate-100 border border-slate-200">
         {[['manage', 'Manage', 'utensils'], ['recent', 'Recent', 'clock']].map(function (t) {
@@ -535,252 +635,243 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
       </div>
 
       {/* ─── MANAGE VIEW ───────────────────────────── */}
+      {/* Built to fit a phone with as little scrolling as it can: once a
+          function is picked, the date and the function fold into one card
+          that also carries the plate figures; Issue and Collect share one
+          card behind a toggle instead of standing one under the other; the
+          photo is a button beside its number; notes and history open on a
+          tap. */}
       {view === 'manage' && (
-        <div className="space-y-3">
-          <div className={CARD + ' p-3.5'}>
-            {stepHead(1, 'Event date', !!date)}
-            <EventDatePicker value={date} collapsible placeholder="Pick the event date"
-              onChange={function (d) { loadFunctionsForDate(d) }} />
-
-            {date && (
-              <div className="mt-4">
-                {stepHead(2, 'Function', !!eventId, pickedOnly ? (
-                  <button type="button" onClick={clearFunctionSelection}
-                    className="text-[12px] font-bold text-indigo-600 hover:text-indigo-800">Change</button>
-                ) : null)}
-                {eventsLoading && <p className="text-[12.5px] text-slate-500">Loading functions…</p>}
-                {!eventsLoading && events.length === 0 && (
-                  <p className="rounded-xl border border-dashed border-slate-300 px-3 py-4 text-center text-[12.5px] text-slate-500">No Venue or Catering functions on this date</p>
-                )}
-                {shownEvents.length > 0 && (
-                  <div className="space-y-2">
-                    {shownEvents.map(function (ev) {
-                      var selected = String(ev.id) === eventId
-                      return (
-                        <button key={ev.id} type="button" onClick={function () { selectFunction(String(ev.id), ev) }}
-                          className={'w-full text-left rounded-xl border px-3 py-2.5 transition-all ' +
-                            (selected ? 'border-indigo-500 bg-indigo-50/70 ring-1 ring-indigo-500' : 'border-slate-200 bg-white hover:border-indigo-300')}>
-                          <div className="flex items-start justify-between gap-2">
-                            <p className={'min-w-0 text-[13.5px] font-bold leading-snug ' + (selected ? 'text-indigo-950' : 'text-slate-900')}>
-                              {ev.event_name}
-                              {ev.client_name && <span className="font-semibold text-slate-600">{' · ' + ev.client_name}</span>}
+        <div className="space-y-2.5">
+          {!eventDetail && (
+            <div className={CARD + ' p-3.5'}>
+              {stepHead(1, 'Event date', !!date)}
+              <EventDatePicker value={date} collapsible placeholder="Pick the event date"
+                onChange={function (d) { loadFunctionsForDate(d) }} />
+              {date && (
+                <div className="mt-3.5">
+                  {stepHead(2, 'Function', false)}
+                  {eventsLoading && <p className="text-[12.5px] text-slate-500">Loading functions…</p>}
+                  {!eventsLoading && events.length === 0 && (
+                    <p className="rounded-xl border border-dashed border-slate-300 px-3 py-4 text-center text-[12.5px] text-slate-500">No Venue or Catering functions on this date</p>
+                  )}
+                  {events.length > 0 && (
+                    <div className="space-y-1.5">
+                      {events.map(function (ev) {
+                        return (
+                          <button key={ev.id} type="button" onClick={function () { selectFunction(String(ev.id), ev) }}
+                            className="w-full text-left rounded-xl border border-slate-200 bg-white hover:border-indigo-300 px-3 py-2 transition-colors">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="min-w-0 text-[13.5px] font-bold leading-snug text-slate-900">
+                                {ev.event_name}
+                                {ev.client_name && <span className="font-semibold text-slate-600">{' · ' + ev.client_name}</span>}
+                              </p>
+                              {ev.department && (
+                                <span className="shrink-0 text-[10.5px] font-bold uppercase tracking-[0.04em] px-1.5 py-[3px] rounded bg-indigo-100 text-indigo-700">{ev.department}</span>
+                              )}
+                            </div>
+                            <p className="mt-0.5 text-[12px] font-medium text-slate-500 truncate">
+                              {[(ev.venue_name || '') + (ev.session ? ' · ' + ev.session : ''), ev.contract_no ? '#' + ev.contract_no : '', ev.created_user_name || ''].filter(Boolean).join(' · ')}
                             </p>
-                            {ev.department && (
-                              <span className="shrink-0 text-[10.5px] font-bold uppercase tracking-[0.04em] px-1.5 py-[3px] rounded bg-indigo-100 text-indigo-700">{ev.department}</span>
-                            )}
-                          </div>
-                          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] font-medium text-slate-500">
-                            {(ev.venue_name || ev.session) && (
-                              <span className="inline-flex items-center gap-1"><Icon name="mapPin" size={12} className="text-slate-400" />{(ev.venue_name || '') + (ev.session ? ' · ' + ev.session : '')}</span>
-                            )}
-                            {ev.contract_no && <span className="font-mono text-slate-500">#{ev.contract_no}</span>}
-                            {ev.created_user_name && <span className="inline-flex items-center gap-1"><Icon name="user" size={12} className="text-slate-400" />{ev.created_user_name}</span>}
-                          </p>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* The picked function and where its plates stand, in one card. */}
+          {eventDetail && (
+            <div className={CARD + ' p-3'}>
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13.5px] font-bold text-slate-900 leading-snug">
+                    {eventDetail.event_name}
+                    {eventDetail.client_name && <span className="font-semibold text-slate-600">{' · ' + eventDetail.client_name}</span>}
+                  </p>
+                  <p className="text-[11.5px] font-medium text-slate-500 truncate">
+                    {[formatDate(date), (eventDetail.venue_name || '') + (eventDetail.session ? ' · ' + eventDetail.session : ''), eventDetail.contract_no ? '#' + eventDetail.contract_no : ''].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+                <button type="button" onClick={clearFunctionSelection}
+                  className="shrink-0 h-7 px-2.5 rounded-lg border border-slate-200 text-[12px] font-bold text-indigo-600 hover:bg-indigo-50">Change</button>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2 text-[11.5px]">
+                <span className="font-medium text-slate-500 truncate">{paidPax} pax + {complementary} comp = <span className="font-bold text-slate-800">{quota}</span></span>
+                <span className={'shrink-0 h-6 px-2 rounded-md inline-flex items-center font-extrabold tabular-nums ' +
+                  (ratePaise > 0 ? 'bg-slate-900 text-white' : 'bg-red-50 text-red-700 border border-red-200')}>
+                  {ratePaise > 0 ? '₹' + rateRs.toLocaleString('en-IN') + '/plate' : 'No rate'}
+                </span>
+              </div>
+              <div className="mt-2 grid grid-cols-4 gap-1.5">
+                {[['Issued', totalIssued, 'bg-slate-50 text-slate-900'],
+                  ['Extras', extras, 'bg-indigo-50/70 text-indigo-950'],
+                  ['Collected', totalCollectedExtras, 'bg-emerald-50/70 text-emerald-900'],
+                  ['Due', remaining > 0 ? remaining : '✓', remaining > 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700']].map(function (t) {
+                  return (
+                    <div key={t[0]} className={'min-w-0 rounded-lg px-1 py-1.5 text-center ' + t[2]}>
+                      <p className="text-[10px] font-extrabold uppercase tracking-[0.06em] text-slate-500 leading-none">{t[0]}</p>
+                      <p className="mt-1 font-display text-[16px] font-extrabold tabular-nums leading-none">{stateLoading ? '…' : t[1]}</p>
+                    </div>
+                  )
+                })}
+              </div>
+              {ratePaise <= 0 && (
+                <p className="mt-2 text-[11.5px] font-semibold text-red-600">No extra-plate rate on the contract — extras cannot be collected here.</p>
+              )}
+            </div>
+          )}
+
+          {/* Issue | Collect — one card, one form at a time. */}
+          {eventDetail && (function () {
+            var canCollectHere = ratePaise > 0 && totalIssued > 0
+            // Issue opens first; Collect is one tap away (its tab carries the
+            // chargeable count as a badge, so a pending collection still shows).
+            var tab = canCollectHere ? (actionTab || 'issue') : 'issue'
+            return (
+              <div className={CARD + ' p-3'}>
+                {canCollectHere && (
+                  <div className="grid grid-cols-2 p-1 mb-3 rounded-xl bg-slate-100">
+                    {[['issue', 'Issue plates', 'download'], ['collect', isWasteOnly ? 'Log returns' : 'Collect extras', isWasteOnly ? 'undo' : 'rupee']].map(function (t) {
+                      var on = tab === t[0]
+                      return (
+                        <button key={t[0]} type="button" onClick={function () { setActionTab(t[0]) }} aria-pressed={on}
+                          className={'h-9 rounded-lg text-[13px] font-bold inline-flex items-center justify-center gap-1.5 transition-colors ' +
+                            (on ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500')}>
+                          <Icon name={t[2]} size={14} />{t[1]}
+                          {t[0] === 'collect' && thisChargeable > 0 && !on && (
+                            <span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10.5px] font-extrabold inline-flex items-center justify-center">{thisChargeable}</span>
+                          )}
                         </button>
                       )
                     })}
                   </div>
                 )}
-              </div>
-            )}
-          </div>
 
-          {/* The booking at a glance: quota, rate, and where the plates stand. */}
-          {eventDetail && (
-            <div className={CARD + ' overflow-hidden'}>
-              {cardHead('utensils', 'bg-amber-50 text-amber-600', 'Plates for this function',
-                paidPax + ' pax + ' + complementary + ' complimentary = ' + quota + ' plates',
-                <span className={'shrink-0 h-7 px-2.5 rounded-lg inline-flex items-center text-[12.5px] font-extrabold tabular-nums ' +
-                  (ratePaise > 0 ? 'bg-slate-900 text-white' : 'bg-red-50 text-red-700 border border-red-200')}>
-                  {ratePaise > 0 ? '₹' + rateRs.toLocaleString('en-IN') + ' / plate' : 'No rate'}
-                </span>)}
-              <div className="p-3 grid grid-cols-4 gap-2">
-                {statTile('Issued', stateLoading ? '…' : totalIssued, 'bg-slate-50 text-slate-900')}
-                {statTile('Extras', stateLoading ? '…' : extras, 'bg-slate-50 text-slate-900')}
-                {statTile('Collected', stateLoading ? '…' : totalCollectedExtras, 'bg-slate-50 text-slate-900')}
-                {statTile('Due', stateLoading ? '…' : (remaining > 0 ? remaining : <Icon name="check" size={18} strokeWidth={3} className="inline" />),
-                  remaining > 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700')}
-              </div>
-              {ratePaise <= 0 && (
-                <p className="mx-3 mb-3 -mt-1 flex items-start gap-2 rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-[12px] font-semibold text-red-700">
-                  <Icon name="alert" size={14} className="shrink-0 mt-px" />The contract has no extra-plate rate, so extras cannot be collected here.
-                </p>
-              )}
-            </div>
-          )}
-
-          {eventDetail && ratePaise > 0 && remaining === 0 && totalIssued > quota && (
-            <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-[13px] font-bold text-emerald-800">
-              <Icon name="checkCircle" size={16} />All extras collected for this function
-            </div>
-          )}
-
-          {/* Issue */}
-          {eventDetail && (
-            <div className={CARD + ' overflow-hidden'}>
-              {cardHead('download', 'bg-indigo-50 text-indigo-600', 'Issue plates', 'Plates handed out — a negative number corrects an earlier count')}
-              <div className="p-4 space-y-3.5">
-                <div>
-                  {fieldLabel('Plates to issue')}
-                  <input type="number" step="1" inputMode="numeric" value={issuePlates}
-                    onChange={function (e) { setIssuePlates(e.target.value) }}
-                    placeholder={quota > 0 && totalIssued === 0 ? 'e.g. ' + quota : 'e.g. 50'}
-                    className={INPUT + ' text-[18px] font-bold'} />
-                </div>
-                <div>
-                  {fieldLabel('Photo of the plates')}
-                  {photoTile(issueImage, issuePreview, function () { setCameraFor('issue') }, function () { setIssueImage(null) }, 'Take photo')}
-                </div>
-                <div>
-                  {fieldLabel('Notes', true)}
-                  <input type="text" value={issueNotes} onChange={function (e) { setIssueNotes(e.target.value) }}
-                    placeholder="e.g. first batch, top-up" className={INPUT} />
-                </div>
-                {successNote(issueMsg)}
-                {primaryBtn(submitIssue, !canIssue, issueSaving ? 'Saving…' : <><Icon name="download" size={16} />Log issue</>)}
-              </div>
-            </div>
-          )}
-
-          {/* Collect extras / log returns */}
-          {eventDetail && ratePaise > 0 && totalIssued > 0 && (
-            <div className={CARD + ' overflow-hidden'}>
-              {cardHead(isWasteOnly ? 'undo' : 'rupee', isWasteOnly ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600',
-                isWasteOnly ? 'Log returned plates' : 'Collect extras',
-                isWasteOnly ? 'Nothing to charge — this records the plates that came back' : 'Plates over the quota, charged at the contract rate')}
-              <div className="p-4 space-y-3.5">
-                {/* How the chargeable count is reached. */}
-                <div className="rounded-xl bg-slate-50 border border-slate-200 divide-y divide-slate-200/70 text-[12.5px]">
-                  {[
-                    ['Quota', quota, true],
-                    ['Total issued', totalIssued, true],
-                    ['Already returned', priorReturned, priorReturned > 0],
-                    ['Already charged', totalCollectedExtras, totalCollectedExtras > 0],
-                    ['Consumed', consumed, true],
-                  ].filter(function (x) { return x[2] }).map(function (x) {
-                    return (
-                      <div key={x[0]} className="flex items-center justify-between px-3 py-1.5">
-                        <span className="text-slate-500 font-medium">{x[0]}</span>
-                        <span className="font-bold tabular-nums text-slate-800">{x[1]}</span>
-                      </div>
-                    )
-                  })}
-                  <div className="flex items-center justify-between px-3 py-2 bg-white rounded-b-xl">
-                    <span className="font-bold text-slate-800">Chargeable now</span>
-                    <span className={'font-display text-[16px] font-extrabold tabular-nums ' + (thisChargeable > 0 ? 'text-red-600' : 'text-slate-400')}>{thisChargeable}</span>
-                  </div>
-                  {waste > 0 && (
-                    <div className="flex items-center justify-between px-3 py-1.5">
-                      <span className="text-amber-700 font-medium">Waste (quota unused)</span>
-                      <span className="font-bold tabular-nums text-amber-700">{waste}</span>
+                {tab === 'issue' && (
+                  <div className="space-y-2.5">
+                    {!canCollectHere && <p className="text-[12.5px] font-bold text-slate-800 inline-flex items-center gap-1.5"><Icon name="download" size={14} className="text-indigo-600" />Issue plates</p>}
+                    <div className="flex gap-2">
+                      <input type="number" step="1" inputMode="numeric" value={issuePlates}
+                        onChange={function (e) { setIssuePlates(e.target.value) }}
+                        aria-label="Plates to issue"
+                        placeholder={'Plates to issue' + (quota > 0 && totalIssued === 0 ? ' (e.g. ' + quota + ')' : '')}
+                        className={INPUT + ' flex-1 font-bold'} />
+                      {photoButton(issueImage, issuePreview, function () { setCameraFor('issue') }, function () { setIssueImage(null) })}
                     </div>
-                  )}
-                </div>
-
-                <div className={'grid gap-3 ' + (isCollection ? 'grid-cols-2' : 'grid-cols-1')}>
-                  <div>
-                    {fieldLabel('Plates returned')}
-                    <input type="number" min="0" step="1" inputMode="numeric" value={collectReturned}
-                      onChange={function (e) { setCollectReturned(e.target.value) }}
-                      placeholder="0" className={INPUT} />
-                  </div>
-                  {isCollection && (
-                    <div>
-                      {fieldLabel('Discount ₹', true)}
-                      <input type="number" min="0" step="1" inputMode="numeric" value={collectDiscount}
-                        onChange={function (e) { setCollectDiscount(e.target.value) }}
-                        placeholder="0" className={discountValid ? INPUT : INPUT_BAD} />
-                    </div>
-                  )}
-                </div>
-
-                {isCollection && collectPreviewTotal > 0 && (
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 px-3 py-2.5 space-y-1 text-[13px]">
-                    <div className="flex justify-between text-slate-600">
-                      <span>{thisChargeable} × ₹{rateRs.toLocaleString('en-IN')}</span>
-                      <span className="tabular-nums font-semibold">₹{(collectPreviewTotal / 100).toLocaleString('en-IN')}</span>
-                    </div>
-                    {Number(collectDiscount) > 0 && (
-                      <div className="flex justify-between text-slate-600">
-                        <span>Discount</span>
-                        <span className="tabular-nums font-semibold">− ₹{Number(collectDiscount).toLocaleString('en-IN')}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between items-baseline pt-1.5 mt-0.5 border-t border-emerald-200">
-                      <span className="font-bold text-emerald-900">Net to collect</span>
-                      <span className="font-display text-[20px] font-extrabold tabular-nums tracking-[-0.02em] text-emerald-800">₹{(collectNetPreview / 100).toLocaleString('en-IN')}</span>
-                    </div>
-                    {!discountValid && <p className="text-[12px] font-semibold text-red-600">The discount is more than the amount</p>}
+                    <p className="-mt-1 text-[11px] text-slate-500">A negative number corrects an earlier count. Photo of the plates required.</p>
+                    {noteField(issueNotes, setIssueNotes, showIssueNote, setShowIssueNote, 'e.g. first batch, top-up')}
+                    {successNote(issueMsg)}
+                    {primaryBtn(submitIssue, !canIssue, issueSaving ? 'Saving…' : <><Icon name="download" size={16} />Log issue</>)}
                   </div>
                 )}
 
-                {isCollection && (
-                  <>
-                    <div>
-                      {fieldLabel('Payment mode')}
-                      <div className="grid grid-cols-2 gap-2">
-                        {[['cash', 'Cash', 'banknote'], ['bank', 'Bank', 'bank']].map(function (m) {
-                          var on = collectMode === m[0]
-                          return (
-                            <button key={m[0]} type="button" aria-pressed={on}
-                              onClick={function () { setCollectMode(m[0]); if (m[0] === 'cash') setCollectSubMode('') }}
-                              className={'h-11 rounded-xl border text-[13.5px] font-bold inline-flex items-center justify-center gap-2 transition-colors ' +
-                                (on ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50')}>
-                              <Icon name={m[2]} size={16} />{m[1]}
-                            </button>
-                          )
-                        })}
-                      </div>
-                      {collectMode === 'bank' && (
-                        <div className="mt-2.5">
-                          <p className="text-[12px] font-semibold text-slate-500 mb-1.5">Bank method <span className="text-red-500">*</span></p>
+                {tab === 'collect' && canCollectHere && (
+                  <div className="space-y-2.5">
+                    {/* How the chargeable count is reached, on one line. */}
+                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-500 tabular-nums">
+                      <span>Quota <b className="text-slate-800">{quota}</b></span>
+                      <span>Issued <b className="text-slate-800">{totalIssued}</b></span>
+                      {priorReturned > 0 && <span>Returned <b className="text-slate-800">{priorReturned}</b></span>}
+                      {totalCollectedExtras > 0 && <span>Charged <b className="text-slate-800">{totalCollectedExtras}</b></span>}
+                      <span>Used <b className="text-slate-800">{consumed}</b></span>
+                      <span className="ml-auto font-bold text-slate-700">Chargeable <b className={'font-display text-[15px] ' + (thisChargeable > 0 ? 'text-red-600' : 'text-slate-400')}>{thisChargeable}</b></span>
+                      {waste > 0 && <span className="w-full text-amber-700">Waste (quota unused) <b>{waste}</b></span>}
+                    </div>
+
+                    <div className={'grid gap-2 ' + (isCollection ? 'grid-cols-2' : 'grid-cols-1')}>
+                      <input type="number" min="0" step="1" inputMode="numeric" value={collectReturned}
+                        onChange={function (e) { setCollectReturned(e.target.value) }}
+                        aria-label="Plates returned" placeholder="Plates returned" className={INPUT} />
+                      {isCollection && (
+                        <input type="number" min="0" step="1" inputMode="numeric" value={collectDiscount}
+                          onChange={function (e) { setCollectDiscount(e.target.value) }}
+                          aria-label="Discount in rupees" placeholder="Discount ₹" className={discountValid ? INPUT : INPUT_BAD} />
+                      )}
+                    </div>
+
+                    {isCollection && (
+                      <>
+                        <div className="flex gap-2">
+                          {[['cash', 'Cash', 'banknote'], ['bank', 'Bank', 'bank']].map(function (m) {
+                            var on = collectMode === m[0]
+                            return (
+                              <button key={m[0]} type="button" aria-pressed={on}
+                                onClick={function () { setCollectMode(m[0]); if (m[0] === 'cash') setCollectSubMode('') }}
+                                className={'flex-1 h-11 rounded-xl border text-[13.5px] font-bold inline-flex items-center justify-center gap-1.5 transition-colors ' +
+                                  (on ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-700')}>
+                                <Icon name={m[2]} size={15} />{m[1]}
+                              </button>
+                            )
+                          })}
+                          {photoButton(collectImage, collectPreview, function () { setCameraFor('collect') }, function () { setCollectImage(null) })}
+                        </div>
+                        {collectMode === 'bank' && (
                           <div className="flex flex-wrap gap-1.5">
                             {BANK_SUB_MODES.map(function (m) {
                               var on = collectSubMode === m.value
                               return (
                                 <button key={m.value} type="button" aria-pressed={on} onClick={function () { setCollectSubMode(m.value) }}
-                                  className={'h-9 px-3 rounded-lg border text-[12.5px] font-bold transition-colors ' +
-                                    (on ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50')}>
+                                  className={'h-8 px-2.5 rounded-lg border text-[12px] font-bold transition-colors ' +
+                                    (on ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-slate-700')}>
                                   {m.label}
                                 </button>
                               )
                             })}
                           </div>
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      {fieldLabel('Photo of the payment')}
-                      {photoTile(collectImage, collectPreview, function () { setCameraFor('collect') }, function () { setCollectImage(null) }, 'Photo of money received')}
-                    </div>
-                  </>
-                )}
+                        )}
+                        <p className="-mt-1 text-[11px] text-slate-500">{collectMode === 'bank' && !collectSubMode ? 'Pick the bank method. ' : ''}Photo of the payment required.</p>
+                      </>
+                    )}
 
-                <div>
-                  {fieldLabel('Notes', true)}
-                  <input type="text" value={collectNotes} onChange={function (e) { setCollectNotes(e.target.value) }} className={INPUT} />
-                </div>
-                {successNote(collectMsg)}
-                {primaryBtn(submitCollect, !canCollect,
-                  collectSaving ? 'Saving…'
-                    : isWasteOnly ? <><Icon name="undo" size={16} />Log {thisReturned} returned plates</>
-                    : isCollection ? <><Icon name="rupee" size={16} />Collect {collectNetPreview > 0 ? '₹' + (collectNetPreview / 100).toLocaleString('en-IN') : ''}</>
-                    : 'Enter returned plates to continue',
-                  isWasteOnly ? 'bg-amber-600 shadow-[0_2px_8px_rgba(217,119,6,0.28)]' : isCollection ? 'bg-gradient-to-b from-emerald-500 to-emerald-600 shadow-[0_2px_8px_rgba(16,185,129,0.28)]' : 'bg-slate-400')}
+                    {noteField(collectNotes, setCollectNotes, showCollectNote, setShowCollectNote, 'Notes')}
+                    {successNote(collectMsg)}
+                    {!discountValid && <p className="text-[12px] font-semibold text-red-600">The discount is more than the amount</p>}
+                    {primaryBtn(submitCollect, !canCollect,
+                      collectSaving ? 'Saving…'
+                        : isWasteOnly ? <><Icon name="undo" size={16} />Log {thisReturned} returned plates</>
+                        : isCollection ? (
+                          <span className="inline-flex items-center gap-2">
+                            <Icon name="rupee" size={16} />Collect ₹{(collectNetPreview / 100).toLocaleString('en-IN')}
+                            <span className="text-[11.5px] font-semibold opacity-80">
+                              {'(' + thisChargeable + ' × ₹' + rateRs.toLocaleString('en-IN') + (collectDiscountPaise > 0 ? ' − ₹' + (collectDiscountPaise / 100).toLocaleString('en-IN') : '') + ')'}
+                            </span>
+                          </span>
+                        )
+                        : 'Enter returned plates to continue',
+                      isWasteOnly ? 'bg-amber-600' : isCollection ? 'bg-gradient-to-b from-emerald-500 to-emerald-600 shadow-[0_2px_8px_rgba(16,185,129,0.28)]' : 'bg-slate-400')}
+                  </div>
+                )}
               </div>
-            </div>
+            )
+          })()}
+
+          {eventDetail && ratePaise > 0 && remaining === 0 && totalIssued > quota && (
+            <p className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-[12.5px] font-bold text-emerald-800">
+              <Icon name="checkCircle" size={15} />All extras collected for this function
+            </p>
           )}
 
-          {/* This function's history */}
+          {/* History, folded to one line until asked for. */}
           {eventDetail && (issues.length > 0 || collections.length > 0) && (
             <div className={CARD + ' overflow-hidden'}>
-              {cardHead('list', 'bg-slate-100 text-slate-600', 'History', 'Every issue and collection for this function')}
-              <div className="divide-y divide-slate-100">
-                {[].concat(issues.map(function (r) { return Object.assign({}, r, { _kind: 'issue' }) }))
-                  .concat(collections.map(function (r) { return Object.assign({}, r, { _kind: 'collection' }) }))
-                  .sort(function (a, b) { return b.created_at.localeCompare(a.created_at) })
-                  .map(function (r) { return renderHistoryRow(r, profile, isAdmin, openCancel) })}
-              </div>
+              <button type="button" onClick={function () { setHistoryOpen(!historyOpen) }} aria-expanded={historyOpen}
+                className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left">
+                <Icon name="list" size={15} className="text-slate-400" />
+                <span className="flex-1 text-[13px] font-bold text-slate-800">History<span className="text-slate-400 font-semibold">{' · ' + (issues.length + collections.length)}</span></span>
+                <Icon name={historyOpen ? 'chevronUp' : 'chevronDown'} size={16} className="text-slate-400" />
+              </button>
+              {historyOpen && (
+                <div className="border-t border-slate-100 divide-y divide-slate-100">
+                  {[].concat(issues.map(function (r) { return Object.assign({}, r, { _kind: 'issue' }) }))
+                    .concat(collections.map(function (r) { return Object.assign({}, r, { _kind: 'collection' }) }))
+                    .sort(function (a, b) { return b.created_at.localeCompare(a.created_at) })
+                    .map(function (r) { return renderHistoryRow(r, profile, isAdmin, openCancel, { issueLocked: collections.some(function (x) { return x.status === 'active' }), onCorrect: correctIssue, correctedIds: correctedIssueIds(issues), onReceipt: function (row) { printCollectionReceipt(row, eventDetail) }, receiptBusy: receiptBusy }) })}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -788,26 +879,35 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
 
       {/* ─── RECENT VIEW ───────────────────────────── */}
       {view === 'recent' && (function () {
+        var byQ = searchBy.trim().toLowerCase()
+        // The properties that appear in the entries loaded, for the Venue list.
         var venueOptions = []
         recentGroups.forEach(function (g) {
           var v = g.event && g.event.venue_name
           if (v && venueOptions.indexOf(v) === -1) venueOptions.push(v)
         })
         venueOptions.sort()
+        // Everyone who made an entry in what is loaded, for the Received by
+        // suggestions.
+        var nameOptions = []
+        recentGroups.forEach(function (g) {
+          g.items.forEach(function (r) {
+            if (r._creatorName && nameOptions.indexOf(r._creatorName) === -1) nameOptions.push(r._creatorName)
+          })
+        })
+        nameOptions.sort()
         var filteredGroups = recentGroups.map(function (g) {
           var items = g.items.filter(function (r) {
             if (filterKind === 'issue' && r._kind !== 'issue') return false
             if (filterKind === 'collection' && r._kind !== 'collection') return false
             if (filterPaymentMode !== 'all' && r._kind === 'collection' && r.payment_mode !== filterPaymentMode) return false
+            if (byQ && String(r._creatorName || '').toLowerCase().indexOf(byQ) === -1) return false
             return true
           })
           return Object.assign({}, g, { _filtered: items })
         }).filter(function (g) {
           if (g._filtered.length === 0) return false
-          if (filterVenues.length > 0) {
-            var v = (g.event && g.event.venue_name) || ''
-            if (filterVenues.indexOf(v) === -1) return false
-          }
+          if (searchVenue && ((g.event && g.event.venue_name) || '') !== searchVenue) return false
           return true
         })
         function buildExportRows() {
@@ -910,83 +1010,138 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
           }
           setExporting(false)
         }
-        function chip(on, onClick, label, key) {
-          return (
-            <button key={key || label} type="button" onClick={onClick} aria-pressed={on}
-              className={'h-8 px-3 rounded-full border text-[12.5px] font-bold whitespace-nowrap transition-colors ' +
-                (on ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')}>
-              {label}
-            </button>
-          )
-        }
         return (
         <div className="space-y-3">
-          <div className={CARD + ' p-3.5 space-y-3'}>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="min-w-0">
-                <span className="block text-[11.5px] font-bold text-slate-500 mb-1">From</span>
-                <input type="date" value={filterFrom} onChange={function (e) { setFilterFrom(e.target.value) }} className={INPUT + ' !h-10'} />
-              </label>
-              <label className="min-w-0">
-                <span className="block text-[11.5px] font-bold text-slate-500 mb-1">To</span>
-                <input type="date" value={filterTo} onChange={function (e) { setFilterTo(e.target.value) }} className={INPUT + ' !h-10'} />
-              </label>
-            </div>
-            <p className="-mt-1 text-[11.5px] text-slate-500">{filterFrom || filterTo ? '' : 'Showing the last 30 days'}
-              {(filterFrom || filterTo) && (
-                <button type="button" onClick={function () { setFilterFrom(''); setFilterTo('') }} className="font-bold text-indigo-600">Reset dates</button>
-              )}
-            </p>
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="w-16 shrink-0 text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-400">Kind</span>
-                {[['both', 'All'], ['issue', 'Issues'], ['collection', 'Collections']].map(function (k) {
-                  return chip(filterKind === k[0], function () { setFilterKind(k[0]) }, k[1], 'k' + k[0])
-                })}
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="w-16 shrink-0 text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-400">Payment</span>
-                {[['all', 'All'], ['cash', 'Cash'], ['bank', 'Bank']].map(function (p) {
-                  return chip(filterPaymentMode === p[0], function () { setFilterPaymentMode(p[0]) }, p[1], 'p' + p[0])
-                })}
-              </div>
-              {venueOptions.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="w-16 shrink-0 text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-400">Venue</span>
-                  {venueOptions.map(function (v) {
-                    var active = filterVenues.indexOf(v) !== -1
-                    return chip(active, function () {
-                      setFilterVenues(function (prev) {
-                        if (prev.indexOf(v) === -1) return prev.concat([v])
-                        return prev.filter(function (x) { return x !== v })
-                      })
-                    }, v, 'v' + v)
-                  })}
-                  {filterVenues.length > 0 && (
-                    <button type="button" onClick={function () { setFilterVenues([]) }} className="text-[12px] font-bold text-indigo-600 px-1">Clear</button>
+          {/* Two searches always in view — who made the entry, and the
+              venue — with Filters, CSV and PDF under them. The dates, Kind,
+              Payment and Everyone open under the Filters button, whose badge
+              counts what is narrowing the list while it is closed. */}
+          {(function () {
+            var nOn = (filterFrom || filterTo ? 1 : 0) + (filterKind !== 'both' ? 1 : 0) + (filterPaymentMode !== 'all' ? 1 : 0) + (showAll ? 1 : 0)
+            function searchBox(value, setValue, icon, placeholder, label, onFocus, onBlur) {
+              return (
+                <div className="relative min-w-0">
+                  <Icon name={icon} size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <input type="search" value={value} onChange={function (e) { setValue(e.target.value) }}
+                    onFocus={onFocus} onBlur={onBlur} autoComplete="off"
+                    placeholder={placeholder} aria-label={label}
+                    className={INPUT + ' !h-10 !pl-8 !pr-7'} />
+                  {value && (
+                    <button type="button" onClick={function () { setValue('') }} aria-label={'Clear ' + label}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full text-slate-400 hover:text-slate-700 inline-flex items-center justify-center">
+                      <Icon name="close" size={11} />
+                    </button>
                   )}
                 </div>
-              )}
-            </div>
-            <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-              {isAdmin ? (
-                <label className="flex items-center gap-2 text-[12.5px] font-semibold text-slate-700 cursor-pointer select-none">
-                  <input type="checkbox" checked={showAll} onChange={function (e) { setShowAll(e.target.checked) }} className="w-4 h-4 accent-indigo-600" />
-                  Everyone's entries
-                </label>
-              ) : <span />}
-              <button type="button" onClick={exportCSV} disabled={exporting}
-                className="ml-auto h-9 px-3 rounded-lg border border-slate-300 bg-white text-[12.5px] font-bold text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1.5 disabled:opacity-50">
-                <Icon name="download" size={14} />CSV
-              </button>
-              <button type="button" onClick={exportPDF} disabled={exporting}
-                className="h-9 px-3 rounded-lg bg-indigo-600 text-white text-[12.5px] font-bold hover:bg-indigo-700 inline-flex items-center gap-1.5 disabled:opacity-50">
-                <Icon name="fileText" size={14} />{exporting ? 'PDF…' : 'PDF'}
-              </button>
-            </div>
-          </div>
+              )
+            }
+            return (
+              <div className={CARD + ' p-3 space-y-2'}>
+                <div className="grid grid-cols-2 gap-2">
+                  {/* Received by, with the names that match what is typed
+                      listed under it — tap one to use it. */}
+                  <div className="relative min-w-0">
+                    {searchBox(searchBy, setSearchBy, 'user', 'Received by', 'Search by who received', function () { setByFocus(true) }, function () { setTimeout(function () { setByFocus(false) }, 150) })}
+                    {byFocus && (function () {
+                      var q = searchBy.trim().toLowerCase()
+                      var hits = nameOptions.filter(function (n) { return n.toLowerCase().indexOf(q) !== -1 && n !== searchBy }).slice(0, 6)
+                      if (hits.length === 0) return null
+                      return (
+                        <div className="absolute left-0 right-0 top-full mt-1 z-30 rounded-xl border border-slate-200 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.16)] overflow-hidden">
+                          {hits.map(function (n) {
+                            return (
+                              <button key={n} type="button"
+                                onMouseDown={function (e) { e.preventDefault() }}
+                                onClick={function () { setSearchBy(n); setByFocus(false) }}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-left text-[13px] font-semibold text-slate-800 hover:bg-indigo-50 border-b border-slate-100 last:border-b-0">
+                                <Icon name="user" size={13} className="shrink-0 text-slate-400" />
+                                <span className="min-w-0 truncate">{n}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                  {/* Venue: a list of the properties in the entries, not a
+                      text box — the names are few and fixed. */}
+                  <div className="relative min-w-0">
+                    <Icon name="mapPin" size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <select value={searchVenue} onChange={function (e) { setSearchVenue(e.target.value) }} aria-label="Venue"
+                      className={INPUT + ' !h-10 !pl-8 !pr-7 appearance-none truncate ' + (searchVenue ? '' : '!text-slate-400')}>
+                      <option value="">All venues</option>
+                      {venueOptions.map(function (v) { return <option key={v} value={v}>{v}</option> })}
+                    </select>
+                    <Icon name="chevronDown" size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button type="button" onClick={function () { setRecentFiltersOpen(!recentFiltersOpen) }} aria-expanded={recentFiltersOpen}
+                    className={'h-8 px-3 rounded-lg border text-[12px] font-bold inline-flex items-center gap-1.5 transition-colors ' +
+                      (recentFiltersOpen ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-700')}>
+                    <Icon name="filter" size={13} />Filters
+                    {nOn > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-600 text-white text-[10.5px] font-extrabold inline-flex items-center justify-center">{nOn}</span>}
+                    <Icon name={recentFiltersOpen ? 'chevronUp' : 'chevronDown'} size={12} className="opacity-70" />
+                  </button>
+                  <span className="min-w-0 truncate text-[11px] font-medium text-slate-500">
+                    {filterFrom || filterTo ? (filterFrom ? formatDate(filterFrom) : '…') + ' – ' + (filterTo ? formatDate(filterTo) : 'today') : 'Last 30 days'}
+                  </span>
+                  <button type="button" onClick={exportCSV} disabled={exporting}
+                    className="ml-auto shrink-0 h-8 px-2.5 rounded-lg border border-slate-300 bg-white text-[12px] font-bold text-slate-700 inline-flex items-center gap-1 disabled:opacity-50">
+                    <Icon name="download" size={13} />CSV
+                  </button>
+                  <button type="button" onClick={exportPDF} disabled={exporting}
+                    className="shrink-0 h-8 px-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-bold inline-flex items-center gap-1 disabled:opacity-50">
+                    <Icon name="fileText" size={13} />{exporting ? 'PDF…' : 'PDF'}
+                  </button>
+                </div>
+                {recentFiltersOpen && (
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <div className="flex items-center gap-1.5">
+                      <input type="date" value={filterFrom} onChange={function (e) { setFilterFrom(e.target.value) }} aria-label="From date"
+                        className={INPUT + ' !h-9 !px-2 flex-1'} />
+                      <span className="shrink-0 text-[12px] font-bold text-slate-400">to</span>
+                      <input type="date" value={filterTo} onChange={function (e) { setFilterTo(e.target.value) }} aria-label="To date"
+                        className={INPUT + ' !h-9 !px-2 flex-1'} />
+                    </div>
+                    {[
+                      [[['both', 'All'], ['issue', 'Issues'], ['collection', 'Collections']], filterKind, setFilterKind, 'k'],
+                      [[['all', 'Any payment'], ['cash', 'Cash'], ['bank', 'Bank']], filterPaymentMode, setFilterPaymentMode, 'p'],
+                    ].map(function (grp) {
+                      return (
+                        <div key={grp[3]} className="grid grid-cols-3 p-0.5 rounded-lg bg-slate-100">
+                          {grp[0].map(function (o) {
+                            var on = grp[1] === o[0]
+                            return (
+                              <button key={o[0]} type="button" onClick={function () { grp[2](o[0]) }} aria-pressed={on}
+                                className={'min-w-0 h-7 px-1 rounded-md text-[12px] font-bold truncate transition-colors ' +
+                                  (on ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500')}>
+                                {o[1]}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )
+                    })}
+                    <div className="flex items-center gap-2">
+                      {isAdmin && (
+                        <label className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-700 cursor-pointer select-none">
+                          <input type="checkbox" checked={showAll} onChange={function (e) { setShowAll(e.target.checked) }} className="w-4 h-4 accent-indigo-600" />
+                          Everyone's entries
+                        </label>
+                      )}
+                      {nOn > 0 && (
+                        <button type="button" onClick={function () { setFilterFrom(''); setFilterTo(''); setFilterKind('both'); setFilterPaymentMode('all'); setShowAll(false) }}
+                          className="ml-auto h-7 px-2.5 rounded-lg text-[12px] font-bold text-indigo-600 hover:bg-indigo-50">Reset</button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
-          {listLoading && <p className="text-[13px] text-slate-500 text-center py-6">Loading…</p>}
+          {listLoading && <p className="text-[13px] font-semibold text-white/85 text-center py-6 drop-shadow">Loading…</p>}
           {!listLoading && recentGroups.length === 0 && (
             <p className={CARD + ' px-4 py-8 text-center text-[13px] text-slate-500'}>No activity in this date range</p>
           )}
@@ -1042,9 +1197,22 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
                     })}
                   </div>
                 </div>
-                <div className="border-t border-slate-100 divide-y divide-slate-100">
-                  {g._filtered.map(function (r) { return renderHistoryRow(r, profile, isAdmin, openCancel) })}
-                </div>
+                {/* The entries stay folded until asked for, so the list reads as
+                    one card per function rather than a wall of rows. */}
+                <button type="button" onClick={function () { toggleGroup(g.event_id) }} aria-expanded={!!openGroups[g.event_id]}
+                  className="w-full flex items-center gap-2 px-3.5 py-2.5 border-t border-slate-100 text-left hover:bg-slate-50">
+                  <Icon name="list" size={14} className="text-slate-400" />
+                  <span className="flex-1 text-[12.5px] font-bold text-slate-700">
+                    {g._filtered.length + (g._filtered.length === 1 ? ' entry' : ' entries')}
+                  </span>
+                  <span className="text-[12px] font-bold text-indigo-600">{openGroups[g.event_id] ? 'Hide' : 'Show'}</span>
+                  <Icon name={openGroups[g.event_id] ? 'chevronUp' : 'chevronDown'} size={15} className="text-slate-400" />
+                </button>
+                {openGroups[g.event_id] && (
+                  <div className="border-t border-slate-100 divide-y divide-slate-100">
+                    {g._filtered.map(function (r) { return renderHistoryRow(r, profile, isAdmin, openCancel, { issueLocked: g.items.some(function (x) { return x._kind === 'collection' && x.status === 'active' }), correctedIds: correctedIssueIds(g.items.filter(function (x) { return x._kind === 'issue' })), onReceipt: function (row) { printCollectionReceipt(row, g.event) }, receiptBusy: receiptBusy }) })}
+                  </div>
+                )}
               </div>
             )
           })}
@@ -1105,15 +1273,38 @@ function ExtraPlateCollect({ profile, onBalanceChange }) {
 
 // One issue or collection, as a row: an icon for its kind, what it was,
 // when and by whom, and its photo and Cancel on the right.
-function renderHistoryRow(r, profile, isAdmin, openCancel) {
+// The issues that an active correction points at ("Correction of #123 …").
+function correctedIssueIds(issueRows) {
+  var out = {}
+  ;(issueRows || []).forEach(function (x) {
+    if (x.status !== 'active') return
+    var m = /^Correction of #(\d+)/.exec(x.notes || '')
+    if (m) out[m[1]] = true
+  })
+  return out
+}
+
+// opts.issueLocked: the function has an active collection, which the
+// database will not let an issue be cancelled under (the collection was
+// worked out on those plates). Such an issue offers Correct — a negative
+// issue, pre-filled — where it would have offered a Cancel that can only
+// fail. opts.onCorrect is given on the Manage screen, where the issue form is.
+function renderHistoryRow(r, profile, isAdmin, openCancel, opts) {
+  opts = opts || {}
   var isCancelled = r.status === 'cancelled'
   var isIssue = r._kind === 'issue'
   var isWaste = !isIssue && r.extras_charged === 0
   var ownerId = isIssue ? r.issued_by : r.collected_by
-  var canCancel = !isCancelled && (
+  var allowed = !isCancelled && (
     isAdmin ||
     (ownerId === profile.id && r.created_at.slice(0, 10) === new Date().toISOString().slice(0, 10))
   )
+  var locked = allowed && isIssue && !!opts.issueLocked
+  var canCancel = allowed && !locked
+  // A correction is not itself corrected (issue again instead), and an entry
+  // a correction already points at says so rather than offering another.
+  var isCorrection = isIssue && /^Correction of /.test(r.notes || '')
+  var isCorrected = isIssue && (opts.correctedIds || {})[r.id]
   var receiptUrl = r.receipt_path
     ? supabase.storage.from('receipts').getPublicUrl(r.receipt_path).data?.publicUrl
     : null
@@ -1153,13 +1344,36 @@ function renderHistoryRow(r, profile, isAdmin, openCancel) {
           {formatDateTime(r.created_at)}{r._creatorName ? ' · ' + r._creatorName : ''}
         </p>
       </div>
-      {(receiptUrl || canCancel) && (
+      {(receiptUrl || canCancel || locked || (!isIssue && !isWaste && !isCancelled && opts.onReceipt)) && (
         <div className="shrink-0 flex items-center gap-1.5">
+          {!isIssue && !isWaste && !isCancelled && opts.onReceipt && (
+            <button type="button" onClick={function () { opts.onReceipt(r) }} disabled={opts.receiptBusy === r.id}
+              aria-label="Download receipt" title="Download receipt"
+              className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-indigo-600 inline-flex items-center justify-center disabled:opacity-50">
+              <Icon name={opts.receiptBusy === r.id ? 'refresh' : 'download'} size={14} className={opts.receiptBusy === r.id ? 'animate-spin' : ''} />
+            </button>
+          )}
           {receiptUrl && (
             <a href={receiptUrl} target="_blank" rel="noopener noreferrer" aria-label="View photo"
               className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-indigo-600 inline-flex items-center justify-center">
               <Icon name="eye" size={14} />
             </a>
+          )}
+          {locked && isCorrected && (
+            <span className="h-8 px-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 inline-flex items-center gap-1 text-[11.5px] font-bold">
+              <Icon name="check" size={12} strokeWidth={3} />Corrected
+            </span>
+          )}
+          {locked && !isCorrected && !isCorrection && opts.onCorrect && (
+            <button type="button" onClick={function () { opts.onCorrect(r) }}
+              title="A collection exists for this function, so this issue cannot be cancelled — log a negative issue instead"
+              className="h-8 px-2.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 text-[12px] font-bold hover:bg-indigo-100">Correct</button>
+          )}
+          {locked && !isCorrected && !isCorrection && !opts.onCorrect && (
+            <span title="A collection exists for this function, so this issue cannot be cancelled — correct it with a negative issue from Manage"
+              className="h-8 px-2 rounded-lg border border-slate-200 text-slate-400 inline-flex items-center gap-1 text-[11.5px] font-bold">
+              <Icon name="lock" size={12} />Locked
+            </span>
           )}
           {canCancel && (
             <button type="button" onClick={function () { openCancel(isIssue ? 'issue' : 'collection', r) }}

@@ -7,7 +7,10 @@ import { venueColor, VENUE_LEGEND } from '../../lib/venueColors'
 var DAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
 
-function EventDatePicker({ value, onChange, label, collapsible, includePast, triggerStyle, plain, neutral, placeholder }) {
+// panelScope: a class for the panel when it is portalled to <body>, so a
+// screen that re-themes its own tokens (Extra Plates' dark one) can carry
+// the theme into the calendar, which otherwise renders outside it.
+function EventDatePicker({ value, onChange, label, collapsible, includePast, triggerStyle, plain, neutral, placeholder, panelScope }) {
   var today = new Date()
   var initDate = value ? new Date(value + 'T00:00:00') : today
   var [viewYear, setViewYear] = useState(initDate.getFullYear())
@@ -144,6 +147,8 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
   }
 
   var todayStr = formatISO(today)
+  // How many days this month have a function, for the line under the month.
+  var fnDays = Object.keys(eventDates).length
   var monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
   var shortMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -168,7 +173,7 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
       {open && (function () {
       var panel = (
         <div ref={panelRef}
-          className={"bg-white border border-slate-200 rounded-2xl p-3.5" + (collapsible ? " shadow-xl" : "")}
+          className={"bg-white border border-slate-200 rounded-2xl p-4" + (collapsible ? " shadow-[0_12px_40px_rgba(15,23,42,0.16)]" : "")}
           style={collapsible ? {
             position: 'fixed', zIndex: 9999, width: pos ? pos.width : 300,
             top: pos ? pos.top : -9999, left: pos ? pos.left : -9999,
@@ -176,69 +181,73 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
             maxHeight: 'calc(100vh - 16px)', overflowY: 'auto',
             fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
           } : undefined}>
-        {/* Month nav */}
-        <div className="flex items-center justify-between mb-2.5">
+        {/* Month nav: the month in the display face between two round
+            buttons, and a Today shortcut once you have paged away from it. */}
+        <div className="flex items-center gap-2 mb-3">
           <button type="button" onClick={prevMonth} aria-label="Previous month"
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors">
+            className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 active:scale-95 transition-all">
             <Icon name="chevronRight" size={16} className="rotate-180" />
           </button>
-          <span className="text-[14.5px] font-bold text-slate-900">{monthNames[viewMonth] + ' ' + viewYear}</span>
+          <div className="min-w-0 flex-1 text-center leading-tight">
+            <p className="font-display text-[16px] font-extrabold tracking-[-0.015em] text-slate-900">{monthNames[viewMonth] + ' ' + viewYear}</p>
+            {!plain && (
+              <p className="text-[11px] font-semibold text-slate-400">
+                {loading ? 'Loading…' : (fnDays === 0 ? 'No functions' : fnDays + (fnDays === 1 ? ' day' : ' days') + ' with functions')}
+              </p>
+            )}
+          </div>
           <button type="button" onClick={nextMonth} aria-label="Next month"
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors">
+            className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 active:scale-95 transition-all">
             <Icon name="chevronRight" size={16} />
           </button>
         </div>
 
-        {/* Day headers */}
-        <div className="grid grid-cols-7 mb-1">
-          {DAY_NAMES.map(function (dn) {
-            return <div key={dn} className="text-center text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.04em] py-1">{dn}</div>
+        {/* Day headers — the weekend in a softer ink, as on a printed calendar. */}
+        <div className="grid grid-cols-7 mb-1 rounded-lg bg-slate-50">
+          {DAY_NAMES.map(function (dn, di) {
+            return <div key={dn} className={"text-center text-[10.5px] font-extrabold uppercase tracking-[0.08em] py-1.5 " + (di === 0 || di === 6 ? "text-rose-400" : "text-slate-500")}>{dn}</div>
           })}
         </div>
 
-        {/* Date cells */}
-        <div className="grid grid-cols-7">
+        {/* Date cells. Square cells that fill the column, so the grid has no
+            ragged gutters at any panel width. Days outside the month are left
+            blank — greyed numbers from next month were noise. */}
+        <div className="grid grid-cols-7 gap-y-0.5">
           {cells.map(function (cell, idx) {
-            if (!cell.current) {
-              return <div key={'e' + idx} className="h-10 flex items-center justify-center"><span className="text-[12.5px] text-slate-300">{cell.day}</span></div>
-            }
+            if (!cell.current) return <div key={'e' + idx} aria-hidden="true" />
 
             var isSelected = value === cell.dateStr
             var isToday = cell.dateStr === todayStr
+            var isPast = cell.dateStr < todayStr
             var venues = eventDates[cell.dateStr] || []
             var hasEvent = venues.length > 0
+            var weekend = (idx % 7 === 0) || (idx % 7 === 6)
 
-            // A day with functions is its number in full weight with a dot
-            // per venue under it — not a filled disc. Filled, most of a busy
-            // month turned into a sheet of blue and the selected day had to
-            // shout over it. Now the only filled day is the one you picked.
-            var baseClass = "mx-auto w-10 h-10 flex flex-col items-center justify-center gap-[3px] rounded-xl text-[13px] cursor-pointer transition-colors "
-
-            var colorClass
-            if (isSelected) {
-              colorClass = "bg-indigo-600 text-white font-bold shadow-[0_2px_8px_rgba(79,70,229,0.35)]"
-            } else if (hasEvent) {
-              colorClass = "text-slate-900 font-semibold hover:bg-slate-100"
-            } else {
-              colorClass = "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-            }
-
-            if (isToday && !isSelected) {
-              baseClass += "ring-1 ring-inset ring-indigo-400 text-indigo-700 font-semibold "
-            }
+            // The only filled day is the one you picked; today is a tinted
+            // tile; a day with functions is its number in full weight with a
+            // dot per venue under it. Past days without functions step back.
+            var tone
+            if (isSelected) tone = "bg-indigo-600 text-white font-extrabold shadow-[0_3px_10px_rgba(79,70,229,0.35)]"
+            else if (isToday) tone = "bg-indigo-50 text-indigo-700 font-extrabold ring-1 ring-inset ring-indigo-300 hover:bg-indigo-100"
+            else if (hasEvent) tone = "text-slate-900 font-bold hover:bg-slate-100"
+            else if (isPast) tone = "text-slate-300 font-medium hover:bg-slate-50 hover:text-slate-500"
+            else tone = (weekend ? "text-rose-400" : "text-slate-500") + " font-medium hover:bg-slate-100 hover:text-slate-900"
 
             return (
-              <div key={cell.dateStr} className="py-0.5">
+              <div key={cell.dateStr} className="flex justify-center">
                 <button type="button" onClick={function () { selectDate(cell.dateStr) }}
-                  className={baseClass + colorClass}>
+                  aria-label={cell.day + ' ' + monthNames[viewMonth] + (hasEvent ? ', ' + venues.length + ' venue' + (venues.length === 1 ? '' : 's') + ' booked' : '')}
+                  aria-pressed={isSelected}
+                  className={"relative w-full max-w-[44px] aspect-square flex flex-col items-center justify-center gap-[3px] rounded-xl text-[14px] tabular-nums cursor-pointer transition-all active:scale-95 " + tone}>
                   <span className="leading-none">{cell.day}</span>
-                  {/* The dot row keeps its height with or without dots, so a
-                      day with functions sits at the same height as one without. */}
+                  {/* The dot row keeps its height with or without dots, so
+                      every number sits on the same line. */}
                   {!plain && (
-                    <span className="h-[5px] flex gap-[2px] justify-center">
+                    <span className="h-[5px] flex gap-[2px] justify-center items-center">
                       {venues.slice(0, 3).map(function (v, vi) {
                         return <span key={vi} className="w-[5px] h-[5px] rounded-full" style={{ background: isSelected ? 'rgba(255,255,255,0.95)' : venueColor(v) }} />
                       })}
+                      {venues.length > 3 && <span className={"text-[8px] font-extrabold leading-none " + (isSelected ? "text-white" : "text-slate-500")}>+</span>}
                     </span>
                   )}
                 </button>
@@ -247,31 +256,37 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
           })}
         </div>
 
-        {/* Legend + clear. In plain mode there are no dots to explain, so the
-            footer is only worth drawing when there is a date to clear. */}
-        {(!plain || value) && (
-        <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-slate-100">
-          <div className="flex items-center gap-3 flex-wrap">
-            {!plain && <>
-            {VENUE_LEGEND.map(function (l) {
-              return (
-                <span key={l.code} title={l.name} className="inline-flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full" style={{ background: venueColor(l.name) }} />
-                  <span className="text-[11px] font-semibold text-slate-600">{l.code}</span>
-                </span>
-              )
-            })}
-            {loading && <span className="text-[11px] text-slate-400 ml-1">...</span>}</>}
-          </div>
-          {value && (
-            <button type="button" onClick={function () { onChange('') }}
-              className="h-7 px-2 -mr-2 rounded-lg text-[12px] font-semibold text-slate-600 hover:text-red-600 hover:bg-red-50 transition-colors">Clear</button>
+        {/* Legend, then Today and Clear. In plain mode there are no dots to
+            explain, so the footer only carries the buttons. */}
+        <div className="mt-3 pt-3 border-t border-slate-100 space-y-2.5">
+          {!plain && (
+            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+              {VENUE_LEGEND.map(function (l) {
+                return (
+                  <span key={l.code} title={l.name} className="inline-flex items-center gap-1.5 h-6 px-2 rounded-full bg-slate-50 border border-slate-200">
+                    <span className="w-2 h-2 rounded-full" style={{ background: venueColor(l.name) }} />
+                    <span className="text-[11px] font-bold text-slate-600">{l.code}</span>
+                  </span>
+                )
+              })}
+            </div>
           )}
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={function () { selectDate(todayStr) }} disabled={value === todayStr}
+              className="flex-1 h-9 rounded-xl border border-slate-200 bg-white text-[12.5px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 inline-flex items-center justify-center gap-1.5 transition-colors">
+              <Icon name="calendar" size={13} />Today
+            </button>
+            {value && (
+              <button type="button" onClick={function () { onChange(''); if (collapsible) setOpen(false) }}
+                className="flex-1 h-9 rounded-xl border border-red-200 bg-red-50/60 text-[12.5px] font-bold text-red-600 hover:bg-red-50 inline-flex items-center justify-center gap-1.5 transition-colors">
+                <Icon name="close" size={12} />Clear
+              </button>
+            )}
+          </div>
         </div>
-        )}
         </div>
       )
-      return collapsible ? createPortal(panel, document.body) : panel
+      return collapsible ? createPortal(panelScope ? <div className={panelScope}>{panel}</div> : panel, document.body) : panel
       })()}
     </div>
   )

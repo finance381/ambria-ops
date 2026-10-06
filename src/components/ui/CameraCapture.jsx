@@ -11,6 +11,7 @@ import { createPortal } from 'react-dom'
 // reclaim mid-capture.
 function CameraCapture({ onCapture, onClose }) {
   var videoRef = useRef(null)
+  var frameRef = useRef(null)
   var streamRef = useRef(null)
   var [error, setError] = useState('')
   var [ready, setReady] = useState(false)
@@ -60,6 +61,16 @@ function CameraCapture({ onCapture, onClose }) {
   function takeShot() {
     var video = videoRef.current
     if (!video || !video.videoWidth) return
+    // The preview fills the screen (object-cover), so a landscape webcam is
+    // shown cropped to the screen's portrait shape. The photo is cut to that
+    // same window — what you framed is what you get, not the wider picture
+    // the camera actually saw.
+    var vw = video.videoWidth, vh = video.videoHeight
+    var frame = frameRef.current
+    var fa = frame && frame.clientHeight ? frame.clientWidth / frame.clientHeight : vw / vh
+    var sx = 0, sy = 0, sw = vw, sh = vh
+    if (vw / vh > fa) { sw = Math.round(vh * fa); sx = Math.round((vw - sw) / 2) }
+    else { sh = Math.round(vw / fa); sy = Math.round((vh - sh) / 2) }
     // Some phones report the camera's full sensor resolution here (4000x3000
     // or more) regardless of the ideal constraint above. A canvas that big
     // fails to allocate on lower-memory devices with a "low memory" error —
@@ -67,11 +78,11 @@ function CameraCapture({ onCapture, onClose }) {
     // edge at 1600px (matching imageCompress.js's own cap for gallery photos)
     // keeps every capture well inside what any device can allocate.
     var maxDim = 1600
-    var scale = Math.min(maxDim / video.videoWidth, maxDim / video.videoHeight, 1)
+    var scale = Math.min(maxDim / sw, maxDim / sh, 1)
     var canvas = document.createElement('canvas')
-    canvas.width = Math.round(video.videoWidth * scale)
-    canvas.height = Math.round(video.videoHeight * scale)
-    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
+    canvas.width = Math.round(sw * scale)
+    canvas.height = Math.round(sh * scale)
+    canvas.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
     canvas.toBlob(function (blob) {
       if (!blob) return
       setShotBlob(blob)
@@ -100,41 +111,48 @@ function CameraCapture({ onCapture, onClose }) {
       // that handler and closed the modal underneath instead of doing
       // anything in here.
       onClick={function (ev) { ev.stopPropagation() }}>
-      <div className="flex items-center justify-between px-4 py-3 text-white shrink-0">
-        <button type="button" onClick={onClose} className="text-sm font-semibold px-2 py-1">Cancel</button>
-        <span className="text-sm font-semibold">Take Photo</span>
-        <span className="w-12" />
-      </div>
-
-      <div className="flex-1 relative flex items-center justify-center overflow-hidden">
+      {/* The camera fills the screen, portrait, with the controls floating
+          over it on soft shades — a webcam's wide picture is cropped to the
+          screen rather than shown as a letterboxed strip. */}
+      <div ref={frameRef} className="absolute inset-0 overflow-hidden">
         {error ? (
-          <p className="text-white text-sm text-center px-8 leading-relaxed">{error}</p>
+          <div className="h-full flex items-center justify-center">
+            <p className="text-white text-sm text-center px-8 leading-relaxed">{error}</p>
+          </div>
         ) : (
           <>
             <video ref={videoRef} autoPlay playsInline muted
-              className={"max-w-full max-h-full object-contain" + (shotUrl ? " hidden" : "")} />
-            {shotUrl && <img src={shotUrl} alt="Captured receipt" className="max-w-full max-h-full object-contain" />}
+              className={"absolute inset-0 w-full h-full object-cover" + (shotUrl ? " hidden" : "")} />
+            {shotUrl && <img src={shotUrl} alt="Captured receipt" className="absolute inset-0 w-full h-full object-cover" />}
           </>
         )}
       </div>
 
+      <div className="relative z-10 flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-6 text-white bg-gradient-to-b from-black/60 to-transparent">
+        <button type="button" onClick={onClose} className="h-9 px-3.5 rounded-full bg-black/35 backdrop-blur text-sm font-semibold">Cancel</button>
+        <span className="text-sm font-semibold drop-shadow">{shotUrl ? 'Check the photo' : 'Take Photo'}</span>
+        <span className="w-[72px]" />
+      </div>
+
+      <div className="flex-1" />
+
       {!error && (
-        <div className="flex items-center justify-center gap-6 px-4 py-6 shrink-0">
+        <div className="relative z-10 flex items-center justify-center gap-4 px-4 pt-10 pb-[max(1.75rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-black/70 to-transparent">
           {shotUrl ? (
             <>
               <button type="button" onClick={retake}
-                className="px-5 py-2.5 rounded-full bg-white/10 text-white text-sm font-semibold border border-white/30">
+                className="h-12 px-6 rounded-full bg-white/15 backdrop-blur text-white text-sm font-semibold border border-white/40">
                 Retake
               </button>
               <button type="button" onClick={confirm}
-                className="px-6 py-2.5 rounded-full bg-indigo-600 text-white text-sm font-bold">
+                className="h-12 px-7 rounded-full bg-indigo-600 text-white text-sm font-bold shadow-lg">
                 Use Photo
               </button>
             </>
           ) : (
             <button type="button" onClick={takeShot} disabled={!ready}
               aria-label="Capture photo"
-              className="w-16 h-16 rounded-full bg-white border-4 border-white/40 disabled:opacity-40" />
+              className="w-[72px] h-[72px] rounded-full bg-white ring-4 ring-white/40 ring-offset-4 ring-offset-transparent active:scale-95 transition-transform disabled:opacity-40" />
           )}
         </div>
       )}

@@ -516,7 +516,8 @@ function Shell({ profile, onSignOut }) {
   // does, so the bar over it is frosted rather than a solid white strip.
   // Cost Transfers draws its own patterned ground on the phone too.
   // The Item List draws the inventory photograph behind it on the phone.
-  var artHeader = pageArt || waveArt || tab === 'wallet' || tab === 'vendor_ledger' || tab === 'ledgers' || tab === 'cost_transfers' || tab === 'my'
+  // Extra Plates draws a laid table across the top of its linen ground.
+  var artHeader = pageArt || waveArt || tab === 'wallet' || tab === 'vendor_ledger' || tab === 'ledgers' || tab === 'cost_transfers' || tab === 'my' || tab === 'extra_plates'
 
 
   return (
