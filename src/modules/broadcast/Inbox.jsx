@@ -5,7 +5,7 @@ import { hasPerm } from '../../lib/permissions'
 import { formatDate } from '../../lib/format'
 import Icon from '../../components/ui/Icon'
 import SearchField from '../../components/ui/SearchField'
-import { CTRL, CARD, Chip, Notice, EmptyState, CHIP_GOOD, CHIP_NEUTRAL } from './ui'
+import { CTRL, CARD, Chip, Notice, EmptyState, CHIP_GOOD, CHIP_NEUTRAL, WaMessageBody } from './ui'
 
 // Known limitation, traced to migration 00033: rpc_wa_conversation_reply never
 // populates wa_messages.template_params, so wa-send will fail loudly
@@ -290,7 +290,7 @@ function Inbox({ profile, inAdmin }) {
                       (out
                         ? 'bg-indigo-600 text-white rounded-2xl rounded-br-md'
                         : 'bg-white border border-slate-200 text-slate-800 rounded-2xl rounded-bl-md')}>
-                      <p className="whitespace-pre-wrap">{m.rendered_body || '(template message)'}</p>
+                      <WaMessageBody m={m} out={out} />
                       {m.wa_templates && (
                         <p className={'text-[10px] mt-1 ' + (out ? 'text-indigo-200' : 'text-slate-400')}>
                           Sent via template {m.wa_templates.name}

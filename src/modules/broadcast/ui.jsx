@@ -1,4 +1,5 @@
 import Icon from '../../components/ui/Icon'
+import { supabase } from '../../lib/supabase'
 
 // The shapes every screen in this module shares. They were being retyped per
 // file, which is how the five pages drifted into looking like five products:
@@ -64,6 +65,73 @@ export function Notice({ tone, children }) {
       <span>{children}</span>
     </p>
   )
+}
+
+var MEDIA_FALLBACK_LABEL = {
+  image: '📷 Photo', video: '🎥 Video', audio: '🎤 Voice message',
+  document: '📄 Document', sticker: 'Sticker',
+}
+
+// What a message thread actually shows for one row — split out of Inbox and
+// Contacts (which used to just print rendered_body and call anything else
+// "(template message)", a label that only ever means something for what *we*
+// send — a customer sending a photo or voice note isn't a template, it's
+// just content wa-webhook never used to capture at all. One component so a
+// third thread view doesn't have to reinvent this again.
+export function WaMessageBody({ m, out, mutedCls }) {
+  var mutedTone = mutedCls || (out ? 'text-indigo-200' : 'text-slate-400')
+  var linkTone = out ? 'text-white underline' : 'text-indigo-700 underline'
+
+  if (m.message_type === 'location' && (m.location_lat != null && m.location_lng != null)) {
+    var mapsUrl = 'https://www.google.com/maps?q=' + m.location_lat + ',' + m.location_lng
+    return (
+      <p className="leading-snug">
+        <a href={mapsUrl} target="_blank" rel="noreferrer" className={linkTone + ' font-semibold'}>
+          📍 {m.location_name || 'Shared location'}
+        </a>
+      </p>
+    )
+  }
+
+  if (m.media_path) {
+    var url = supabase.storage.from('wa-inbound-media').getPublicUrl(m.media_path).data?.publicUrl
+    if (m.message_type === 'image' || m.message_type === 'sticker') {
+      return (
+        <div>
+          <a href={url} target="_blank" rel="noreferrer">
+            <img src={url} alt={m.message_type} className="max-w-[220px] max-h-[220px] rounded-lg object-contain border border-black/5" />
+          </a>
+          {m.media_caption && <p className="leading-snug mt-1">{m.media_caption}</p>}
+        </div>
+      )
+    }
+    if (m.message_type === 'video') {
+      return (
+        <div>
+          <video src={url} controls className="max-w-[240px] max-h-[240px] rounded-lg" />
+          {m.media_caption && <p className="leading-snug mt-1">{m.media_caption}</p>}
+        </div>
+      )
+    }
+    if (m.message_type === 'audio') {
+      return <audio src={url} controls className="max-w-[240px] h-9" />
+    }
+    if (m.message_type === 'document') {
+      return (
+        <a href={url} target="_blank" rel="noreferrer" className={linkTone + ' flex items-center gap-1.5 font-semibold'}>
+          <Icon name="fileText" size={14} /> {m.media_filename || 'Document'}
+        </a>
+      )
+    }
+  }
+
+  if (m.rendered_body) return <p className="leading-snug whitespace-pre-wrap">{m.rendered_body}</p>
+
+  // Media that's a known type but has no file (download failed, or Meta's
+  // link had already expired by the time we tried) still says what it was,
+  // rather than the flatly wrong "(template message)".
+  var label = MEDIA_FALLBACK_LABEL[m.message_type]
+  return <p className={'leading-snug italic ' + mutedTone}>{label ? label + ' (unavailable)' : '(unsupported message type)'}</p>
 }
 
 // An empty list that only says "None yet" leaves you looking for the way

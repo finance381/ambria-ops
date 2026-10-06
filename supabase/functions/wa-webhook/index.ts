@@ -108,7 +108,36 @@ async function notifyInboxSubscribers(supa, SUPABASE_URL, SERVICE_ROLE, displayN
   }
 }
 
-async function handleInboundMessage(supa, value, msg, SUPABASE_URL, SERVICE_ROLE) {
+// Meta hands back a media id, never the file itself — a second call resolves
+// that id to a short-lived signed CDN url (expires in minutes), which a third
+// call then has to fetch before it dies. Re-uploading into our own storage is
+// what gives the Inbox a link that still works tomorrow.
+async function downloadAndStoreMedia(mediaId, supa, accessToken, apiVersion, contactId) {
+  try {
+    var metaRes = await fetch("https://graph.facebook.com/" + apiVersion + "/" + mediaId, {
+      headers: { "Authorization": "Bearer " + accessToken },
+    })
+    if (!metaRes.ok) { console.error("wa-webhook: media lookup failed, status " + metaRes.status); return null }
+    var metaJson = await metaRes.json()
+    if (!metaJson.url) return null
+    var mimeType = (metaJson.mime_type || "application/octet-stream").split(";")[0].trim()
+
+    var fileRes = await fetch(metaJson.url, { headers: { "Authorization": "Bearer " + accessToken } })
+    if (!fileRes.ok) { console.error("wa-webhook: media fetch failed, status " + fileRes.status); return null }
+    var blob = await fileRes.blob()
+
+    var ext = (mimeType.split("/")[1] || "bin").replace(/[^a-z0-9]/gi, "")
+    var path = contactId + "/" + mediaId + "." + ext
+    var upRes = await supa.storage.from("wa-inbound-media").upload(path, blob, { contentType: mimeType, upsert: true })
+    if (upRes.error) { console.error("wa-webhook: media upload failed: " + upRes.error.message); return null }
+    return { path: path, mimeType: mimeType }
+  } catch (err) {
+    console.error("wa-webhook: media download threw")
+    return null
+  }
+}
+
+async function handleInboundMessage(supa, value, msg, SUPABASE_URL, SERVICE_ROLE, WA_ACCESS_TOKEN, WA_API_VERSION) {
   var fromPhone = "+" + String(msg.from || "").replace(/^\+/, "")
   if (fromPhone === "+") return
 
@@ -116,12 +145,24 @@ async function handleInboundMessage(supa, value, msg, SUPABASE_URL, SERVICE_ROLE
   var waProfile = contactsMeta[0] || {}
   var displayName = waProfile.profile ? waProfile.profile.name : null
 
+  var messageType = msg.type || "unknown"
   var bodyText = null
+  var mediaRef = null // { id, caption?, filename? } — resolved to a stored file below
+  var locationData = null
+
   if (msg.type === "text" && msg.text) bodyText = msg.text.body
   else if (msg.type === "button" && msg.button) bodyText = msg.button.text
   else if (msg.type === "interactive" && msg.interactive) {
     bodyText = (msg.interactive.button_reply && msg.interactive.button_reply.title)
       || (msg.interactive.list_reply && msg.interactive.list_reply.title) || null
+  } else if (msg.type === "image" && msg.image) mediaRef = { id: msg.image.id, caption: msg.image.caption || null }
+  else if (msg.type === "video" && msg.video) mediaRef = { id: msg.video.id, caption: msg.video.caption || null }
+  else if (msg.type === "audio" && msg.audio) mediaRef = { id: msg.audio.id }
+  else if (msg.type === "sticker" && msg.sticker) mediaRef = { id: msg.sticker.id }
+  else if (msg.type === "document" && msg.document) {
+    mediaRef = { id: msg.document.id, caption: msg.document.caption || null, filename: msg.document.filename || null }
+  } else if (msg.type === "location" && msg.location) {
+    locationData = { lat: msg.location.latitude, lng: msg.location.longitude, name: msg.location.name || msg.location.address || null }
   }
 
   var contactRes = await supa.from("wa_contacts").select("id, name").eq("phone_e164", fromPhone).maybeSingle()
@@ -140,6 +181,12 @@ async function handleInboundMessage(supa, value, msg, SUPABASE_URL, SERVICE_ROLE
     await supa.from("wa_contacts").update({ name: displayName }).eq("id", contactId)
   }
 
+  var mediaPath = null, mediaMimeType = null
+  if (mediaRef && mediaRef.id && WA_ACCESS_TOKEN) {
+    var dl = await downloadAndStoreMedia(mediaRef.id, supa, WA_ACCESS_TOKEN, WA_API_VERSION, contactId)
+    if (dl) { mediaPath = dl.path; mediaMimeType = dl.mimeType }
+  }
+
   // The wa_messages_after_insert + wa_stop_keyword_handler triggers (migration
   // 00030) handle the conversation upsert, session window, and any STOP
   // auto-opt-out from here — both run synchronously as part of this insert,
@@ -149,10 +196,19 @@ async function handleInboundMessage(supa, value, msg, SUPABASE_URL, SERVICE_ROLE
   var insMsg = await supa.from("wa_messages").insert({
     contact_id: contactId, direction: "in", wa_message_id: msg.id,
     rendered_body: bodyText, status: "delivered",
+    message_type: messageType,
+    media_path: mediaPath, media_mime_type: mediaMimeType,
+    media_caption: mediaRef ? (mediaRef.caption || null) : null,
+    media_filename: mediaRef ? (mediaRef.filename || null) : null,
+    location_lat: locationData ? locationData.lat : null,
+    location_lng: locationData ? locationData.lng : null,
+    location_name: locationData ? locationData.name : null,
   })
   if (insMsg.error) { console.error("wa-webhook: inbound message insert failed: " + insMsg.error.message); return }
 
-  await notifyInboxSubscribers(supa, SUPABASE_URL, SERVICE_ROLE, displayName, fromPhone, bodyText)
+  var MEDIA_PREVIEW_LABEL = { image: "📷 Photo", video: "🎥 Video", audio: "🎤 Voice message", document: "📄 Document", sticker: "Sticker", location: "📍 Location" }
+  var notifyPreview = bodyText || MEDIA_PREVIEW_LABEL[messageType] || "(unsupported message type)"
+  await notifyInboxSubscribers(supa, SUPABASE_URL, SERVICE_ROLE, displayName, fromPhone, notifyPreview)
   await maybeAutoReply(supa, SUPABASE_URL, SERVICE_ROLE, contactId, bodyText)
 }
 
@@ -214,6 +270,8 @@ serve(async function (req) {
   var WA_APP_SECRET = Deno.env.get("WA_APP_SECRET")
   var SUPABASE_URL = Deno.env.get("SUPABASE_URL")
   var SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
+  var WA_ACCESS_TOKEN = Deno.env.get("WA_ACCESS_TOKEN")
+  var WA_API_VERSION = Deno.env.get("WA_API_VERSION") || "v21.0"
 
   if (req.method === "GET") {
     if (!WA_WEBHOOK_VERIFY_TOKEN) return new Response("Forbidden", { status: 403 })
@@ -262,7 +320,7 @@ serve(async function (req) {
         }
 
         var messages = value.messages || []
-        for (var m = 0; m < messages.length; m++) await handleInboundMessage(supa, value, messages[m], SUPABASE_URL, SERVICE_ROLE)
+        for (var m = 0; m < messages.length; m++) await handleInboundMessage(supa, value, messages[m], SUPABASE_URL, SERVICE_ROLE, WA_ACCESS_TOKEN, WA_API_VERSION)
 
         var statuses = value.statuses || []
         for (var s = 0; s < statuses.length; s++) await handleStatusUpdate(supa, statuses[s])
