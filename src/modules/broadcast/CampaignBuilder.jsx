@@ -51,6 +51,10 @@ function StepCard({ n, title, hint, icon, children }) {
 // campaign id so sending two different campaigns at once is unaffected.
 var activeSendLoops = {}
 
+function sleep(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms) })
+}
+
 // Sending has four real gates in this file — saveDraft needs a name and a
 // template, refreshPreview needs a saved id, and openSendConfirm needs a
 // preview. They used to surface only as errors after you pressed the wrong
@@ -196,6 +200,14 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
       variable_mapping_json: mapping,
       scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
     }
+    // fn_wa_queue_due_campaigns (migration 00093) is what actually fires a
+    // scheduled send unattended — it only looks at rows already in
+    // 'draft'/'scheduled', so this has to flip status itself. Only while the
+    // campaign hasn't started sending yet — editing a campaign's name after
+    // it's already sent/partial/etc. must never reset its status back.
+    if (!campaignStatus || campaignStatus === 'draft' || campaignStatus === 'scheduled') {
+      payload.status = scheduledAt ? 'scheduled' : 'draft'
+    }
 
     var res
     if (currentId) {
@@ -206,6 +218,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
     setSaving(false)
     if (res.error) { setError(res.error.message); return }
     setCurrentId(res.data.id)
+    setCampaignStatus(res.data.status)
     setNotice('Draft saved.')
   }
 
@@ -265,6 +278,11 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
       lastData = invokeRes.data
       remaining = lastData.remaining
       setSendProgress({ sent: lastData.sent, failed: lastData.failed, remaining: remaining, total: targetTotal })
+      // claimed: false means fn_wa_cron_tick (migration 00093) currently
+      // holds this campaign's batch — it polls every minute independently of
+      // this tab, so there's no point retrying immediately; a short pause
+      // avoids hammering wa-send in a tight empty loop until it's free again.
+      if (lastData.claimed === false && remaining > 0) await sleep(5000)
     }
 
     delete activeSendLoops[currentId]

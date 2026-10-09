@@ -108,6 +108,20 @@ serve(async function (req) {
       } catch (e) {}
     }
 
+    // Recounted from wa_messages itself rather than read-current-and-add —
+    // every processed message already carries its own final status, so this
+    // is self-healing: a campaign whose last batch update never landed (a
+    // crash, or another caller's claim winning this one) still reports its
+    // true cumulative total on the next call rather than forgetting whatever
+    // already happened. sent also counts delivered/read since wa-webhook
+    // advances a row past 'sent' once Meta reports delivery.
+    async function countStatus(campaignId, statuses) {
+      var q = supa.from("wa_messages").select("id", { count: "exact", head: true }).eq("campaign_id", campaignId)
+      q = statuses.length === 1 ? q.eq("status", statuses[0]) : q.in("status", statuses)
+      var res = await q
+      return res.count || 0
+    }
+
     // Sends one wa_messages row. Returns 'sent' | 'failed' | 'blocked'.
     async function sendOne(row) {
       var category = row.wa_templates ? row.wa_templates.category : "utility"
@@ -217,6 +231,41 @@ serve(async function (req) {
     }
 
     if (body.campaign_id) {
+      // Now reachable two ways that can genuinely overlap: a browser tab's
+      // own send loop, and fn_wa_cron_tick (migration 00093) polling every
+      // minute for anything still 'sending' — exactly so a scheduled or
+      // interrupted campaign keeps going with nobody watching. Without a
+      // real claim, both could pull the same 'queued' rows in the gap
+      // between this SELECT and each row's own UPDATE and send a few
+      // messages twice. batch_claimed_at is a plain optimistic lock: only
+      // one caller's UPDATE actually matches and returns a row, and it
+      // self-expires after 3 minutes so a crashed call never locks a
+      // campaign out of ever being retried.
+      var claimCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString()
+      var claimRes = await supa.from("wa_campaigns")
+        .update({ batch_claimed_at: new Date().toISOString() })
+        .eq("id", body.campaign_id)
+        .or("batch_claimed_at.is.null,batch_claimed_at.lt." + claimCutoff)
+        .select("id")
+      // Degrades to the old unclaimed behavior rather than hard-failing
+      // every send if migration 00093 (adds this column) hasn't been run
+      // yet — a real race is still better than every send erroring out.
+      var claimSkipped = !!claimRes.error
+      if (claimRes.error) console.error("wa-send claim_failed (proceeding unclaimed): " + claimRes.error.message)
+      if (!claimSkipped && (!claimRes.data || claimRes.data.length === 0)) {
+        var busySent = await countStatus(body.campaign_id, ["sent", "delivered", "read"])
+        var busyFailed = await countStatus(body.campaign_id, ["failed"])
+        var busyCampRes = await supa.from("wa_campaigns").select("blocked_count").eq("id", body.campaign_id).maybeSingle()
+        var busyRemainingRes = await supa.from("wa_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("campaign_id", body.campaign_id).eq("status", "queued")
+        return ok({
+          claimed: false, sent: busySent, failed: busyFailed,
+          blocked: (busyCampRes.data && busyCampRes.data.blocked_count) || 0,
+          batch_total: 0, remaining: busyRemainingRes.count || 0,
+        })
+      }
+
       // Conservative default: fn_wa_can_send + the Meta call + two more DB
       // writes + the 100ms throttle can run close to 1s/message under real
       // network latency, and 100 * ~1s sits safely under the 150s platform
@@ -240,22 +289,8 @@ serve(async function (req) {
         if (i < rows.length - 1) await sleep(100)
       }
 
-      // sent/failed are recounted from wa_messages itself rather than
-      // read-current-and-add — every processed message already carries its
-      // own final status, so this is self-healing: a campaign whose last
-      // batch update never landed (the exact crash this fix is for) still
-      // reports its true cumulative total on the very next call, instead of
-      // forgetting whatever an interrupted run already accomplished. sent
-      // also counts delivered/read since wa-webhook advances a row past
-      // 'sent' once Meta reports delivery — not a resend candidate either way.
-      async function countStatus(statuses) {
-        var q = supa.from("wa_messages").select("id", { count: "exact", head: true }).eq("campaign_id", body.campaign_id)
-        q = statuses.length === 1 ? q.eq("status", statuses[0]) : q.in("status", statuses)
-        var res = await q
-        return res.count || 0
-      }
-      var newSent = await countStatus(["sent", "delivered", "read"])
-      var newFailed = await countStatus(["failed"])
+      var newSent = await countStatus(body.campaign_id, ["sent", "delivered", "read"])
+      var newFailed = await countStatus(body.campaign_id, ["failed"])
 
       // blocked_count can't get the same fully-recounted treatment: most of
       // it is contacts fn_wa_resolve_audience already excluded before any
@@ -272,14 +307,17 @@ serve(async function (req) {
         .eq("campaign_id", body.campaign_id).eq("status", "queued")
       var remaining = remainingRes.count || 0
 
+      // Always release the claim here, win or lose — it only needs to cover
+      // this one batch's processing, not the gap until whoever calls next.
       var campUpdate = { sent_count: newSent, failed_count: newFailed, blocked_count: newBlocked }
+      if (!claimSkipped) campUpdate.batch_claimed_at = null
       if (remaining === 0) {
         campUpdate.status = newFailed > 0 ? "partial" : "sent"
         campUpdate.completed_at = new Date().toISOString()
       }
       await supa.from("wa_campaigns").update(campUpdate).eq("id", body.campaign_id)
 
-      return ok({ sent: newSent, failed: newFailed, blocked: newBlocked, batch_total: rows.length, remaining: remaining })
+      return ok({ claimed: true, sent: newSent, failed: newFailed, blocked: newBlocked, batch_total: rows.length, remaining: remaining })
     }
 
     return bad(400, "missing_target", "message_id or campaign_id required")
