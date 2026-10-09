@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
-import { CTRL, BTN_GHOST, BTN_PRIMARY, BTN_SEND, CARD, Labeled, Notice } from './ui'
+import { CTRL, BTN_GHOST, BTN_PRIMARY, BTN_SEND, CARD, Labeled, Notice, TagsInput, useTagSuggestions } from './ui'
 
 // Contact fields fn_wa_resolve_mapping (migration 00029) actually supports —
 // keep this list in sync with that function's CASE branches.
@@ -66,8 +66,9 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
   var [name, setName] = useState('')
   var [templateId, setTemplateId] = useState('')
   var [listId, setListId] = useState('')
-  var [tagsText, setTagsText] = useState('')
-  var [excludeTagsText, setExcludeTagsText] = useState('')
+  var [tags, setTags] = useState([])
+  var [excludeTags, setExcludeTags] = useState([])
+  var tagSuggestions = useTagSuggestions()
   var [venueIds, setVenueIds] = useState([])
   var [source, setSource] = useState('')
   var [minLastSentDays, setMinLastSentDays] = useState('')
@@ -115,8 +116,8 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
         setName(c.name); setTemplateId(String(c.template_id))
         setListId(c.list_id ? String(c.list_id) : '')
         var f = c.audience_filter_json || {}
-        setTagsText((f.tags || []).join(', '))
-        setExcludeTagsText((f.exclude_tags || []).join(', '))
+        setTags(f.tags || [])
+        setExcludeTags(f.exclude_tags || [])
         setVenueIds((f.venue_ids || []).map(String))
         setSource(f.source || '')
         setMinLastSentDays(f.min_last_sent_days != null ? String(f.min_last_sent_days) : '')
@@ -155,9 +156,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
 
   function buildAudienceFilter() {
     var f = {}
-    var tags = tagsText.split(',').map(function (t) { return t.trim() }).filter(Boolean)
     if (tags.length > 0) f.tags = tags
-    var excludeTags = excludeTagsText.split(',').map(function (t) { return t.trim() }).filter(Boolean)
     if (excludeTags.length > 0) f.exclude_tags = excludeTags
     if (venueIds.length > 0) f.venue_ids = venueIds.map(Number)
     if (source) f.source = source
@@ -316,13 +315,13 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
               )}
               {!listId && (
                 <>
-                  <Labeled label="Tags" hint="Comma-separated — a contact matching any of them is included">
-                    <input type="text" value={tagsText} onChange={function (ev) { setTagsText(ev.target.value) }}
-                      placeholder="delhi, wedding" className={CTRL} />
+                  <Labeled label="Tags" hint="A contact matching any of them is included">
+                    <TagsInput value={tags} onChange={setTags} suggestions={tagSuggestions}
+                      placeholder="delhi, wedding" />
                   </Labeled>
-                  <Labeled label="Exclude tags" hint="Comma-separated — a contact matching any of them is left out, even if it also matched Tags above">
-                    <input type="text" value={excludeTagsText} onChange={function (ev) { setExcludeTagsText(ev.target.value) }}
-                      placeholder="opted_out_promo, vip" className={CTRL} />
+                  <Labeled label="Exclude tags" hint="A contact matching any of them is left out, even if it also matched Tags above">
+                    <TagsInput value={excludeTags} onChange={setExcludeTags} suggestions={tagSuggestions}
+                      placeholder="opted_out_promo, vip" />
                   </Labeled>
                   <div>
                     <label className="block text-[12px] font-semibold text-slate-900 mb-1">Venues</label>

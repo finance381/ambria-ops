@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import Icon from '../../components/ui/Icon'
 import { supabase } from '../../lib/supabase'
 
@@ -132,6 +133,94 @@ export function WaMessageBody({ m, out, mutedCls }) {
   // rather than the flatly wrong "(template message)".
   var label = MEDIA_FALLBACK_LABEL[m.message_type]
   return <p className={'leading-snug italic ' + mutedTone}>{label ? label + ' (unavailable)' : '(unsupported message type)'}</p>
+}
+
+// Module-level, not per-component state: Campaign Builder and Lists each
+// mount their own TagsInput, and the suggestion list (every distinct tag
+// actually in use on wa_contacts) doesn't change often enough to justify
+// re-fetching it every time either screen opens.
+var tagSuggestionsCache = null
+export function useTagSuggestions() {
+  var [tags, setTags] = useState(tagSuggestionsCache || [])
+  useEffect(function () {
+    if (tagSuggestionsCache) return
+    supabase.rpc('rpc_wa_list_tags').then(function (res) {
+      if (!res.error && res.data) { tagSuggestionsCache = res.data; setTags(res.data) }
+    })
+  }, [])
+  return tags
+}
+
+// Free-text, comma-separated tag fields had no link to what tags actually
+// exist — a typo or a different casing (e.g. "Team" vs "team") silently
+// matched nothing, with no error, which is exactly how an exclude filter can
+// look applied in the UI while doing nothing in fn_wa_resolve_audience. This
+// autocompletes against useTagSuggestions() instead of trusting freehand
+// text, while still allowing a brand-new tag to be typed and added — tags
+// aren't a closed set (a contact can be given one for the first time here).
+export function TagsInput({ value, onChange, suggestions, placeholder }) {
+  var [text, setText] = useState('')
+  var [open, setOpen] = useState(false)
+  var selected = value || []
+  var matches = (suggestions || [])
+    .filter(function (s) { return selected.indexOf(s) === -1 })
+    .filter(function (s) { return !text || s.toLowerCase().indexOf(text.toLowerCase()) !== -1 })
+    .slice(0, 8)
+
+  function addTag(raw) {
+    var v = raw.trim()
+    if (!v || selected.indexOf(v) !== -1) return
+    onChange(selected.concat([v]))
+    setText('')
+  }
+  function removeTag(t) {
+    onChange(selected.filter(function (s) { return s !== t }))
+  }
+  function onKeyDown(ev) {
+    if (ev.key === 'Enter' || ev.key === ',') {
+      ev.preventDefault()
+      addTag(text)
+    } else if (ev.key === 'Backspace' && !text && selected.length > 0) {
+      removeTag(selected[selected.length - 1])
+    }
+  }
+
+  return (
+    <div className="relative">
+      <div className={CTRL + ' h-auto min-h-10 py-1.5 flex flex-wrap items-center gap-1.5'}>
+        {selected.map(function (t) {
+          return (
+            <span key={t} className="inline-flex items-center gap-1 h-6 pl-2 pr-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[12px] font-semibold">
+              {t}
+              <button type="button" onClick={function () { removeTag(t) }}
+                className="inline-flex items-center justify-center w-4 h-4 rounded-full hover:bg-indigo-100">
+                <Icon name="close" size={10} />
+              </button>
+            </span>
+          )
+        })}
+        <input type="text" value={text}
+          onChange={function (ev) { setText(ev.target.value); setOpen(true) }}
+          onFocus={function () { setOpen(true) }}
+          onBlur={function () { setTimeout(function () { setOpen(false) }, 120) }}
+          onKeyDown={onKeyDown}
+          placeholder={selected.length === 0 ? placeholder : ''}
+          className="flex-1 min-w-[80px] bg-transparent outline-none text-[16px] sm:text-[13px] text-slate-900 placeholder:text-slate-400" />
+      </div>
+      {open && matches.length > 0 && (
+        <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg py-1">
+          {matches.map(function (s) {
+            return (
+              <button key={s} type="button" onMouseDown={function (ev) { ev.preventDefault(); addTag(s) }}
+                className="block w-full text-left px-3 py-1.5 text-[13px] text-slate-700 hover:bg-indigo-50">
+                {s}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // An empty list that only says "None yet" leaves you looking for the way

@@ -6,7 +6,7 @@ import { formatDate } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
 import Icon from '../../components/ui/Icon'
 import SearchField from '../../components/ui/SearchField'
-import { CTRL, TEXTAREA, BTN_GHOST, BTN_PRIMARY, BTN_DANGER, TH, TD, Chip, Labeled, Notice, EmptyState, CHIP_GOOD, CHIP_WARN, CHIP_BAD, CHIP_NEUTRAL, WaMessageBody } from './ui'
+import { CTRL, TEXTAREA, BTN_GHOST, BTN_PRIMARY, BTN_DANGER, TH, TD, Chip, Labeled, Notice, EmptyState, CHIP_GOOD, CHIP_WARN, CHIP_BAD, CHIP_NEUTRAL, WaMessageBody, TagsInput, useTagSuggestions } from './ui'
 import { appConfirm } from '../../components/ui/AppDialog'
 
 // Deferred, flagged rather than built riskily: (1) "Merge duplicates" — no
@@ -45,23 +45,21 @@ function sessionLabel(contact) {
 function AddContactModal({ open, onClose, onSaved }) {
   var [phone, setPhone] = useState('')
   var [name, setName] = useState('')
-  var [tags, setTags] = useState('')
+  var [tags, setTags] = useState([])
+  var tagSuggestions = useTagSuggestions()
   var [saving, setSaving] = useState(false)
   var [error, setError] = useState('')
 
   async function save() {
     if (saving) return
     setSaving(true); setError('')
-    var row = {
-      phone: phone.trim(), name: name.trim() || null, source: 'manual',
-      tags: tags.split(',').map(function (t) { return t.trim() }).filter(Boolean),
-    }
+    var row = { phone: phone.trim(), name: name.trim() || null, source: 'manual', tags: tags }
     var res = await supabase.rpc('rpc_wa_contact_upsert_bulk', { p_rows: [row] })
     setSaving(false)
     if (res.error) { setError(res.error.message); return }
     var summary = res.data || {}
     if (summary.skipped_invalid_phone > 0) { setError('Invalid phone — must be E.164, e.g. +919876543210'); return }
-    setPhone(''); setName(''); setTags('')
+    setPhone(''); setName(''); setTags([])
     onSaved()
     onClose()
   }
@@ -78,9 +76,9 @@ function AddContactModal({ open, onClose, onSaved }) {
           <input type="text" value={name} onChange={function (ev) { setName(ev.target.value) }}
             placeholder="Riya Sharma" className={CTRL} />
         </Labeled>
-        <Labeled label="Tags" hint="Comma-separated — campaigns can target these">
-          <input type="text" value={tags} onChange={function (ev) { setTags(ev.target.value) }}
-            placeholder="delhi, wedding" className={CTRL} />
+        <Labeled label="Tags" hint="Campaigns can target these">
+          <TagsInput value={tags} onChange={setTags} suggestions={tagSuggestions}
+            placeholder="delhi, wedding" />
         </Labeled>
         <button onClick={save} disabled={saving || !phone.trim()} className={BTN_PRIMARY + ' w-full h-10'}>
           <Icon name="check" size={14} strokeWidth={2.3} />
@@ -186,7 +184,8 @@ function CsvImportModal({ open, onClose, onSaved }) {
 function ContactDetailDrawer({ contact, onClose, onChanged }) {
   var [phoneRevealed, setPhoneRevealed] = useState(false)
   var [name, setName] = useState(contact.name || '')
-  var [tagsText, setTagsText] = useState((contact.tags || []).join(', '))
+  var [tags, setTags] = useState(contact.tags || [])
+  var tagSuggestions = useTagSuggestions()
   var [notes, setNotes] = useState(contact.notes || '')
   var [saving, setSaving] = useState(false)
   var [messages, setMessages] = useState([])
@@ -209,7 +208,6 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
   async function saveDetails() {
     if (saving) return
     setSaving(true)
-    var tags = tagsText.split(',').map(function (t) { return t.trim() }).filter(Boolean)
     var res = await supabase.from('wa_contacts').update({ name: name.trim() || null, tags: tags, notes: notes || null }).eq('id', contact.id)
     setSaving(false)
     if (!res.error) onChanged()
@@ -262,9 +260,9 @@ function ContactDetailDrawer({ contact, onClose, onChanged }) {
             <input type="text" value={name} onChange={function (ev) { setName(ev.target.value) }}
               placeholder="Unnamed contact" className={CTRL} />
           </Labeled>
-          <Labeled label="Tags" hint="Comma-separated">
-            <input type="text" value={tagsText} onChange={function (ev) { setTagsText(ev.target.value) }}
-              placeholder="delhi, wedding" className={CTRL} />
+          <Labeled label="Tags">
+            <TagsInput value={tags} onChange={setTags} suggestions={tagSuggestions}
+              placeholder="delhi, wedding" />
           </Labeled>
           <Labeled label="Notes">
             <textarea value={notes} onChange={function (ev) { setNotes(ev.target.value) }} rows={2}
