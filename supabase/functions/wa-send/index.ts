@@ -3,7 +3,22 @@
 // Two invocation modes (client calls this right after the RPC that queued
 // the row(s) succeeds):
 //   { message_id }  — single message (quick-send, conversation reply)
-//   { campaign_id } — batch: every 'queued' row for that campaign, 100ms apart
+//   { campaign_id } — one batch (default 100, see BATCH_SIZE below) of
+//     'queued' rows for that campaign, 100ms apart
+//
+// A campaign send used to pull every queued row and loop over all of them in
+// one call — fine at a few hundred recipients, but a 4,800-recipient send
+// at ~1s/message (the fn_wa_can_send round trip + the Meta call + two more
+// DB writes + the 100ms throttle) runs 60-90 minutes, and Supabase kills an
+// Edge Function invocation at a ~150s wall-clock limit ("Request idle
+// timeout limit (150s) reached" — seen in production on exactly this kind
+// of send). Only ever processing one bounded batch per call, and reporting
+// how many are still queued, is what lets the caller (CampaignBuilder.jsx)
+// keep calling this in a loop until the whole campaign is through — each
+// individual call now always finishes well inside the platform's limit.
+// sent_count/failed_count/blocked_count on wa_campaigns accumulate across
+// calls rather than being overwritten, and wa_campaigns only moves out of
+// 'sending' once a batch reports zero remaining.
 //
 // Never logs phone numbers or message bodies to console — only message/
 // contact/campaign ids. Request/response payloads ARE stored in
@@ -186,9 +201,17 @@ serve(async function (req) {
     }
 
     if (body.campaign_id) {
+      // Conservative default: fn_wa_can_send + the Meta call + two more DB
+      // writes + the 100ms throttle can run close to 1s/message under real
+      // network latency, and 100 * ~1s sits safely under the 150s platform
+      // limit even on a slow batch. Clamped so a client can't accidentally
+      // request a batch large enough to time out again.
+      var BATCH_SIZE = Math.min(Math.max(parseInt(body.batch_size, 10) || 100, 1), 300)
+
       var queueRes = await supa.from("wa_messages")
         .select("*, wa_contacts(phone_e164), wa_templates(name, language, category, variable_count)")
         .eq("campaign_id", body.campaign_id).eq("status", "queued")
+        .order("id", { ascending: true }).limit(BATCH_SIZE)
       if (queueRes.error) return bad(500, "queue_fetch_failed", queueRes.error.message)
 
       var rows = queueRes.data || []
@@ -202,18 +225,27 @@ serve(async function (req) {
       }
 
       // blocked_count already has the send-time resolve_audience count from
-      // rpc_wa_campaign_send; add whatever the re-check above additionally
-      // blocked (conditions can shift between queueing and actual send).
-      var campRes = await supa.from("wa_campaigns").select("blocked_count").eq("id", body.campaign_id).maybeSingle()
-      var priorBlocked = (campRes.data && campRes.data.blocked_count) || 0
+      // rpc_wa_campaign_send; sent/failed/blocked here are read-then-add so
+      // repeated calls across batches accumulate instead of overwriting.
+      var campRes = await supa.from("wa_campaigns")
+        .select("sent_count, failed_count, blocked_count").eq("id", body.campaign_id).maybeSingle()
+      var newSent = ((campRes.data && campRes.data.sent_count) || 0) + sent
+      var newFailed = ((campRes.data && campRes.data.failed_count) || 0) + failed
+      var newBlocked = ((campRes.data && campRes.data.blocked_count) || 0) + blocked
 
-      await supa.from("wa_campaigns").update({
-        sent_count: sent, failed_count: failed, blocked_count: priorBlocked + blocked,
-        status: failed > 0 ? "partial" : "sent",
-        completed_at: new Date().toISOString(),
-      }).eq("id", body.campaign_id)
+      var remainingRes = await supa.from("wa_messages")
+        .select("id", { count: "exact", head: true })
+        .eq("campaign_id", body.campaign_id).eq("status", "queued")
+      var remaining = remainingRes.count || 0
 
-      return ok({ sent: sent, failed: failed, blocked: blocked, total: rows.length })
+      var campUpdate = { sent_count: newSent, failed_count: newFailed, blocked_count: newBlocked }
+      if (remaining === 0) {
+        campUpdate.status = newFailed > 0 ? "partial" : "sent"
+        campUpdate.completed_at = new Date().toISOString()
+      }
+      await supa.from("wa_campaigns").update(campUpdate).eq("id", body.campaign_id)
+
+      return ok({ sent: newSent, failed: newFailed, blocked: newBlocked, batch_total: rows.length, remaining: remaining })
     }
 
     return bad(400, "missing_target", "message_id or campaign_id required")

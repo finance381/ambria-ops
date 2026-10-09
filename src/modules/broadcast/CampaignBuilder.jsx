@@ -79,6 +79,12 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
   var [scheduleLater, setScheduleLater] = useState(false)
   var [mapping, setMapping] = useState({})
   var [currentId, setCurrentId] = useState(campaignId || null)
+  // A send interrupted partway (tab closed, network drop) leaves the
+  // campaign's own status at 'sending' with some wa_messages rows still
+  // 'queued' — rpc_wa_campaign_send refuses to queue a second time for
+  // anything but 'draft'/'scheduled', so reopening the campaign has to offer
+  // Resume instead of Send, driven off this.
+  var [campaignStatus, setCampaignStatus] = useState(null)
   var [saving, setSaving] = useState(false)
   var [error, setError] = useState('')
   var [notice, setNotice] = useState('')
@@ -115,6 +121,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
         var c = res.data
         setName(c.name); setTemplateId(String(c.template_id))
         setListId(c.list_id ? String(c.list_id) : '')
+        setCampaignStatus(c.status)
         var f = c.audience_filter_json || {}
         setTags(f.tags || [])
         setExcludeTags(f.exclude_tags || [])
@@ -207,28 +214,60 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
     setConfirmOpen(true)
   }
 
+  // wa-send only ever does one bounded batch per call (see its own header
+  // comment — a single call covering a few-thousand-recipient campaign blew
+  // past Supabase's ~150s Edge Function limit and the whole send died with
+  // nothing sent past that point). This keeps calling it until it reports
+  // nothing left queued, surfacing a running total instead of one opaque
+  // "Sending…" the whole time.
+  async function runSendLoop(targetTotal) {
+    setSending(true); setError('')
+    var sessionRes = await supabase.auth.getSession()
+    var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
+    var authHeaders = token ? { Authorization: 'Bearer ' + token } : {}
+
+    var remaining = 1 // just needs to be truthy to enter the loop once
+    var lastData = null
+    while (remaining > 0) {
+      var invokeRes = await supabase.functions.invoke('wa-send', {
+        body: { campaign_id: currentId, batch_size: 100 }, headers: authHeaders,
+      })
+      if (invokeRes.error) {
+        setSending(false)
+        setError('Send stopped partway — ' + await edgeFnErrorMessage(invokeRes.error) + '. Reopen this campaign to resume where it left off.')
+        return
+      }
+      lastData = invokeRes.data
+      remaining = lastData.remaining
+      setSendProgress({ sent: lastData.sent, failed: lastData.failed, remaining: remaining, total: targetTotal })
+    }
+
+    setCampaignStatus(lastData.failed > 0 ? 'partial' : 'sent')
+    setSending(false)
+    if (onSaved) onSaved()
+  }
+
   async function confirmSend() {
     if (sending) return
-    setSending(true); setError('')
+    setError('')
     var needsToken = preview && preview.recipient_count > confirmThreshold
     var sendRes = await supabase.rpc('rpc_wa_campaign_send', {
       p_campaign_id: currentId,
       p_confirm_token: needsToken ? confirmToken : null,
     })
-    if (sendRes.error) { setSending(false); setError(sendRes.error.message); return }
-
-    var sessionRes = await supabase.auth.getSession()
-    var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
+    if (sendRes.error) { setError(sendRes.error.message); return }
+    setCampaignStatus('sending')
     setConfirmOpen(false)
-    setSendProgress('sending')
+    await runSendLoop(preview.recipient_count)
+  }
 
-    var invokeRes = await supabase.functions.invoke('wa-send', {
-      body: { campaign_id: currentId }, headers: token ? { Authorization: 'Bearer ' + token } : {},
-    })
-    setSending(false)
-    if (invokeRes.error) { setError('Send failed: ' + await edgeFnErrorMessage(invokeRes.error)); setSendProgress(null); return }
-    setSendProgress('done')
-    if (onSaved) onSaved()
+  // For a campaign that's already mid-send (status 'sending' from a prior,
+  // interrupted run) — the messages are already queued, so this skips
+  // straight to the batch loop rather than re-running rpc_wa_campaign_send,
+  // which would reject it outright (only 'draft'/'scheduled' may queue).
+  async function resumeSend() {
+    if (sending) return
+    await runSendLoop((preview && preview.recipient_count) || null)
   }
 
   var varCount = selectedTemplate ? (selectedTemplate.variable_count || 0) : 0
@@ -458,6 +497,25 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
                 </div>
               </div>
             )}
+            {/* A send that didn't finish (tab closed, connection dropped
+                mid-loop) leaves the campaign at 'sending' with some
+                recipients still queued — rpc_wa_campaign_send won't queue a
+                second time for anything but draft/scheduled, so this is the
+                only way back in. !sendProgress keeps it from flashing once
+                the loop below has already picked back up and is reporting
+                live progress of its own. */}
+            {campaignStatus === 'sending' && !sending && !sendProgress && (
+              <div className={CARD + ' p-3.5 border-amber-200 bg-amber-50/60'}>
+                <p className="text-[12.5px] font-bold text-slate-900 mb-1">Send was interrupted</p>
+                <p className="text-[11.5px] text-slate-600 leading-snug mb-2">
+                  This campaign started sending but didn't finish — some recipients may still be queued.
+                </p>
+                <button onClick={resumeSend} className={BTN_SEND + ' w-full'}>
+                  <Icon name="refresh" size={14} />
+                  Resume Sending
+                </button>
+              </div>
+            )}
             <div className={CARD + ' overflow-hidden'}>
               <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 bg-indigo-50/70 border-b border-indigo-100">
                 <p className="flex items-center gap-2 text-[13px] font-bold text-slate-900">
@@ -509,10 +567,12 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
                       </div>
                     )}
 
-                    <button onClick={openSendConfirm} className={BTN_SEND + ' w-full'}>
-                      <Icon name="send" size={14} />
-                      Send Campaign
-                    </button>
+                    {(!campaignStatus || campaignStatus === 'draft' || campaignStatus === 'scheduled') && (
+                      <button onClick={openSendConfirm} className={BTN_SEND + ' w-full'}>
+                        <Icon name="send" size={14} />
+                        Send Campaign
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <p className="text-[12px] text-slate-500 leading-snug">
@@ -525,11 +585,18 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
             {sendProgress && (
               <div className={CARD + ' px-3.5 py-3'}>
                 <p className="flex items-center gap-2 text-[12.5px] font-semibold text-slate-800">
-                  <span className={sendProgress === 'sending' ? 'text-indigo-600' : 'text-emerald-600'}>
-                    <Icon name={sendProgress === 'sending' ? 'refresh' : 'checkCircle'} size={15} />
+                  <span className={sendProgress.remaining > 0 ? 'text-indigo-600' : 'text-emerald-600'}>
+                    <Icon name={sendProgress.remaining > 0 ? 'refresh' : 'checkCircle'} size={15} />
                   </span>
-                  {sendProgress === 'sending' ? 'Sending…' : 'Send complete'}
+                  {sendProgress.remaining > 0
+                    ? 'Sending… ' + (sendProgress.sent + sendProgress.failed) + (sendProgress.total ? ' / ' + sendProgress.total : '')
+                    : 'Send complete — ' + sendProgress.sent + ' sent' + (sendProgress.failed > 0 ? ', ' + sendProgress.failed + ' failed' : '')}
                 </p>
+                {sendProgress.remaining > 0 && (
+                  <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                    Keep this tab open until this finishes — a few thousand recipients can take a while. If it's interrupted, reopen this campaign to resume.
+                  </p>
+                )}
               </div>
             )}
           </div>
