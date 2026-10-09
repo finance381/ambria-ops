@@ -67,6 +67,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
   var [templateId, setTemplateId] = useState('')
   var [listId, setListId] = useState('')
   var [tagsText, setTagsText] = useState('')
+  var [excludeTagsText, setExcludeTagsText] = useState('')
   var [venueIds, setVenueIds] = useState([])
   var [source, setSource] = useState('')
   var [minLastSentDays, setMinLastSentDays] = useState('')
@@ -115,6 +116,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
         setListId(c.list_id ? String(c.list_id) : '')
         var f = c.audience_filter_json || {}
         setTagsText((f.tags || []).join(', '))
+        setExcludeTagsText((f.exclude_tags || []).join(', '))
         setVenueIds((f.venue_ids || []).map(String))
         setSource(f.source || '')
         setMinLastSentDays(f.min_last_sent_days != null ? String(f.min_last_sent_days) : '')
@@ -155,6 +157,8 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
     var f = {}
     var tags = tagsText.split(',').map(function (t) { return t.trim() }).filter(Boolean)
     if (tags.length > 0) f.tags = tags
+    var excludeTags = excludeTagsText.split(',').map(function (t) { return t.trim() }).filter(Boolean)
+    if (excludeTags.length > 0) f.exclude_tags = excludeTags
     if (venueIds.length > 0) f.venue_ids = venueIds.map(Number)
     if (source) f.source = source
     if (minLastSentDays) f.min_last_sent_days = Number(minLastSentDays)
@@ -315,6 +319,10 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
                   <Labeled label="Tags" hint="Comma-separated — a contact matching any of them is included">
                     <input type="text" value={tagsText} onChange={function (ev) { setTagsText(ev.target.value) }}
                       placeholder="delhi, wedding" className={CTRL} />
+                  </Labeled>
+                  <Labeled label="Exclude tags" hint="Comma-separated — a contact matching any of them is left out, even if it also matched Tags above">
+                    <input type="text" value={excludeTagsText} onChange={function (ev) { setExcludeTagsText(ev.target.value) }}
+                      placeholder="opted_out_promo, vip" className={CTRL} />
                   </Labeled>
                   <div>
                     <label className="block text-[12px] font-semibold text-slate-900 mb-1">Venues</label>

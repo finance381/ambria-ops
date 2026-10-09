@@ -23,6 +23,7 @@ function ListFormModal({ open, list, onClose, onSaved }) {
   var [description, setDescription] = useState(list ? (list.description || '') : '')
   var [type, setType] = useState(list ? list.type : 'static')
   var [tagsText, setTagsText] = useState(list && list.filter_json ? (list.filter_json.tags || []).join(', ') : '')
+  var [excludeTagsText, setExcludeTagsText] = useState(list && list.filter_json ? (list.filter_json.exclude_tags || []).join(', ') : '')
   var [source, setSource] = useState(list && list.filter_json ? (list.filter_json.source || '') : '')
   var [minDays, setMinDays] = useState(list && list.filter_json && list.filter_json.min_last_sent_days != null ? String(list.filter_json.min_last_sent_days) : '')
   var [saving, setSaving] = useState(false)
@@ -35,6 +36,7 @@ function ListFormModal({ open, list, onClose, onSaved }) {
     setType(list ? list.type : 'static')
     var f = (list && list.filter_json) || {}
     setTagsText((f.tags || []).join(', '))
+    setExcludeTagsText((f.exclude_tags || []).join(', '))
     setSource(f.source || '')
     setMinDays(f.min_last_sent_days != null ? String(f.min_last_sent_days) : '')
     setError('')
@@ -46,8 +48,10 @@ function ListFormModal({ open, list, onClose, onSaved }) {
     var payload = { name: name.trim(), description: description.trim() || null, type: type }
     if (type === 'dynamic') {
       var tags = tagsText.split(',').map(function (t) { return t.trim() }).filter(Boolean)
+      var excludeTags = excludeTagsText.split(',').map(function (t) { return t.trim() }).filter(Boolean)
       var filter = {}
       if (tags.length > 0) filter.tags = tags
+      if (excludeTags.length > 0) filter.exclude_tags = excludeTags
       if (source) filter.source = source
       if (minDays) filter.min_last_sent_days = Number(minDays)
       payload.filter_json = filter
@@ -99,6 +103,12 @@ function ListFormModal({ open, list, onClose, onSaved }) {
               <Labeled label="Tags" hint="Comma-separated — a contact matching any of them is included">
                 <input type="text" value={tagsText} onChange={function (ev) { setTagsText(ev.target.value) }}
                   placeholder="delhi, wedding" className={CTRL} />
+              </Labeled>
+            </div>
+            <div className="sm:col-span-2">
+              <Labeled label="Exclude tags" hint="Comma-separated — a contact matching any of them is left out, even if it also matched Tags above">
+                <input type="text" value={excludeTagsText} onChange={function (ev) { setExcludeTagsText(ev.target.value) }}
+                  placeholder="opted_out_promo, vip" className={CTRL} />
               </Labeled>
             </div>
             <Labeled label="Source">
@@ -276,6 +286,7 @@ function Lists({ profile }) {
     var f = l.filter_json || {}
     var parts = []
     if (f.tags && f.tags.length > 0) parts.push('tags: ' + f.tags.join(', '))
+    if (f.exclude_tags && f.exclude_tags.length > 0) parts.push('excluding: ' + f.exclude_tags.join(', '))
     if (f.source) parts.push('source: ' + f.source)
     if (f.min_last_sent_days != null) parts.push('idle ' + f.min_last_sent_days + 'd+')
     return parts.length > 0 ? parts.join(' · ') : 'Everyone (no filter)'
