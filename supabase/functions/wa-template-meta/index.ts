@@ -41,11 +41,54 @@ function ok(payload) {
   )
 }
 
-function buildComponents(t) {
+// Meta's Create Message Template API doesn't accept a plain URL for a
+// media header — it needs an uploaded "handle" from its own separate
+// Resumable Upload API, included as example.header_handle, so its review
+// system has an actual sample to look at. This is exactly what the
+// rejection "Templates with IMAGE header type need an example/sample"
+// means. The sample itself already exists (Templates.jsx already uploads
+// it to our own broadcast-media storage; header_content holds that public
+// URL) — it was just never carried over to Meta in the shape Meta wants.
+async function uploadHeaderExample(headerContentUrl, WA_APP_ID, WA_ACCESS_TOKEN, WA_API_VERSION) {
+  if (!WA_APP_ID) throw new Error("WA_APP_ID not configured — needed to upload a media header's example to Meta")
+
+  var fileRes = await fetch(headerContentUrl)
+  if (!fileRes.ok) throw new Error("Could not fetch the uploaded header sample: HTTP " + fileRes.status)
+  var contentType = fileRes.headers.get("content-type") || "application/octet-stream"
+  var buf = new Uint8Array(await fileRes.arrayBuffer())
+
+  var startRes = await fetch(
+    "https://graph.facebook.com/" + WA_API_VERSION + "/" + WA_APP_ID + "/uploads" +
+    "?file_length=" + buf.length + "&file_type=" + encodeURIComponent(contentType) +
+    "&access_token=" + encodeURIComponent(WA_ACCESS_TOKEN),
+    { method: "POST" }
+  )
+  var startData = await startRes.json()
+  if (!startRes.ok || !startData.id) {
+    throw new Error("Could not start Meta upload session: " + JSON.stringify(startData.error || startData))
+  }
+
+  var uploadRes = await fetch("https://graph.facebook.com/" + WA_API_VERSION + "/" + startData.id, {
+    method: "POST",
+    headers: { "Authorization": "OAuth " + WA_ACCESS_TOKEN, "file_offset": "0", "Content-Type": contentType },
+    body: buf,
+  })
+  var uploadData = await uploadRes.json()
+  if (!uploadRes.ok || !uploadData.h) {
+    throw new Error("Meta rejected the header upload: " + JSON.stringify(uploadData.error || uploadData))
+  }
+  return uploadData.h
+}
+
+async function buildComponents(t, WA_APP_ID, WA_ACCESS_TOKEN, WA_API_VERSION) {
   var components = []
   if (t.header_type && t.header_type !== "null" && t.header_content) {
-    if (t.header_type === "text") components.push({ type: "HEADER", format: "TEXT", text: t.header_content })
-    else components.push({ type: "HEADER", format: t.header_type.toUpperCase() })
+    if (t.header_type === "text") {
+      components.push({ type: "HEADER", format: "TEXT", text: t.header_content })
+    } else {
+      var handle = await uploadHeaderExample(t.header_content, WA_APP_ID, WA_ACCESS_TOKEN, WA_API_VERSION)
+      components.push({ type: "HEADER", format: t.header_type.toUpperCase(), example: { header_handle: [handle] } })
+    }
   }
   components.push({ type: "BODY", text: t.body_text })
   if (t.footer_text) components.push({ type: "FOOTER", text: t.footer_text })
@@ -73,6 +116,10 @@ serve(async function (req) {
     var WA_WABA_ID = Deno.env.get("WA_WABA_ID")
     var WA_ACCESS_TOKEN = Deno.env.get("WA_ACCESS_TOKEN")
     var WA_API_VERSION = Deno.env.get("WA_API_VERSION") || "v21.0"
+    // Only needed for a media header's example upload — not required for
+    // every submit/sync call, so it's read here but not in the hard gate
+    // below (a text-only-header template shouldn't break over it).
+    var WA_APP_ID = Deno.env.get("WA_APP_ID")
     if (!SUPABASE_URL || !SERVICE_ROLE || !ANON_KEY || !WA_WABA_ID || !WA_ACCESS_TOKEN) {
       return bad(500, "server_misconfigured", "Missing required env vars")
     }
@@ -102,11 +149,22 @@ serve(async function (req) {
         return bad(409, "not_pending", "Call rpc_wa_template_submit first to mark this template pending")
       }
 
+      var components
+      try {
+        components = await buildComponents(t, WA_APP_ID, WA_ACCESS_TOKEN, WA_API_VERSION)
+      } catch (uploadErr) {
+        // Failed before ever reaching Meta's create-template call — leave
+        // meta_status at 'pending' as-is (rpc_wa_template_submit already set
+        // it) rather than touching it, so re-pressing Submit is a plain
+        // retry, not stuck behind a state it never actually got to.
+        return bad(502, "header_upload_failed", String(uploadErr && uploadErr.message || uploadErr))
+      }
+
       var metaBody = {
         name: t.name,
         language: t.language || "en",
         category: (t.category || "").toUpperCase(),
-        components: buildComponents(t),
+        components: components,
       }
 
       var metaRes, metaData
