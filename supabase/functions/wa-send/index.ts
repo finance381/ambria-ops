@@ -139,9 +139,25 @@ serve(async function (req) {
           await supa.from("wa_messages").update({ status: "failed", error_code: "template_params_missing", failed_at: new Date().toISOString() }).eq("id", row.id)
           return "failed"
         }
-        var components = params.length > 0
-          ? [{ type: "body", parameters: params.map(function (v) { return { type: "text", text: String(v) } }) }]
-          : []
+        var components = []
+        // A template with an image/video/document header needs its own
+        // "header" component on every send, carrying that media — omitting
+        // it is exactly Meta's 132012 "Parameter format does not match
+        // format in the created template" ("expected IMAGE, received
+        // UNKNOWN"): Meta isn't told anything belongs in the header slot at
+        // all, let alone the right type. header_content already holds a
+        // public URL (broadcast-media storage) — the Send API takes a plain
+        // link here; only the separate Create-Template-example flow
+        // (wa-template-meta) needs the two-step upload-a-handle dance.
+        var headerType = row.wa_templates.header_type
+        if (headerType && headerType !== "text" && headerType !== "null" && row.wa_templates.header_content) {
+          var headerParam = { type: headerType }
+          headerParam[headerType] = { link: row.wa_templates.header_content }
+          components.push({ type: "header", parameters: [headerParam] })
+        }
+        if (params.length > 0) {
+          components.push({ type: "body", parameters: params.map(function (v) { return { type: "text", text: String(v) } }) })
+        }
         metaPayload = {
           messaging_product: "whatsapp", to: phone, type: "template",
           template: { name: row.wa_templates.name, language: { code: row.wa_templates.language || "en" }, components: components },
@@ -191,7 +207,7 @@ serve(async function (req) {
 
     if (body.message_id) {
       var msgRes = await supa.from("wa_messages")
-        .select("*, wa_contacts(phone_e164), wa_templates(name, language, category, variable_count)")
+        .select("*, wa_contacts(phone_e164), wa_templates(name, language, category, variable_count, header_type, header_content)")
         .eq("id", body.message_id).maybeSingle()
       if (msgRes.error || !msgRes.data) return bad(404, "message_not_found", "Message not found")
       if (msgRes.data.status !== "queued") return bad(409, "not_queued", "Message is not in queued state")
@@ -209,7 +225,7 @@ serve(async function (req) {
       var BATCH_SIZE = Math.min(Math.max(parseInt(body.batch_size, 10) || 100, 1), 300)
 
       var queueRes = await supa.from("wa_messages")
-        .select("*, wa_contacts(phone_e164), wa_templates(name, language, category, variable_count)")
+        .select("*, wa_contacts(phone_e164), wa_templates(name, language, category, variable_count, header_type, header_content)")
         .eq("campaign_id", body.campaign_id).eq("status", "queued")
         .order("id", { ascending: true }).limit(BATCH_SIZE)
       if (queueRes.error) return bad(500, "queue_fetch_failed", queueRes.error.message)
