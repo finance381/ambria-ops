@@ -238,6 +238,14 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
     }
     activeSendLoops[currentId] = true
     setSending(true); setError('')
+    // Nothing rendered here at all until the first batch's wa-send call
+    // resolved — which, at up to ~1s/message through fn_wa_can_send + the
+    // Meta call + the 100ms throttle, could be the better part of a minute
+    // of looking at a page that appears to have done nothing. This shows
+    // "Sending… 0 / total" the instant the loop starts instead of waiting
+    // on real numbers, and a smaller batch size below means the real first
+    // update isn't far behind it either.
+    setSendProgress({ sent: 0, failed: 0, remaining: targetTotal || 1, total: targetTotal })
     var sessionRes = await supabase.auth.getSession()
     var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
     var authHeaders = token ? { Authorization: 'Bearer ' + token } : {}
@@ -246,7 +254,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
     var lastData = null
     while (remaining > 0) {
       var invokeRes = await supabase.functions.invoke('wa-send', {
-        body: { campaign_id: currentId, batch_size: 100 }, headers: authHeaders,
+        body: { campaign_id: currentId, batch_size: 40 }, headers: authHeaders,
       })
       if (invokeRes.error) {
         delete activeSendLoops[currentId]

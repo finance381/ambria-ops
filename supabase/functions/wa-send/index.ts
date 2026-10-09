@@ -222,7 +222,7 @@ serve(async function (req) {
       // network latency, and 100 * ~1s sits safely under the 150s platform
       // limit even on a slow batch. Clamped so a client can't accidentally
       // request a batch large enough to time out again.
-      var BATCH_SIZE = Math.min(Math.max(parseInt(body.batch_size, 10) || 100, 1), 300)
+      var BATCH_SIZE = Math.min(Math.max(parseInt(body.batch_size, 10) || 40, 1), 300)
 
       var queueRes = await supa.from("wa_messages")
         .select("*, wa_contacts(phone_e164), wa_templates(name, language, category, variable_count, header_type, header_content)")
