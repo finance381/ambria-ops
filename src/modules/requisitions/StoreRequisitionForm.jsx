@@ -55,6 +55,7 @@ function isEmptyDraftRow(r) {
 
 function isEmptyDraftState(s) {
   if (s.dateFrom || s.dateTo) return false
+  if (s.requisitionNo && s.requisitionNo.trim()) return false
   if ((s.selectedEventIds || []).length > 0) return false
   if (!s.deptRows || s.deptRows.length === 0) return true
   return s.deptRows.every(isEmptyDraftRow)
@@ -75,6 +76,7 @@ function formatDraftAge(ts) {
 function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   var [dateFrom, setDateFrom] = useState('')
   var [dateTo, setDateTo] = useState('')
+  var [requisitionNo, setRequisitionNo] = useState('')
   var [contracts, setContracts] = useState([])
   var [contractsLoading, setContractsLoading] = useState(false)
   var [selectedEventIds, setSelectedEventIds] = useState([])
@@ -116,7 +118,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   useEffect(function () {
     if (editId || !draftKey || saving || loadingExisting) return
     if (draftRestorable) return  // don't clobber a pending restore with the blank default
-    var state = { dateFrom: dateFrom, dateTo: dateTo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId }
+    var state = { dateFrom: dateFrom, dateTo: dateTo, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId }
     if (isEmptyDraftState(state)) return
     if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current)
     draftSaveTimer.current = setTimeout(function () {
@@ -127,14 +129,14 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       } catch (_) {}
     }, DRAFT_DEBOUNCE_MS)
     return function () { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current) }
-  }, [dateFrom, dateTo, selectedEventIds, deptRows, nextRowId, nextLineId, editId, saving, draftRestorable, loadingExisting])
+  }, [dateFrom, dateTo, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, editId, saving, draftRestorable, loadingExisting])
 
   // ─── Draft: safety-save on tab close / navigate away ───
   useEffect(function () {
     if (editId || !draftKey) return
     function handler() {
       try {
-        var state = { dateFrom: dateFrom, dateTo: dateTo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId }
+        var state = { dateFrom: dateFrom, dateTo: dateTo, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId }
         if (isEmptyDraftState(state)) return
         var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow) })
         localStorage.setItem(draftKey, JSON.stringify(payload))
@@ -142,7 +144,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     }
     window.addEventListener('beforeunload', handler)
     return function () { window.removeEventListener('beforeunload', handler) }
-  }, [dateFrom, dateTo, selectedEventIds, deptRows, nextRowId, nextLineId, editId])
+  }, [dateFrom, dateTo, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, editId])
 
   // ─── Draft: tick "Xs ago" indicator every 15s ───
   useEffect(function () {
@@ -156,6 +158,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     try {
       setDateFrom(draftRestorable.dateFrom || '')
       setDateTo(draftRestorable.dateTo || '')
+      setRequisitionNo(draftRestorable.requisitionNo || '')
       setSelectedEventIds(draftRestorable.selectedEventIds || [])
       setDeptRows((draftRestorable.deptRows && draftRestorable.deptRows.length > 0) ? draftRestorable.deptRows : [emptyDeptRow(1)])
       setNextRowId(draftRestorable.nextRowId || 2)
@@ -200,12 +203,12 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     if (!editId) return
     setLoadingExisting(true)
     Promise.all([
-      supabase.from('store_requisitions').select('date_from, date_to, event_ids').eq('id', editId).single(),
+      supabase.from('store_requisitions').select('date_from, date_to, event_ids, requisition_no').eq('id', editId).single(),
       supabase.from('store_requisition_dept_rows').select('id, department_id, sub_department_id, section, remarks, sort_order').eq('store_requisition_id', editId).order('sort_order'),
     ]).then(function (res) {
       var reqRow = res[0].data
       var drRows = res[1].data || []
-      if (reqRow) { setDateFrom(reqRow.date_from); setDateTo(reqRow.date_to); setSelectedEventIds(reqRow.event_ids || []) }
+      if (reqRow) { setDateFrom(reqRow.date_from); setDateTo(reqRow.date_to); setRequisitionNo(reqRow.requisition_no || ''); setSelectedEventIds(reqRow.event_ids || []) }
       var drIds = drRows.map(function (r) { return r.id })
       if (drIds.length === 0) {
         setDeptRows([emptyDeptRow(1)]); setNextRowId(2); setLoadingExisting(false); return
@@ -444,8 +447,8 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       }
     })
     var res = editId
-      ? await supabase.rpc('rpc_update_store_requisition', { p_id: editId, p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload, p_event_ids: selectedEventIds })
-      : await supabase.rpc('rpc_submit_store_requisition', { p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload, p_event_ids: selectedEventIds })
+      ? await supabase.rpc('rpc_update_store_requisition', { p_id: editId, p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload, p_event_ids: selectedEventIds, p_requisition_no: requisitionNo })
+      : await supabase.rpc('rpc_submit_store_requisition', { p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload, p_event_ids: selectedEventIds, p_requisition_no: requisitionNo })
     setSaving(false)
     if (res.error) { setError(res.error.message); return }
     try { await logActivity(editId ? 'STORE_REQUISITION_EDIT' : 'STORE_REQUISITION_SUBMIT', dateFrom + ' to ' + dateTo + ' · ' + rupees(grandTotal)) } catch (_) {}
@@ -526,6 +529,12 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
             <label className={LABEL}>To date</label>
             <EventDatePicker value={dateTo} placeholder="To" collapsible plain includePast onChange={function (v) { setDateTo(v) }} />
           </div>
+        </div>
+        <div>
+          <label className={LABEL}>Requisition No (optional)</label>
+          <input type="text" value={requisitionNo} onChange={function (e) { setRequisitionNo(e.target.value) }}
+            placeholder="e.g. the slip number from the physical requisition"
+            className={CTRL} />
         </div>
       </div>
 

@@ -23,7 +23,7 @@ function StoreRequisitions({ profile }) {
   async function load() {
     setLoading(true)
     var { data } = await supabase.from('store_requisitions')
-      .select('id, date_from, date_to, total_paise, created_at, created_by')
+      .select('id, date_from, date_to, requisition_no, total_paise, created_at, created_by')
       .order('created_at', { ascending: false })
       .limit(50)
     var rows = data || []
@@ -88,7 +88,14 @@ function StoreRequisitions({ profile }) {
               <div key={r.id} className="bg-white border border-gray-200 rounded-xl p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-gray-900">{formatDate(r.date_from)} – {formatDate(r.date_to)}</p>
+                    <p className="text-sm font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
+                      {formatDate(r.date_from)} – {formatDate(r.date_to)}
+                      {r.requisition_no && (
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5">
+                          #{r.requisition_no}
+                        </span>
+                      )}
+                    </p>
                     <p className="text-xs text-gray-400 mt-0.5">{r._createdByName || '—'} · {formatDate(r.created_at)}</p>
                   </div>
                   <div className="flex items-center gap-3">
