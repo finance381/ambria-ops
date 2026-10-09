@@ -224,13 +224,31 @@ serve(async function (req) {
         if (i < rows.length - 1) await sleep(100)
       }
 
-      // blocked_count already has the send-time resolve_audience count from
-      // rpc_wa_campaign_send; sent/failed/blocked here are read-then-add so
-      // repeated calls across batches accumulate instead of overwriting.
+      // sent/failed are recounted from wa_messages itself rather than
+      // read-current-and-add — every processed message already carries its
+      // own final status, so this is self-healing: a campaign whose last
+      // batch update never landed (the exact crash this fix is for) still
+      // reports its true cumulative total on the very next call, instead of
+      // forgetting whatever an interrupted run already accomplished. sent
+      // also counts delivered/read since wa-webhook advances a row past
+      // 'sent' once Meta reports delivery — not a resend candidate either way.
+      async function countStatus(statuses) {
+        var q = supa.from("wa_messages").select("id", { count: "exact", head: true }).eq("campaign_id", body.campaign_id)
+        q = statuses.length === 1 ? q.eq("status", statuses[0]) : q.in("status", statuses)
+        var res = await q
+        return res.count || 0
+      }
+      var newSent = await countStatus(["sent", "delivered", "read"])
+      var newFailed = await countStatus(["failed"])
+
+      // blocked_count can't get the same fully-recounted treatment: most of
+      // it is contacts fn_wa_resolve_audience already excluded before any
+      // wa_messages row ever existed for them (nothing to recount), set once
+      // by rpc_wa_campaign_send. Keep that read-current-and-add this batch's
+      // own re-check blocks — correct as long as every batch's write
+      // actually lands, which the new bounded-batch size is what guarantees.
       var campRes = await supa.from("wa_campaigns")
-        .select("sent_count, failed_count, blocked_count").eq("id", body.campaign_id).maybeSingle()
-      var newSent = ((campRes.data && campRes.data.sent_count) || 0) + sent
-      var newFailed = ((campRes.data && campRes.data.failed_count) || 0) + failed
+        .select("blocked_count").eq("id", body.campaign_id).maybeSingle()
       var newBlocked = ((campRes.data && campRes.data.blocked_count) || 0) + blocked
 
       var remainingRes = await supa.from("wa_messages")
