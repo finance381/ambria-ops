@@ -680,7 +680,8 @@ function AdminShell({ profile, onSignOut }) {
 
             On the other sections it would be decoration nobody asked for,
             sitting behind dense tables where a calm ground matters more. */}
-        {(active === 'expenses' || active === 'broadcast') && <PageWave offset="var(--app-header-h, 0px)" />}
+        {/* Events (Events, Contracts, Extra Plates) carries it too. */}
+        {(active === 'expenses' || active === 'broadcast' || active === 'events') && <PageWave offset="var(--app-header-h, 0px)" />}
 
         {/* Inventory's ground: the photograph behind the whole section — a
             pale wall, leaf shadows, vases on a ledge at the top right — drawn

@@ -183,29 +183,32 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
           } : undefined}>
         {/* Month nav: the month in the display face between two round
             buttons, and a Today shortcut once you have paged away from it. */}
-        <div className="flex items-center gap-2 mb-3">
-          <button type="button" onClick={prevMonth} aria-label="Previous month"
-            className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 active:scale-95 transition-all">
-            <Icon name="chevronRight" size={16} className="rotate-180" />
-          </button>
-          <div className="min-w-0 flex-1 text-center leading-tight">
+        <div className="flex items-center gap-2 mb-3 px-0.5">
+          <div className="min-w-0 flex-1 leading-tight">
             <p className="font-display text-[16px] font-extrabold tracking-[-0.015em] text-slate-900">{monthNames[viewMonth] + ' ' + viewYear}</p>
             {!plain && (
-              <p className="text-[11px] font-semibold text-slate-400">
+              <p className="text-[11.5px] font-medium text-slate-500">
                 {loading ? 'Loading…' : (fnDays === 0 ? 'No functions' : fnDays + (fnDays === 1 ? ' day' : ' days') + ' with functions')}
               </p>
             )}
           </div>
-          <button type="button" onClick={nextMonth} aria-label="Next month"
-            className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 active:scale-95 transition-all">
-            <Icon name="chevronRight" size={16} />
-          </button>
+          <div className="shrink-0 inline-flex items-center rounded-lg border border-slate-200 overflow-hidden">
+            <button type="button" onClick={prevMonth} aria-label="Previous month"
+              className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+              <Icon name="chevronRight" size={15} className="rotate-180" />
+            </button>
+            <span aria-hidden="true" className="w-px h-5 bg-slate-200" />
+            <button type="button" onClick={nextMonth} aria-label="Next month"
+              className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+              <Icon name="chevronRight" size={15} />
+            </button>
+          </div>
         </div>
 
-        {/* Day headers — the weekend in a softer ink, as on a printed calendar. */}
-        <div className="grid grid-cols-7 mb-1 rounded-lg bg-slate-50">
-          {DAY_NAMES.map(function (dn, di) {
-            return <div key={dn} className={"text-center text-[10.5px] font-extrabold uppercase tracking-[0.08em] py-1.5 " + (di === 0 || di === 6 ? "text-rose-400" : "text-slate-500")}>{dn}</div>
+        {/* Day headers, one quiet ink. */}
+        <div className="grid grid-cols-7 mb-1 border-b border-slate-100">
+          {DAY_NAMES.map(function (dn) {
+            return <div key={dn} className="text-center text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-400 py-1.5">{dn}</div>
           })}
         </div>
 
@@ -221,17 +224,16 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
             var isPast = cell.dateStr < todayStr
             var venues = eventDates[cell.dateStr] || []
             var hasEvent = venues.length > 0
-            var weekend = (idx % 7 === 0) || (idx % 7 === 6)
 
-            // The only filled day is the one you picked; today is a tinted
-            // tile; a day with functions is its number in full weight with a
+            // The only filled day is the one you picked; today is a ring;
+            // a day with functions is its number in full weight with a
             // dot per venue under it. Past days without functions step back.
             var tone
-            if (isSelected) tone = "bg-indigo-600 text-white font-extrabold shadow-[0_3px_10px_rgba(79,70,229,0.35)]"
-            else if (isToday) tone = "bg-indigo-50 text-indigo-700 font-extrabold ring-1 ring-inset ring-indigo-300 hover:bg-indigo-100"
+            if (isSelected) tone = "bg-indigo-600 text-white font-bold shadow-[0_2px_6px_rgba(79,70,229,0.30)]"
+            else if (isToday) tone = "text-indigo-700 font-extrabold ring-[1.5px] ring-inset ring-indigo-400 hover:bg-indigo-50"
             else if (hasEvent) tone = "text-slate-900 font-bold hover:bg-slate-100"
             else if (isPast) tone = "text-slate-300 font-medium hover:bg-slate-50 hover:text-slate-500"
-            else tone = (weekend ? "text-rose-400" : "text-slate-500") + " font-medium hover:bg-slate-100 hover:text-slate-900"
+            else tone = "text-slate-500 font-medium hover:bg-slate-100 hover:text-slate-900"
 
             return (
               <div key={cell.dateStr} className="flex justify-center">
@@ -258,30 +260,30 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
 
         {/* Legend, then Today and Clear. In plain mode there are no dots to
             explain, so the footer only carries the buttons. */}
-        <div className="mt-3 pt-3 border-t border-slate-100 space-y-2.5">
+        <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center gap-2">
           {!plain && (
-            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+            <div className="min-w-0 flex-1 flex items-center gap-2.5 flex-wrap">
               {VENUE_LEGEND.map(function (l) {
                 return (
-                  <span key={l.code} title={l.name} className="inline-flex items-center gap-1.5 h-6 px-2 rounded-full bg-slate-50 border border-slate-200">
+                  <span key={l.code} title={l.name} className="inline-flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full" style={{ background: venueColor(l.name) }} />
-                    <span className="text-[11px] font-bold text-slate-600">{l.code}</span>
+                    <span className="text-[11px] font-semibold text-slate-500">{l.code}</span>
                   </span>
                 )
               })}
             </div>
           )}
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={function () { selectDate(todayStr) }} disabled={value === todayStr}
-              className="flex-1 h-9 rounded-xl border border-slate-200 bg-white text-[12.5px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 inline-flex items-center justify-center gap-1.5 transition-colors">
-              <Icon name="calendar" size={13} />Today
-            </button>
+          <div className={"shrink-0 flex items-center gap-1 " + (plain ? "ml-auto" : "")}>
             {value && (
               <button type="button" onClick={function () { onChange(''); if (collapsible) setOpen(false) }}
-                className="flex-1 h-9 rounded-xl border border-red-200 bg-red-50/60 text-[12.5px] font-bold text-red-600 hover:bg-red-50 inline-flex items-center justify-center gap-1.5 transition-colors">
-                <Icon name="close" size={12} />Clear
+                className="h-8 px-2.5 rounded-lg text-[12.5px] font-semibold text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors">
+                Clear
               </button>
             )}
+            <button type="button" onClick={function () { selectDate(todayStr) }} disabled={value === todayStr}
+              className="h-8 px-3 rounded-lg border border-slate-200 text-[12.5px] font-bold text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 transition-colors">
+              Today
+            </button>
           </div>
         </div>
         </div>

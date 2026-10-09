@@ -6,6 +6,11 @@ import Modal from '../../components/ui/Modal'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import EnteredMark from '../../components/ui/EnteredMark'
+import Icon from '../../components/ui/Icon'
+
+// The list's columns from sm up: event, contract, date, venue, balance, Tally.
+var COLS = 'sm:grid-cols-[minmax(0,2.4fr)_90px_110px_minmax(0,1.5fr)_150px_120px]'
+var CTL = 'h-10 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-800 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-900/5'
 
 var DEPT_BADGE = {
   Venue: 'bg-blue-100 text-blue-700',
@@ -168,7 +173,7 @@ function ContractList({ profile, deepLinkContractId }) {
   var rowsToShow = filterId ? (pinnedContract ? [pinnedContract] : []) : paged
 
   if (loading) {
-    return <p className="text-gray-400 text-sm">Loading contracts...</p>
+    return <p className="text-slate-500 text-[13px] text-center py-10">Loading contracts…</p>
   }
 
   return (
@@ -183,133 +188,163 @@ function ContractList({ profile, deepLinkContractId }) {
         </div>
       )}
 
-      {/* Toolbar */}
+      {/* Toolbar: search and the four filters on one line, page size at
+          its end, the count under it. */}
       {!filterId && (
-      <div className="space-y-2">
-        <input type="text" value={search}
-          onChange={function (e) { setSearch(e.target.value); setPage(1) }}
-          placeholder="Search client, event, contract, venue..."
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          style={{ fontSize: '16px' }} />
-        <div className="flex gap-2 flex-wrap items-center">
-          <select value={venueFilter}
-            onChange={function (e) { setVenueFilter(e.target.value); setPage(1) }}
-            className="flex-1 min-w-[120px] px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="">All Venues</option>
-            {venueNames.map(function (v) { return <option key={v} value={v}>{venueMap[v] ? (venueMap[v] + ' — ' + v) : v}</option> })}
-          </select>
-          <select value={deptFilter}
-            onChange={function (e) { setDeptFilter(e.target.value); setPage(1) }}
-            className="flex-1 min-w-[120px] px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="">All Depts</option>
-            {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
-          </select>
-          <select value={enteredFilter}
-            onChange={function (e) { setEnteredFilter(e.target.value); setPage(1) }}
-            className="flex-1 min-w-[120px] px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="">Entered: All</option>
-            <option value="yes">Entered: Yes</option>
-            <option value="no">Entered: No</option>
-          </select>
-          <select value={venueTypeFilter}
-            onChange={function (e) { setVenueTypeFilter(e.target.value); setPage(1) }}
-            className="flex-1 min-w-[120px] px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="">Indoor/Outdoor: All</option>
-            <option value="indoor">Indoor</option>
-            <option value="outdoor">Outdoor</option>
-          </select>
-          <select value={perPage}
-            onChange={function (e) { setPerPage(Number(e.target.value)); setPage(1) }}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value={25}>25</option>
-            <option value={50}>50</option>
-            <option value={100}>100</option>
-          </select>
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] p-3 space-y-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[220px]">
+            <Icon name="search" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <input type="text" value={search}
+              onChange={function (e) { setSearch(e.target.value); setPage(1) }}
+              placeholder="Search client, event, contract, venue…"
+              className={CTL + ' w-full pl-9 pr-3 placeholder:text-slate-400'}
+              style={{ fontSize: '16px' }} />
+          </div>
+          {[
+            [venueFilter, setVenueFilter, 'mapPin', 'Venue', [['', 'All venues']].concat(venueNames.map(function (v) { return [v, venueMap[v] ? (venueMap[v] + ' — ' + v) : v] })), 'sm:w-52'],
+            [deptFilter, setDeptFilter, 'tag', 'Department', [['', 'All depts']].concat(departments.map(function (d) { return [d.name, d.name] })), 'sm:w-40'],
+            [enteredFilter, setEnteredFilter, 'checkCircle', 'Entered in Tally', [['', 'Entered: all'], ['yes', 'Entered'], ['no', 'Not entered']], 'sm:w-40'],
+            [venueTypeFilter, setVenueTypeFilter, 'building', 'Indoor or outdoor', [['', 'Indoor & outdoor'], ['indoor', 'Indoor'], ['outdoor', 'Outdoor']], 'sm:w-44'],
+          ].map(function (f) {
+            return (
+              <div key={f[3]} className={'relative w-[calc(50%-4px)] ' + f[5]}>
+                <Icon name={f[2]} size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <select value={f[0]} onChange={function (e) { f[1](e.target.value); setPage(1) }} aria-label={f[3]}
+                  className={CTL + ' w-full pl-8 pr-8 appearance-none ' + (f[0] ? '' : 'text-slate-500')}>
+                  {f[4].map(function (o) { return <option key={o[0]} value={o[0]}>{o[1]}</option> })}
+                </select>
+                <Icon name="chevronDown" size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              </div>
+            )
+          })}
+          <span className="relative ml-auto">
+            <select value={perPage}
+              onChange={function (e) { setPerPage(Number(e.target.value)); setPage(1) }}
+              aria-label="Per page"
+              className={CTL + ' pl-3 pr-8 appearance-none font-semibold'}>
+              <option value={25}>25 / page</option>
+              <option value={50}>50 / page</option>
+              <option value={100}>100 / page</option>
+            </select>
+            <Icon name="chevronDown" size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </span>
         </div>
-        <p className="text-xs text-gray-400">{filtered.length} contract{filtered.length === 1 ? '' : 's'}</p>
+        <div className="flex items-center gap-1.5 px-0.5 text-[12.5px] text-slate-500">
+          <span className="h-6 px-2 rounded-md bg-slate-100 inline-flex items-center"><b className="text-slate-800 tabular-nums">{filtered.length}</b>&nbsp;contract{filtered.length === 1 ? '' : 's'}</span>
+          {(venueFilter || deptFilter || enteredFilter || venueTypeFilter || search) && (
+            <button type="button" onClick={function () { setSearch(''); setVenueFilter(''); setDeptFilter(''); setEnteredFilter(''); setVenueTypeFilter(''); setPage(1) }}
+              className="h-6 px-2 rounded-md font-bold text-indigo-600 hover:bg-indigo-50">Reset</button>
+          )}
+        </div>
       </div>
       )}
 
       {filterId && pinnedLoading && (
-        <p className="text-gray-400 text-sm text-center py-8">Loading contract...</p>
+        <p className="text-slate-500 text-[13px] text-center py-8">Loading contract…</p>
       )}
       {filterId && !pinnedLoading && !pinnedContract && (
-        <p className="text-gray-400 text-sm text-center py-8">That contract couldn't be found — it may have been merged or removed.</p>
+        <p className="text-slate-500 text-[13px] text-center py-8">That contract couldn't be found — it may have been merged or removed.</p>
       )}
       {!filterId && filtered.length === 0 && (
-        <p className="text-gray-400 text-sm text-center py-8">No contracts found</p>
+        <div className="bg-white border border-slate-200 rounded-2xl px-6 py-14 text-center">
+          <span className="mx-auto w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 inline-flex items-center justify-center mb-3"><Icon name="fileText" size={22} /></span>
+          <p className="font-display text-[15px] font-bold text-slate-800">No contracts found</p>
+          <p className="mt-1 text-[13px] text-slate-500">Try a different search or loosen a filter.</p>
+        </div>
       )}
 
-      <div className="space-y-2">
-        {rowsToShow.map(function (c) {
-          return (
-            <button key={c.id} type="button" onClick={function () { setSelected(c) }}
-              className="w-full text-left bg-white border border-gray-200 rounded-lg p-3 hover:shadow-md hover:border-gray-300 transition-shadow">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-semibold text-gray-800 text-sm truncate">{c.event_name || '—'}</h3>
-                    {c.is_tentative && <Badge color="amber">Tentative</Badge>}
-                    {c.department && <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full flex-shrink-0 " + (DEPT_BADGE[c.department] || "bg-gray-100 text-gray-600")}>{c.department}</span>}
+      {/* The contracts: one card of rows. From sm up the rows line up in
+          columns under a header; on a phone each row stacks. */}
+      {rowsToShow.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] overflow-hidden">
+          <div className={'hidden sm:grid ' + COLS + ' gap-3 px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-[11.5px] font-bold uppercase tracking-[0.07em] text-slate-500'}>
+            <span>Event</span><span>Contract</span><span>Date</span><span>Venue</span><span className="text-right">Balance</span><span className="text-right">Tally</span>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {rowsToShow.map(function (c) {
+              return (
+                <div key={c.id} role="button" tabIndex={0}
+                  onClick={function () { setSelected(c) }}
+                  onKeyDown={function (e) { if (e.key === 'Enter') setSelected(c) }}
+                  className={'group cursor-pointer px-4 py-3 hover:bg-indigo-50/40 transition-colors sm:grid ' + COLS + ' sm:gap-3 sm:items-center'}>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-display text-[14px] font-bold tracking-[-0.01em] text-slate-900 truncate group-hover:text-indigo-700">{c.event_name || '—'}</h3>
+                      {c.is_tentative && <span className="shrink-0 text-[10.5px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Tentative</span>}
+                      {c.department && <span className={'shrink-0 text-[10.5px] font-bold uppercase px-1.5 py-0.5 rounded ' + (DEPT_BADGE[c.department] || 'bg-slate-100 text-slate-600')}>{c.department}</span>}
+                    </div>
+                    <p className="text-[12.5px] text-slate-600 truncate mt-0.5">{titleCase(c.client_name || '—')}</p>
+                    {/* phone: the columns as one meta line */}
+                    <p className="sm:hidden mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-slate-500">
+                      {c.contract_no && <span className="font-mono">#{c.contract_no}</span>}
+                      <span className="inline-flex items-center gap-1"><Icon name="calendar" size={12} className="text-slate-400" />{formatDate(c.function_date || c.contract_date)}</span>
+                      {c.venue_name && <span className="inline-flex items-center gap-1"><Icon name="mapPin" size={12} className="text-slate-400" />{c.venue_name}</span>}
+                    </p>
                   </div>
-                  <p className="text-xs text-gray-500 truncate mt-0.5">{titleCase(c.client_name || '—')}</p>
-                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-gray-400 mt-1">
-                    {c.contract_no && <span>#{c.contract_no}</span>}
-                    <span>{formatDate(c.function_date || c.contract_date)}</span>
-                    {c.venue_name && <span>{c.venue_name}</span>}
+                  <span className="hidden sm:block font-mono text-[12.5px] text-slate-600">{c.contract_no ? '#' + c.contract_no : '—'}</span>
+                  <span className="hidden sm:block text-[13px] text-slate-700 tabular-nums">{formatDate(c.function_date || c.contract_date)}</span>
+                  <span className="hidden sm:block text-[13px] text-slate-600 truncate">{c.venue_name || '—'}</span>
+                  <span className="hidden sm:block text-right">
+                    {isAdmin && c.balance_amount ? (
+                      <span className={'text-[13px] font-bold tabular-nums ' + (c.balance_amount < 0 ? 'text-red-600' : 'text-emerald-600')}>
+                        {formatPaise(Math.abs(c.balance_amount))}
+                        <span className="ml-1 text-[11px] font-semibold opacity-80">{c.balance_amount < 0 ? 'due' : 'adv'}</span>
+                      </span>
+                    ) : <span className="text-slate-300">—</span>}
+                  </span>
+                  <div className="mt-2 sm:mt-0 flex sm:justify-end items-center gap-3">
+                    {isAdmin && c.balance_amount ? (
+                      <span className={'sm:hidden text-[12.5px] font-bold tabular-nums ' + (c.balance_amount < 0 ? 'text-red-600' : 'text-emerald-600')}>
+                        {formatPaise(Math.abs(c.balance_amount))} {c.balance_amount < 0 ? 'due' : 'adv'}
+                      </span>
+                    ) : null}
+                    {(c.tally_entered_by || canMarkEntered) && (
+                      <span onClick={function (ev) { ev.stopPropagation() }} className="ml-auto sm:ml-0">
+                        <EnteredMark
+                          entered={!!c.tally_entered_by}
+                          enteredByName={enteredNames[c.tally_entered_by]}
+                          enteredAt={c.tally_entered_at}
+                          canToggle={canMarkEntered}
+                          canUnenter={c.tally_entered_by === profile.id || isSysAdmin}
+                          busy={enteringId === c.id}
+                          onToggle={function () { toggleContractEntered(c.id) }}
+                        />
+                      </span>
+                    )}
                   </div>
                 </div>
-                <div className="shrink-0 flex flex-col items-end gap-1">
-                  {isAdmin && c.balance_amount ? (
-                    <span className={"text-xs font-semibold " + (c.balance_amount < 0 ? "text-red-600" : "text-green-600")}>
-                      {formatPaise(Math.abs(c.balance_amount))} {c.balance_amount < 0 ? 'due' : 'adv'}
-                    </span>
-                  ) : null}
-                  {(c.tally_entered_by || canMarkEntered) && (
-                    <span onClick={function (ev) { ev.stopPropagation() }}>
-                      <EnteredMark
-                        entered={!!c.tally_entered_by}
-                        enteredByName={enteredNames[c.tally_entered_by]}
-                        enteredAt={c.tally_entered_at}
-                        canToggle={canMarkEntered}
-                        canUnenter={c.tally_entered_by === profile.id || isSysAdmin}
-                        busy={enteringId === c.id}
-                        onToggle={function () { toggleContractEntered(c.id) }}
-                      />
-                    </span>
-                  )}
-                </div>
-              </div>
-            </button>
-          )
-        })}
-      </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Pagination */}
       {!filterId && totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 pt-2">
-          <button onClick={function () { setPage(1) }} disabled={page === 1}
-            className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">«</button>
-          <button onClick={function () { setPage(page - 1) }} disabled={page === 1}
-            className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">‹</button>
+        <div className="flex flex-wrap items-center justify-center gap-1.5 pt-2">
+          {[['«', 1, page === 1, 'First page'], ['‹', page - 1, page === 1, 'Previous page']].map(function (b) {
+            return <button key={b[3]} onClick={function () { setPage(b[1]) }} disabled={b[2]} aria-label={b[3]}
+              className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-[13px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed">{b[0]}</button>
+          })}
           {Array.from({ length: totalPages }, function (_, i) { return i + 1 }).filter(function (p) {
             return p === 1 || p === totalPages || (p >= page - 2 && p <= page + 2)
           }).map(function (p, i, arr) {
             var showGap = i > 0 && p - arr[i - 1] > 1
             return (
-              <span key={p}>
-                {showGap && <span className="px-1 text-gray-300">…</span>}
-                <button onClick={function () { setPage(p) }}
-                  className={"px-3 py-1.5 text-xs rounded font-medium transition-colors " +
-                    (p === page ? "bg-indigo-600 text-white" : "border border-gray-300 hover:bg-gray-50")}>{p}</button>
+              <span key={p} className="inline-flex items-center gap-1.5">
+                {showGap && <span className="px-0.5 text-slate-300">…</span>}
+                <button onClick={function () { setPage(p) }} aria-current={p === page ? 'page' : undefined}
+                  className={'h-9 min-w-[36px] px-2.5 rounded-lg text-[13px] font-bold tabular-nums transition-colors ' +
+                    (p === page ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50')}>{p}</button>
               </span>
             )
           })}
-          <button onClick={function () { setPage(page + 1) }} disabled={page === totalPages}
-            className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">›</button>
-          <button onClick={function () { setPage(totalPages) }} disabled={page === totalPages}
-            className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">»</button>
-          <span className="text-xs text-gray-400 ml-2">Page {page} / {totalPages}</span>
+          {[['›', page + 1, page === totalPages, 'Next page'], ['»', totalPages, page === totalPages, 'Last page']].map(function (b) {
+            return <button key={b[3]} onClick={function () { setPage(b[1]) }} disabled={b[2]} aria-label={b[3]}
+              className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-[13px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed">{b[0]}</button>
+          })}
+          <span className="text-[12px] text-slate-500 ml-2">Page {page} of {totalPages}</span>
         </div>
       )}
 

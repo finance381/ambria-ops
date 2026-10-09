@@ -302,56 +302,95 @@ function Events({ profile }) {
   var paged = filtered.slice((page - 1) * perPage, page * perPage)
 
   if (loading) {
-    return <p className="text-gray-400 text-sm">Loading events...</p>
+    return <p className="text-slate-500 text-[13px] text-center py-10">Loading events…</p>
   }
+
+  // The section heading between past and upcoming groups.
+  function sectionHead(key, label, tone) {
+    return (
+      <div key={key} className="col-span-1 md:col-span-2 lg:col-span-3 flex items-center gap-3 pt-2">
+        <span className={'text-[11.5px] font-extrabold uppercase tracking-[0.1em] ' + (tone === 'up' ? 'text-indigo-600' : 'text-slate-500')}>{label}</span>
+        <span className={'flex-1 h-px ' + (tone === 'up' ? 'bg-indigo-200' : 'bg-slate-200')} />
+      </div>
+    )
+  }
+
+  var DEPT_CHIP = {
+    Venue: 'bg-blue-50 text-blue-700',
+    Decor: 'bg-purple-50 text-purple-700',
+    Catering: 'bg-amber-50 text-amber-700',
+    Entertainment: 'bg-pink-50 text-pink-700',
+  }
+  var CTL = 'h-10 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-800 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-900/5'
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
-      <div className="space-y-2">
-        <input type="text" value={search}
-          onChange={function (e) { setSearch(e.target.value); setPage(1) }}
-          placeholder="Search client, event, contract, venue..."
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          style={{ fontSize: '16px' }} />
-        <div className="flex gap-2 flex-wrap items-center">
-          <select value={venueFilter}
-            onChange={function (e) { setVenueFilter(e.target.value); setPage(1) }}
-            className="flex-1 min-w-[120px] px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="">All Venues</option>
-            {venueNames.map(function (v) { return <option key={v} value={v}>{venueMap[v] ? (venueMap[v] + ' — ' + v) : v}</option> })}
-          </select>
-          <button onClick={function () { syncFromLMS(false) }} disabled={syncing}
-            className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium disabled:opacity-50 whitespace-nowrap">
-            {syncing ? '🔄 Syncing...' : '🔄 Sync LMS'}
-          </button>
-          {canManageSync && (
-            <button onClick={function () { setShowSyncSettings(true) }}
-              title="Who gets notified when a new contract is synced in"
-              className="inline-flex items-center gap-1 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium whitespace-nowrap">
-              <Icon name="bell" size={14} /> Notify on sync
+      {/* Toolbar: search and the two filters on one line, the sync tools
+          and page size at its end; the counts and the last sync under it. */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] p-3 space-y-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[220px]">
+            <Icon name="search" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <input type="text" value={search}
+              onChange={function (e) { setSearch(e.target.value); setPage(1) }}
+              placeholder="Search client, event, contract, venue…"
+              className={CTL + ' w-full pl-9 pr-3 placeholder:text-slate-400'}
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div className="relative w-full sm:w-56">
+            <Icon name="mapPin" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <select value={venueFilter}
+              onChange={function (e) { setVenueFilter(e.target.value); setPage(1) }}
+              aria-label="Venue"
+              className={CTL + ' w-full pl-8 pr-8 appearance-none ' + (venueFilter ? '' : 'text-slate-500')}>
+              <option value="">All venues</option>
+              {venueNames.map(function (v) { return <option key={v} value={v}>{venueMap[v] ? (venueMap[v] + ' — ' + v) : v}</option> })}
+            </select>
+            <Icon name="chevronDown" size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+          <div className="relative w-[calc(50%-4px)] sm:w-44">
+            <Icon name="tag" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <select value={deptFilter}
+              onChange={function (e) { setDeptFilter(e.target.value); setPage(1) }}
+              aria-label="Department"
+              className={CTL + ' w-full pl-8 pr-8 appearance-none ' + (deptFilter ? '' : 'text-slate-500')}>
+              <option value="">All depts</option>
+              {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
+            </select>
+            <Icon name="chevronDown" size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+          <span className="inline-flex items-center gap-2 ml-auto">
+            <button onClick={function () { syncFromLMS(false) }} disabled={syncing}
+              className="h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-[13px] font-bold text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1.5 disabled:opacity-60 whitespace-nowrap">
+              <Icon name="refresh" size={14} className={syncing ? 'animate-spin' : ''} />{syncing ? 'Syncing…' : 'Sync LMS'}
             </button>
-          )}
-          <select value={perPage}
-            onChange={function (e) { setPerPage(Number(e.target.value)); setPage(1) }}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value={12}>12</option>
-            <option value={24}>24</option>
-            <option value={48}>48</option>
-          </select>
+            {canManageSync && (
+              <button onClick={function () { setShowSyncSettings(true) }}
+                title="Who gets notified when a new contract is synced in"
+                className="h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-[13px] font-bold text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1.5 whitespace-nowrap">
+                <Icon name="bell" size={14} />Notify on sync
+              </button>
+            )}
+            <span className="relative">
+              <select value={perPage}
+                onChange={function (e) { setPerPage(Number(e.target.value)); setPage(1) }}
+                aria-label="Per page"
+                className={CTL + ' pl-3 pr-8 appearance-none font-semibold'}>
+                <option value={12}>12 / page</option>
+                <option value={24}>24 / page</option>
+                <option value={48}>48 / page</option>
+              </select>
+              <Icon name="chevronDown" size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </span>
+          </span>
         </div>
-        <select value={deptFilter}
-          onChange={function (e) { setDeptFilter(e.target.value); setPage(1) }}
-          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-          <option value="">All Depts</option>
-          {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
-        </select>
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-gray-400">
-            {filtered.length} guests · {visibleEvents.length} functions
+        <div className="flex flex-wrap items-center justify-between gap-2 px-0.5">
+          <span className="inline-flex items-center gap-1.5 text-[12.5px] text-slate-500">
+            <span className="h-6 px-2 rounded-md bg-slate-100 inline-flex items-center"><b className="text-slate-800 tabular-nums">{filtered.length}</b>&nbsp;guests</span>
+            <span className="h-6 px-2 rounded-md bg-slate-100 inline-flex items-center"><b className="text-slate-800 tabular-nums">{visibleEvents.length}</b>&nbsp;functions</span>
           </span>
           {syncMsg && (
-            <span className={"text-xs px-2 py-1 rounded " + (syncMsg.includes('failed') || syncMsg.includes('error') ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600")}>
+            <span className={'text-[12px] font-semibold px-2.5 py-1 rounded-lg ' + (syncMsg.includes('failed') || syncMsg.includes('error') ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700')}>
               {syncMsg}
             </span>
           )}
@@ -359,56 +398,50 @@ function Events({ profile }) {
       </div>
 
       {filtered.length === 0 && (
-        <p className="text-gray-400 text-sm text-center py-8">No events found</p>
+        <div className="bg-white border border-slate-200 rounded-2xl px-6 py-14 text-center">
+          <span className="mx-auto w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 inline-flex items-center justify-center mb-3"><Icon name="calendar" size={22} /></span>
+          <p className="font-display text-[15px] font-bold text-slate-800">No events found</p>
+          <p className="mt-1 text-[13px] text-slate-500">Try a different search, venue or department.</p>
+        </div>
       )}
 
       <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {paged.flatMap(function (group, idx) {
           var elements = []
-          if (!group.isUpcoming && idx === 0) {
-            elements.push(<div key="past-hdr" className="col-span-1 md:col-span-2 lg:col-span-3 flex items-center gap-2 text-xs text-gray-500 uppercase tracking-wider font-semibold py-1"><span>Past Events</span><span className="flex-1 border-t border-gray-300"></span></div>)
-          }
-          if (group.isUpcoming && (idx === 0 || !paged[idx - 1].isUpcoming)) {
-            elements.push(<div key="upcoming-hdr" className="col-span-1 md:col-span-2 lg:col-span-3 flex items-center gap-2 text-xs text-indigo-500 uppercase tracking-wider font-semibold py-1"><span>Upcoming</span><span className="flex-1 border-t border-indigo-300"></span></div>)
-          }
+          if (!group.isUpcoming && idx === 0) elements.push(sectionHead('past-hdr', 'Past events', 'past'))
+          if (group.isUpcoming && (idx === 0 || !paged[idx - 1].isUpcoming)) elements.push(sectionHead('upcoming-hdr', 'Upcoming', 'up'))
           var dateRange = group.date_start === group.date_end
             ? formatDate(group.date_start)
             : formatDate(group.date_start) + ' – ' + formatDate(group.date_end)
+          var showLocation = group.location && !group.venues.some(function (v) { return v.toLowerCase().indexOf(group.location.toLowerCase()) !== -1 || group.location.toLowerCase().indexOf(v.toLowerCase()) !== -1 })
           elements.push(
             <div key={group.id}
               onClick={function () { setSelectedGroup(group) }}
-              className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md cursor-pointer transition-shadow">
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-gray-800 truncate">{titleCase(group.client_name)}</h3>
-                  {group.contact_person && <p className="text-xs text-gray-500 truncate">{group.contact_person}</p>}
+              className="group bg-white border border-slate-200 rounded-2xl p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-indigo-300 hover:shadow-[0_6px_18px_rgba(15,23,42,0.07)] cursor-pointer transition-all">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="font-display text-[15.5px] font-bold tracking-[-0.01em] text-slate-900 truncate group-hover:text-indigo-700">{titleCase(group.client_name)}</h3>
+                  {group.contact_person && <p className="text-[12px] text-slate-500 truncate">{group.contact_person}</p>}
                 </div>
-                <span className="text-[11px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full ml-2 flex-shrink-0">
+                <span className="shrink-0 h-6 px-2 rounded-full bg-indigo-50 text-indigo-700 text-[11.5px] font-bold inline-flex items-center">
                   {group.function_count} fn{group.function_count !== 1 ? 's' : ''}
                 </span>
               </div>
 
-              <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 mb-3">
-                <span>📅 {dateRange}</span>
-                {group.venues.map(function (v) { return <span key={v}>🏛️ {v}</span> })}
-                {group.location && !group.venues.some(function (v) { return v.toLowerCase().indexOf(group.location.toLowerCase()) !== -1 || group.location.toLowerCase().indexOf(v.toLowerCase()) !== -1 }) && <span>📍 {group.location}</span>}
-              </div>
+              <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-slate-500">
+                <span className="inline-flex items-center gap-1"><Icon name="calendar" size={13} className="text-slate-400" />{dateRange}</span>
+                {group.venues.map(function (v) { return <span key={v} className="inline-flex items-center gap-1"><Icon name="building" size={13} className="text-slate-400" />{v}</span> })}
+                {showLocation && <span className="inline-flex items-center gap-1"><Icon name="mapPin" size={13} className="text-slate-400" />{group.location}</span>}
+              </p>
 
-              <div className="space-y-1 mb-3">
+              <div className="mt-3 rounded-xl border border-slate-100 divide-y divide-slate-100 overflow-hidden">
                 {group.functions.map(function (f) {
                   return (
-                    <div key={f.id} className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 rounded px-2 py-1.5">
-                      <span className="font-medium text-gray-800 truncate flex-1">{f.event_name || '—'}</span>
-                      {f.is_tentative && (
-                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full flex-shrink-0 bg-amber-100 text-amber-700">Tentative</span>
-                      )}
-                      {f.department && <span className={"text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full flex-shrink-0 " +
-                        (f.department === 'Venue' ? "bg-blue-100 text-blue-700" :
-                         f.department === 'Decor' ? "bg-purple-100 text-purple-700" :
-                         f.department === 'Catering' ? "bg-amber-100 text-amber-700" :
-                         f.department === 'Entertainment' ? "bg-pink-100 text-pink-700" :
-                         "bg-gray-100 text-gray-600")}>{f.department}</span>}
-                      <span className="text-gray-400">{formatDate(f.function_date || f.contract_date)}</span>
+                    <div key={f.id} className="flex items-center gap-2 px-2.5 py-2 bg-slate-50/60">
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-slate-800">{f.event_name || '—'}</span>
+                      {f.is_tentative && <span className="shrink-0 text-[10.5px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Tentative</span>}
+                      {f.department && <span className={'shrink-0 text-[10.5px] font-bold uppercase px-1.5 py-0.5 rounded ' + (DEPT_CHIP[f.department] || 'bg-slate-100 text-slate-600')}>{f.department}</span>}
+                      <span className="shrink-0 text-[11.5px] text-slate-400 tabular-nums">{formatDate(f.function_date || f.contract_date)}</span>
                     </div>
                   )
                 })}
@@ -418,9 +451,10 @@ function Events({ profile }) {
                 var totalBalance = group.functions.reduce(function (s, f) { return s + (f.balance_amount || 0) }, 0)
                 if (!totalBalance) return null
                 return (
-                  <div className="pt-2 border-t border-gray-100">
-                    <span className={"text-xs font-medium " + (totalBalance < 0 ? "text-red-600" : "text-green-600")}>
-                      Balance: {formatPaise(Math.abs(totalBalance))} {totalBalance < 0 ? 'due' : 'advance'}
+                  <div className="mt-3 flex items-center justify-between text-[12.5px]">
+                    <span className="text-slate-500">Balance</span>
+                    <span className={'font-bold tabular-nums ' + (totalBalance < 0 ? 'text-red-600' : 'text-emerald-600')}>
+                      {formatPaise(Math.abs(totalBalance))} {totalBalance < 0 ? 'due' : 'advance'}
                     </span>
                   </div>
                 )
@@ -433,29 +467,29 @@ function Events({ profile }) {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 pt-2">
-          <button onClick={function () { setPage(1) }} disabled={page === 1}
-            className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">«</button>
-          <button onClick={function () { setPage(page - 1) }} disabled={page === 1}
-            className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">‹</button>
+        <div className="flex flex-wrap items-center justify-center gap-1.5 pt-2">
+          {[['«', 1, page === 1, 'First page'], ['‹', page - 1, page === 1, 'Previous page']].map(function (b) {
+            return <button key={b[3]} onClick={function () { setPage(b[1]) }} disabled={b[2]} aria-label={b[3]}
+              className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-[13px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed">{b[0]}</button>
+          })}
           {Array.from({ length: totalPages }, function (_, i) { return i + 1 }).filter(function (p) {
             return p === 1 || p === totalPages || (p >= page - 2 && p <= page + 2)
           }).map(function (p, i, arr) {
             var showGap = i > 0 && p - arr[i - 1] > 1
             return (
-              <span key={p}>
-                {showGap && <span className="px-1 text-gray-300">…</span>}
-                <button onClick={function () { setPage(p) }}
-                  className={"px-3 py-1.5 text-xs rounded font-medium transition-colors " +
-                    (p === page ? "bg-indigo-600 text-white" : "border border-gray-300 hover:bg-gray-50")}>{p}</button>
+              <span key={p} className="inline-flex items-center gap-1.5">
+                {showGap && <span className="px-0.5 text-slate-300">…</span>}
+                <button onClick={function () { setPage(p) }} aria-current={p === page ? 'page' : undefined}
+                  className={'h-9 min-w-[36px] px-2.5 rounded-lg text-[13px] font-bold tabular-nums transition-colors ' +
+                    (p === page ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50')}>{p}</button>
               </span>
             )
           })}
-          <button onClick={function () { setPage(page + 1) }} disabled={page === totalPages}
-            className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">›</button>
-          <button onClick={function () { setPage(totalPages) }} disabled={page === totalPages}
-            className="px-2.5 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">»</button>
-          <span className="text-xs text-gray-400 ml-2">Page {page} / {totalPages}</span>
+          {[['›', page + 1, page === totalPages, 'Next page'], ['»', totalPages, page === totalPages, 'Last page']].map(function (b) {
+            return <button key={b[3]} onClick={function () { setPage(b[1]) }} disabled={b[2]} aria-label={b[3]}
+              className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-[13px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed">{b[0]}</button>
+          })}
+          <span className="text-[12px] text-slate-500 ml-2">Page {page} of {totalPages}</span>
         </div>
       )}
 
