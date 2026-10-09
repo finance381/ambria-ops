@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { supabase } from '../../lib/supabase'
-import { formatDate, formatPoints, formatPointsPlain } from '../../lib/format'
+import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
+import { formatDate, formatPoints, formatPointsPlain, titleCase } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { prepUpload, isVoiceNotePath, getReceiptUrl } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
@@ -477,6 +477,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [collectBankPaymentType, setCollectBankPaymentType] = useState('')
   var [collectBalance, setCollectBalance] = useState(null)
   var [collectBalanceLoading, setCollectBalanceLoading] = useState(false)
+  // What LMS itself has on record for this contract — fn_event_balance above
+  // only ever reflects collections made through Ambria Ops' own wallet, so a
+  // payment entered straight into LMS by someone else is otherwise invisible
+  // here. Fetched live (not synced/stored) since it's only needed at the
+  // moment someone's about to collect against a specific contract.
+  var [lmsPayments, setLmsPayments] = useState(null)
+  var [lmsPaymentsLoading, setLmsPaymentsLoading] = useState(false)
+  var [lmsPaymentsError, setLmsPaymentsError] = useState('')
+  var [lmsPaymentsOpen, setLmsPaymentsOpen] = useState(false)
   var [showActualCash, setShowActualCash] = useState(false)
   var [collectAmount, setCollectAmount] = useState('')
   var [collectDesc, setCollectDesc] = useState('')
@@ -1279,11 +1288,35 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   async function selectCollectFunction(fid) {
     setCollectEventId(fid)
     setCollectBalance(null)
+    setLmsPayments(null)
+    setLmsPaymentsError('')
+    setLmsPaymentsOpen(false)
     if (!fid) return
     setCollectBalanceLoading(true)
     var { data, error } = await supabase.rpc('fn_event_balance', { p_event_id: Number(fid) })
     if (!error && data && data.length > 0) { setCollectBalance(data[0]) }
     setCollectBalanceLoading(false)
+
+    var evt = collectEvents.find(function (e) { return String(e.id) === String(fid) })
+    if (evt && evt.contract_no) loadLmsPayments(evt.contract_no)
+  }
+
+  async function loadLmsPayments(contractNo) {
+    setLmsPaymentsLoading(true)
+    setLmsPaymentsError('')
+    try {
+      var sessionRes = await supabase.auth.getSession()
+      var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
+      var res = await supabase.functions.invoke('lms-payment-collections', {
+        body: { contract_no: contractNo },
+        headers: token ? { Authorization: 'Bearer ' + token } : {},
+      })
+      if (res.error) throw new Error(await edgeFnErrorMessage(res.error))
+      setLmsPayments((res.data && res.data.data) || [])
+    } catch (err) {
+      setLmsPaymentsError(err.message || 'Could not load LMS payment history')
+    }
+    setLmsPaymentsLoading(false)
   }
 
   function openTentativeModal() {
@@ -2497,6 +2530,73 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     <div className="text-xs text-gray-400 mt-1.5">No agreed split set from LMS</div>
                   )}
                 </>
+              )}
+            </div>
+          )}
+
+          {/* What LMS itself has on record for this contract — the figures
+              above only ever reflect collections logged through Ambria Ops'
+              own wallet, so a payment someone entered straight into LMS
+              (cash handed to a different department, a bank transfer logged
+              by the LMS team) would otherwise be invisible here. */}
+          {collectEventId && (
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <button type="button" onClick={function () { setLmsPaymentsOpen(!lmsPaymentsOpen) }}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white hover:bg-slate-50 transition-colors">
+                <span className="flex items-center gap-1.5 text-[11.5px] font-bold text-slate-600">
+                  <Icon name="receipt" size={13} className="text-slate-400" />
+                  LMS payment history
+                  {lmsPayments && lmsPayments.length > 0 && (
+                    <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold">
+                      {lmsPayments.length}
+                    </span>
+                  )}
+                </span>
+                <Icon name={lmsPaymentsOpen ? 'chevronDown' : 'chevronRight'} size={13} className="text-slate-400" />
+              </button>
+              {lmsPaymentsOpen && (
+                <div className="px-3 py-2 border-t border-slate-100 bg-slate-50/60">
+                  {lmsPaymentsLoading ? (
+                    <p className="text-xs text-gray-400">Checking LMS...</p>
+                  ) : lmsPaymentsError ? (
+                    <p className="text-xs text-red-600">{lmsPaymentsError}</p>
+                  ) : !lmsPayments || lmsPayments.length === 0 ? (
+                    <p className="text-xs text-gray-400">No payments on record in LMS for this contract.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {lmsPayments.map(function (p, pi) {
+                        return (
+                          <div key={pi} className="flex items-start justify-between gap-2 text-[11.5px] bg-white border border-slate-100 rounded-lg px-2.5 py-2">
+                            <div className="min-w-0">
+                              <div className="font-semibold text-slate-800">
+                                {p.date ? formatDate(p.date) : '—'}
+                                {p.pay_mode ? ' · ' + titleCase(p.pay_mode) : ''}
+                                {p.receive_type ? ' · ' + p.receive_type : ''}
+                              </div>
+                              {p.remarks && <div className="text-slate-500 mt-0.5 truncate">{p.remarks}</div>}
+                              <div className="text-slate-400 mt-0.5 flex items-center gap-2">
+                                <span>
+                                  {p.entry_by ? 'Entered by ' + p.entry_by : ''}
+                                  {p.status && p.status !== 'Y' ? (p.entry_by ? ' · status ' : 'status ') + p.status : ''}
+                                </span>
+                                {p.receipt_url && (
+                                  <a href={p.receipt_url} target="_blank" rel="noreferrer"
+                                    onClick={function (ev) { ev.stopPropagation() }}
+                                    className="text-indigo-600 hover:text-indigo-800 font-semibold shrink-0">
+                                    View receipt ↗
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                            <div className="shrink-0 font-bold text-slate-800 tabular-nums" data-notranslate>
+                              {formatPoints(p.net_amount_paise)}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
