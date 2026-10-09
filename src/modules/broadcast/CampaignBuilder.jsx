@@ -40,6 +40,17 @@ function StepCard({ n, title, hint, icon, children }) {
   )
 }
 
+// A send loop outlives the component — it's a plain async function, not
+// tied to CampaignBuilder's lifecycle, and going Back (Campaigns.jsx just
+// swaps this out for the list, no page reload) doesn't stop it. Reopening
+// the same still-sending campaign would otherwise show Resume Sending again
+// and let a second loop start alongside the first, each pulling 'queued'
+// rows from wa-send with no row claiming between them — a real chance of
+// double-sending a few messages. Module-level (survives the unmount that
+// stops a fresh instance from knowing about it any other way), keyed by
+// campaign id so sending two different campaigns at once is unaffected.
+var activeSendLoops = {}
+
 // Sending has four real gates in this file — saveDraft needs a name and a
 // template, refreshPreview needs a saved id, and openSendConfirm needs a
 // preview. They used to surface only as errors after you pressed the wrong
@@ -221,6 +232,11 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
   // nothing left queued, surfacing a running total instead of one opaque
   // "Sending…" the whole time.
   async function runSendLoop(targetTotal) {
+    if (activeSendLoops[currentId]) {
+      setError('This campaign is already sending — it was started from this tab (possibly from before you navigated Back). Wait for it to finish rather than starting a second one.')
+      return
+    }
+    activeSendLoops[currentId] = true
     setSending(true); setError('')
     var sessionRes = await supabase.auth.getSession()
     var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
@@ -233,6 +249,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
         body: { campaign_id: currentId, batch_size: 100 }, headers: authHeaders,
       })
       if (invokeRes.error) {
+        delete activeSendLoops[currentId]
         setSending(false)
         setError('Send stopped partway — ' + await edgeFnErrorMessage(invokeRes.error) + '. Reopen this campaign to resume where it left off.')
         return
@@ -242,6 +259,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
       setSendProgress({ sent: lastData.sent, failed: lastData.failed, remaining: remaining, total: targetTotal })
     }
 
+    delete activeSendLoops[currentId]
     setCampaignStatus(lastData.failed > 0 ? 'partial' : 'sent')
     setSending(false)
     if (onSaved) onSaved()
@@ -504,7 +522,15 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
                 only way back in. !sendProgress keeps it from flashing once
                 the loop below has already picked back up and is reporting
                 live progress of its own. */}
-            {campaignStatus === 'sending' && !sending && !sendProgress && (
+            {campaignStatus === 'sending' && !sending && !sendProgress && activeSendLoops[currentId] && (
+              <div className={CARD + ' p-3.5 border-indigo-200 bg-indigo-50/60'}>
+                <p className="text-[12.5px] font-bold text-slate-900 mb-1">Still sending</p>
+                <p className="text-[11.5px] text-slate-600 leading-snug">
+                  This campaign is still sending in the background from earlier in this tab — no need to resume it here, it'll keep going even on this screen.
+                </p>
+              </div>
+            )}
+            {campaignStatus === 'sending' && !sending && !sendProgress && !activeSendLoops[currentId] && (
               <div className={CARD + ' p-3.5 border-amber-200 bg-amber-50/60'}>
                 <p className="text-[12.5px] font-bold text-slate-900 mb-1">Send was interrupted</p>
                 <p className="text-[11.5px] text-slate-600 leading-snug mb-2">
