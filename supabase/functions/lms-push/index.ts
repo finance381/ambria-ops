@@ -253,6 +253,12 @@ serve(async (req) => {
       fisd_session: ["Dinner", "Sundowner", "Lunch"][q.slot ?? 0] || "Dinner",
       fisd_venue_value: venueValueStr,
       fisd_decoration_lumpsum: decorRupees,
+      // New per GYV_NEW_API_7_OCT_26.txt (API #3) — this codebase has no
+      // separate "additional decor charge" concept today, so the full
+      // amount goes in as basic and additional stays 0 rather than
+      // guessing at a split that doesn't exist anywhere upstream of this.
+      fisd_decor_basic_amt: decorRupees,
+      fisd_decor_additional_amt: "0",
       fisd_decor_type: "Enpaneled",
       fisd_decoration_remarks: decorRemarks,
       fisd_entertainment_lumpsum: djRupees,
