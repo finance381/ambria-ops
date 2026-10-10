@@ -311,11 +311,13 @@ function DecorVarCost({ profile, inAdmin }) {
   }
 
   function setupProblem(h) {
-    if (h.is_function) {
-      if (!h.function_date) return 'Pick the function date'
-      if (!h.venue_id) return 'Pick the venue'
-      if (venueSubs(h.venue_id).length > 0 && !h.sub_venue_id) return 'Pick the sub venue'
-    }
+    // Venue/sub venue used to be required whenever "For a function?" was on
+    // — dropped per request: a function's venue isn't always known/relevant
+    // at the time a cost sheet is opened, and the fields are still fillable,
+    // just optional. function_date stays required — it's what a function
+    // sheet is actually keyed on (suggestDate, the functions-on-this-date
+    // picker, etc. all assume it's there).
+    if (h.is_function && !h.function_date) return 'Pick the function date'
     if (!h.sheet_code) return 'Pick the department'
     return ''
   }
@@ -684,7 +686,7 @@ function DecorVarCost({ profile, inAdmin }) {
   function renderSetup() {
     var editing = !!(cur && cur.id)
     var subs = hdr.venue_id ? venueSubs(hdr.venue_id) : []
-    var fnDone = hdr.is_function ? !!(hdr.function_date && hdr.venue_id && (subs.length === 0 || hdr.sub_venue_id)) : true
+    var fnDone = hdr.is_function ? !!hdr.function_date : true
     var groups = groupFunctions(events)
     var picked = hdr.event_id ? groups.filter(function (g) { return g.contracts.some(function (c) { return String(c.id) === hdr.event_id }) }) : []
     var shown = picked.length === 1 ? picked : groups
