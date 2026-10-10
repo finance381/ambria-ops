@@ -3,18 +3,20 @@ import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import StoreRequisitionForm from './StoreRequisitionForm'
+import StoreRequisitionDetail from './StoreRequisitionDetail'
 import Icon from '../../components/ui/Icon'
 
 // A standalone top-level Procurement tab, a peer of Requisitions/Purchase
 // Orders/Vendors — not a tab nested inside Requisitions, since this flow has
 // no approval/dispatch lifecycle at all (it deducts stock on submit).
 //
-// List is intentionally bare (no filters, no detail drill-in) — the real
-// list view is a separate pass once submit + stock deduction are confirmed
-// working end to end.
+// List has no filters yet — that's still a separate pass. Clicking a row
+// (not its edit/delete icons) drills into StoreRequisitionDetail, a
+// read-only department-by-department breakdown with per-plate costing.
 function StoreRequisitions({ profile }) {
   var [view, setView] = useState('list')
   var [editId, setEditId] = useState(null)
+  var [detailId, setDetailId] = useState(null)
   var [reqs, setReqs] = useState([])
   var [loading, setLoading] = useState(true)
   var [deletingId, setDeletingId] = useState(null)
@@ -62,6 +64,15 @@ function StoreRequisitions({ profile }) {
     )
   }
 
+  if (view === 'detail') {
+    return (
+      <StoreRequisitionDetail
+        id={detailId}
+        onBack={function () { setView('list'); setDetailId(null) }}
+      />
+    )
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -85,7 +96,8 @@ function StoreRequisitions({ profile }) {
         <div className="space-y-3">
           {reqs.map(function (r) {
             return (
-              <div key={r.id} className="bg-white border border-gray-200 rounded-xl p-4">
+              <div key={r.id} onClick={function () { setDetailId(r.id); setView('detail') }}
+                className="bg-white border border-gray-200 rounded-xl p-4 cursor-pointer hover:border-indigo-300 transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
@@ -100,11 +112,11 @@ function StoreRequisitions({ profile }) {
                   </div>
                   <div className="flex items-center gap-3">
                     <p className="text-sm font-bold text-indigo-600 whitespace-nowrap">{formatPoints(r.total_paise || 0)}</p>
-                    <button onClick={function () { setEditId(r.id); setView('form') }} aria-label="Edit"
+                    <button onClick={function (ev) { ev.stopPropagation(); setEditId(r.id); setView('form') }} aria-label="Edit"
                       className="w-8 h-8 rounded-lg bg-gray-50 text-gray-500 flex items-center justify-center hover:bg-indigo-50 hover:text-indigo-600 transition-colors">
                       <Icon name="edit" size={14} />
                     </button>
-                    <button onClick={function () { setConfirmDeleteId(r.id) }} aria-label="Delete"
+                    <button onClick={function (ev) { ev.stopPropagation(); setConfirmDeleteId(r.id) }} aria-label="Delete"
                       className="w-8 h-8 rounded-lg bg-gray-50 text-gray-500 flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors">
                       <Icon name="trash" size={14} />
                     </button>
@@ -112,7 +124,8 @@ function StoreRequisitions({ profile }) {
                 </div>
 
                 {confirmDeleteId === r.id && (
-                  <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between gap-3">
+                  <div onClick={function (ev) { ev.stopPropagation() }}
+                    className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between gap-3">
                     <p className="text-xs text-red-700">Delete this requisition? Its stock deduction will be reversed.</p>
                     <div className="flex items-center gap-2 shrink-0">
                       <button onClick={function () { setConfirmDeleteId(null) }}
