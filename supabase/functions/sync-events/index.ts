@@ -21,6 +21,12 @@ const DEPARTMENTS = [
     pax: "fiscd_pax_no",
     freePax: "fiscd_free_pax_no",
     extraPlate: "fiscd_extra_plate_charge",
+    // LMS already computes these per Venue contract — see migration 00094.
+    // Only present under this department's own fiscd_ fields, nowhere else.
+    menuRate: "fiscd_menu_rate",
+    venueValue: "fiscd_venue_value",
+    decorLumpsum: "fiscd_decoration_lumpsum",
+    entertainLumpsum: "fiscd_entertainment_lumpsum",
   },
   {
     name: "Catering",
@@ -35,6 +41,7 @@ const DEPARTMENTS = [
     pax: "chcd_pax",
     freePax: "chcd_freepax",
     extraPlate: "chcd_extra_plate",
+    menuRate: null, venueValue: null, decorLumpsum: null, entertainLumpsum: null,
   },
   {
     name: "Decor",
@@ -49,6 +56,7 @@ const DEPARTMENTS = [
     pax: null,
     freePax: null,
     extraPlate: null,
+    menuRate: null, venueValue: null, decorLumpsum: null, entertainLumpsum: null,
   },
   {
     name: "Entertainment",
@@ -63,6 +71,7 @@ const DEPARTMENTS = [
     pax: null,
     freePax: null,
     extraPlate: null,
+    menuRate: null, venueValue: null, decorLumpsum: null, entertainLumpsum: null,
   },
 ]
 
@@ -174,6 +183,12 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
     function_date: e[dep.functionDate] || null,
     total_amount_paise: safePaise(e[h + "total_amt"] || 0),
     net_amount_paise: safePaise(e[h + "net_amt"] || 0),
+    // LMS-computed, Venue contracts only (see migration 00094) — null for
+    // every other department, same convention as pax/freePax/extraPlate above.
+    menu_rate_paise: dep.menuRate ? safePaise(e[dep.menuRate] || 0) : null,
+    venue_rental_paise: dep.venueValue ? safePaise(e[dep.venueValue] || 0) : null,
+    decor_amount_paise: dep.decorLumpsum ? safePaise(e[dep.decorLumpsum] || 0) : null,
+    entertainment_amount_paise: dep.entertainLumpsum ? safePaise(e[dep.entertainLumpsum] || 0) : null,
     lms_head_id: safeInt(e.headid || e.id || 0) || null,
     // Any row LMS actively returns (uncancelled) this run is, by definition,
     // not cancelled -- clears a flag a previous run may have set if LMS

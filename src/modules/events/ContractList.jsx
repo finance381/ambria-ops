@@ -23,7 +23,8 @@ var CONTRACT_SELECT = 'id, lms_event_id, contract_no, contract_date, function_da
   'venue_name, location, contact_person, contact_number, secondary_contact, event_name, client_name, session, ' +
   'catering, total_plates, complementary_plates, extra_plates_charge, balance_received, balance_bank, ' +
   'balance_amount, status, synced_at, created_user_name, ppt_link, pdf_link, enquiry_mode, priority, address, ' +
-  'is_tentative, pax, function_type, merged_into_id, tally_entered_by, tally_entered_at'
+  'is_tentative, pax, function_type, merged_into_id, tally_entered_by, tally_entered_at, ' +
+  'menu_rate_paise, venue_rental_paise, decor_amount_paise, entertainment_amount_paise'
 
 // LMS's own indoor/outdoor flag — confirmed directly against the live API:
 // every department returns a `lead_type` field, "I" (one of Ambria's own
@@ -313,6 +314,34 @@ function ContractList({ profile, deepLinkContractId }) {
                       </span>
                     )}
                   </div>
+
+                  {/* LMS already computes these per Venue contract (see migration
+                      00094's note) — pax was already synced as total_plates, just
+                      never shown as a column; menu rate/venue rental/decor/
+                      entertainment are new. Scoped to Venue rows only — the other
+                      three departments are their own standalone contracts with
+                      nothing to decompose. A full-width strip under the row
+                      rather than more grid columns, since it's blank dead space
+                      for 3 of every 4 rows otherwise. */}
+                  {c.department === 'Venue' && (c.total_plates || c.menu_rate_paise != null || c.venue_rental_paise != null || c.decor_amount_paise != null || c.entertainment_amount_paise != null) && (
+                    <div className="sm:col-span-full mt-2 pt-2 border-t border-slate-100 flex flex-wrap gap-x-5 gap-y-1 text-[11.5px]">
+                      {!!c.total_plates && (
+                        <span className="text-slate-500">Pax <b className="text-slate-800 tabular-nums">{c.total_plates}</b></span>
+                      )}
+                      {c.menu_rate_paise != null && c.menu_rate_paise > 0 && (
+                        <span className="text-slate-500">Menu rate <b className="text-slate-800 tabular-nums">{formatPaise(c.menu_rate_paise)}</b></span>
+                      )}
+                      {c.venue_rental_paise != null && (
+                        <span className="text-slate-500">Venue rental <b className="text-slate-800 tabular-nums">{formatPaise(c.venue_rental_paise)}</b></span>
+                      )}
+                      {c.decor_amount_paise != null && c.decor_amount_paise > 0 && (
+                        <span className="text-slate-500">Decor <b className="text-slate-800 tabular-nums">{formatPaise(c.decor_amount_paise)}</b></span>
+                      )}
+                      {c.entertainment_amount_paise != null && c.entertainment_amount_paise > 0 && (
+                        <span className="text-slate-500">Entertainment <b className="text-slate-800 tabular-nums">{formatPaise(c.entertainment_amount_paise)}</b></span>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -380,6 +409,10 @@ function ContractList({ profile, deepLinkContractId }) {
                 ['Pax', selected.pax],
                 ['Complimentary plates', selected.complementary_plates],
                 ['Extra plates charge', selected.extra_plates_charge],
+                ['Menu rate', selected.menu_rate_paise > 0 ? formatPaise(selected.menu_rate_paise) : null],
+                ['Venue rental', selected.venue_rental_paise != null ? formatPaise(selected.venue_rental_paise) : null],
+                ['Decor amount', selected.decor_amount_paise > 0 ? formatPaise(selected.decor_amount_paise) : null],
+                ['Entertainment amount', selected.entertainment_amount_paise > 0 ? formatPaise(selected.entertainment_amount_paise) : null],
                 ['Enquiry mode', selected.enquiry_mode],
                 ['Priority', selected.priority],
                 ['Created by (LMS)', selected.created_user_name],
