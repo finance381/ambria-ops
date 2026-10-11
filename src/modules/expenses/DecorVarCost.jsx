@@ -238,7 +238,7 @@ function DecorVarCost({ profile, inAdmin }) {
   async function loadRecord(id) {
     setRecordLoading(true)
     var { data, error } = await supabase.from('decor_var_costs')
-      .select('*, creator:created_by(name), submitter:submitted_by(name), event:event_id(event_name, client_name, session, venue_name, department, total_plates), decor_var_cost_entries(id, entry_date, lines, amount_paise, updated_at)')
+      .select('*, creator:created_by(name), submitter:submitted_by(name), event:event_id(event_name, client_name, session, venue_name, department, total_plates), decor_var_cost_entries(id, entry_date, lines, amount_paise, remark, updated_at)')
       .eq('id', id).maybeSingle()
     setRecordLoading(false)
     if (error || !data) { setRecordErr(error ? error.message : 'This sheet could not be found'); return null }
@@ -388,6 +388,7 @@ function DecorVarCost({ profile, inAdmin }) {
     setEd({
       id: entry ? entry.id : null,
       entry_date: entry ? entry.entry_date : suggestDate(c),
+      remark: entry ? (entry.remark || '') : '',
       lines: entry ? Object.assign({}, entry.lines) : {},
       sheet: {
         rates: Object.assign({}, c.sheet.rates),
@@ -447,6 +448,7 @@ function DecorVarCost({ profile, inAdmin }) {
       p_entry_date: ed.entry_date,
       p_lines: lines,
       p_amount_paise: entryAmountPaise(sheet, lines, sheetData.rates),
+      p_remark: ed.remark ? ed.remark.trim() : null,
     })
     setEdSaving(false)
     if (error) { setEdErr(error.message); return }
@@ -860,6 +862,12 @@ function DecorVarCost({ profile, inAdmin }) {
             <input id="dvc-date" type="date" value={ed.entry_date}
               onChange={function (e) { dirtyRef.current = true; var v = e.target.value; setEd(function (x) { return Object.assign({}, x, { entry_date: v }) }); setEdErr('') }}
               className={INPUT + INPUT_OK + ' !w-auto flex-1 min-w-[160px]'} />
+          </div>
+          <div className="mt-2.5">
+            <label htmlFor="dvc-remark" className="block text-[11.5px] font-bold text-slate-500 mb-1">Remark for this day</label>
+            <input id="dvc-remark" type="text" value={ed.remark} placeholder="Optional note about this day's entry..."
+              onChange={function (e) { dirtyRef.current = true; var v = e.target.value; setEd(function (x) { return Object.assign({}, x, { remark: v }) }) }}
+              className={INPUT + INPUT_OK + ' w-full'} />
           </div>
           <div className="mt-2 pt-2 border-t border-slate-100 flex items-start justify-between gap-2">
             <div className="min-w-0 space-y-0.5">
@@ -1345,6 +1353,7 @@ function DecorVarCost({ profile, inAdmin }) {
                   <div className="min-w-0 flex-1">
                     <p className="font-display text-[14px] font-bold tracking-[-0.01em] text-slate-900">{shortDate(e.entry_date)}{isFn ? ' · Function' : ''}</p>
                     <p className="text-[12.5px] font-medium text-slate-500">{n + (n === 1 ? ' row' : ' rows')} · <span data-notranslate className="font-bold text-slate-800 tabular-nums">{formatPoints(e.amount_paise)}</span></p>
+                    {e.remark && <p className="text-[11.5px] text-slate-400 italic truncate">{e.remark}</p>}
                   </div>
                   <Icon name={dayOpen ? 'chevronUp' : 'chevronDown'} size={16} className="shrink-0 text-slate-400" />
                   </button>
