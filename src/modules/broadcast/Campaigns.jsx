@@ -120,8 +120,17 @@ function Campaigns({ profile, inAdmin }) {
   }
 
   if (openId !== undefined) {
+    // key={openId} forces a full remount per campaign: CampaignBuilder's own
+    // load effect only overwrites its fields `if (campaignId)` (see its
+    // header comment on activeSendLoops), so switching from an existing
+    // campaign straight to "+ New Campaign" — or between two campaigns
+    // neither of which happens to set every field — left the previous
+    // campaign's audience filters (and worse, its `currentId`) sitting in
+    // state with nothing to clear them. A remount is simpler and more
+    // complete than auditing every field the load effect would need to
+    // reset by hand.
     return (
-      <CampaignBuilder campaignId={openId} onClose={closeCampaign} hideBack={!inAdmin}
+      <CampaignBuilder key={String(openId)} campaignId={openId} onClose={closeCampaign} hideBack={!inAdmin}
         onSaved={function () { loadCampaigns() }} />
     )
   }
