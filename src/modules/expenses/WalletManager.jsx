@@ -772,8 +772,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var ticket = ++txnReqRef.current
     function current() { return txnReqRef.current === ticket }
     // A new person, or a new filter, is a new list — page five of the last
-    // one means nothing here.
-    setTxnPage(0)
+    // one means nothing here. But a plain in-place refresh (acknowledging an
+    // expense, issuing cash, a transfer landing, etc. — every call site that
+    // passes just `wallet=null` and nothing else) is the SAME list; jumping
+    // back to page one every time something elsewhere changed was the actual
+    // bug this comment used to justify.
+    if (wallet || from !== undefined || to !== undefined || refType !== undefined) setTxnPage(0)
 
     if (wallet) {
       // Clear first: the transactions view is already mounted for the previous
