@@ -2,350 +2,379 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRealtime } from '../../lib/useRealtime'
 import { logActivity } from '../../lib/logger'
-import { formatPoints } from '../../lib/format'
-import PaySalaryModal from '../employees/PaySalaryModal'
-import SearchField from '../../components/ui/SearchField'
+import { formatPoints, formatDate } from '../../lib/format'
+import { hasPerm } from '../../lib/permissions'
+import { useReferenceData } from '../../lib/referenceData.jsx'
+import SearchDropdown from '../../components/ui/SearchDropdown'
+import Icon from '../../components/ui/Icon'
 
-function SalaryPayouts({ profile }) {
-  var perms = (profile && profile.permissions) || []
-  var isAdmin = perms.indexOf('feature_admin') !== -1
-  var canSeeSalary = perms.indexOf('feature_employees_salary') !== -1
-  var canView = isAdmin || (perms.indexOf('feature_salary_pay') !== -1 && canSeeSalary)
+var ACTIVE_STATUSES = ['active', 'probation', 'on_leave']
 
-  var [employees, setEmployees] = useState([])
-  var [credits, setCredits] = useState([])
-  var [recentPaid, setRecentPaid] = useState([])
-  var [loading, setLoading] = useState(true)
+function emptyRow(id) {
+  return { id: id, employeeId: '', cash: '', bank: '' }
+}
 
-  var [search, setSearch] = useState('')
-  var [minStaleDays, setMinStaleDays] = useState('')
-  var [onlyStale, setOnlyStale] = useState(false)
-  var [expandedKey, setExpandedKey] = useState(null)  // 'cash:<empId>' | 'bank:<empId>'
+function todayStr() {
+  return new Date().toISOString().split('T')[0]
+}
+
+function SalaryPayouts(props) {
+  var profile = props.profile
+  var permsNew = (profile && profile.permsNew) || []
+  var isAdmin = hasPerm(permsNew, 'admin.dashboard')
+  var canView = isAdmin || (hasPerm(permsNew, 'finance.salary_payouts') && hasPerm(permsNew, 'hr.employees.salary_view'))
+
+  var refData = useReferenceData()
+
+  var [date, setDate] = useState(todayStr)
+  var [rows, setRows] = useState(function () { return [emptyRow(1)] })
+  var [extraEmployees, setExtraEmployees] = useState([])  // optimistic quick-added employees, before refData catches up
+  var [walletBalance, setWalletBalance] = useState(null)
+  var [recent, setRecent] = useState([])
   var [showRecent, setShowRecent] = useState(false)
-
-  var [payTarget, setPayTarget] = useState(null)  // { employee, lockedMode }
+  var [saving, setSaving] = useState(false)
+  var [error, setError] = useState('')
+  var [saved, setSaved] = useState(null)
 
   useEffect(function () {
-    if (canView) loadAll()
+    if (!canView) return
+    loadWallet()
+    loadRecent()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useRealtime(['ledger_entries'], function () { if (canView) loadAll() })
+  useRealtime(['salary_payout_entries'], function () { if (canView) loadRecent() })
 
-  async function loadAll() {
-    setLoading(true)
+  async function loadWallet() {
+    if (!profile || !profile.id) return
+    var res = await supabase.from('wallets').select('balance_paise').eq('user_id', profile.id).maybeSingle()
+    setWalletBalance(res.data && typeof res.data.balance_paise === 'number' ? res.data.balance_paise : 0)
+  }
 
-    var { data: empData } = await supabase.from('v_employee_ledger')
-      .select('*')
-      .gt('balance_paise', 0)
-      .order('balance_paise', { ascending: false })
-    var empList = empData || []
-    setEmployees(empList)
+  async function loadRecent() {
+    var res = await supabase.from('salary_payout_entries')
+      .select('id, payout_date, cash_paise, bank_paise, created_at, employees(full_name, employee_code)')
+      .order('created_at', { ascending: false })
+      .limit(100)
+    setRecent(res.data || [])
+  }
 
-    if (empList.length === 0) {
-      setCredits([])
-      setRecentPaid([])
-      setLoading(false)
+  var employeeItems = useMemo(function () {
+    var byId = {}
+    ;(refData.employees || []).forEach(function (e) {
+      if (ACTIVE_STATUSES.indexOf(e.status) !== -1) byId[e.id] = e
+    })
+    extraEmployees.forEach(function (e) { byId[e.id] = e })  // quick-added ones win if refData hasn't caught up yet
+    return Object.keys(byId).map(function (id) {
+      var e = byId[id]
+      return { value: String(e.id), label: e.full_name + (e.designation ? ' — ' + e.designation : '') }
+    }).sort(function (a, b) { return a.label.localeCompare(b.label) })
+  }, [refData.employees, extraEmployees])
+
+  function addRow() {
+    setRows(function (prev) { return prev.concat([emptyRow(Date.now() + Math.random())]) })
+  }
+  function removeRow(id) {
+    setRows(function (prev) { return prev.length > 1 ? prev.filter(function (r) { return r.id !== id }) : prev })
+  }
+  function updateRow(id, patch) {
+    setRows(function (prev) { return prev.map(function (r) { return r.id === id ? Object.assign({}, r, patch) : r }) })
+  }
+
+  async function quickAddEmployee(typed) {
+    var name = (typed || '').trim()
+    if (!name) return null
+    var res = await supabase.rpc('fn_quick_add_employee', { p_full_name: name })
+    if (res.error || !res.data) {
+      alert('Could not add employee: ' + (res.error && res.error.message || 'unknown error'))
+      return null
+    }
+    setExtraEmployees(function (prev) { return prev.concat([res.data]) })
+    try { refData.refreshRefData && refData.refreshRefData() } catch (_) {}
+    try { logActivity('EMPLOYEE_QUICK_ADD', name + ' (id ' + res.data.id + ')') } catch (_) {}
+    return res.data
+  }
+
+  var totals = useMemo(function () {
+    var cash = 0, bank = 0
+    rows.forEach(function (r) {
+      cash += Math.round((Number(r.cash) || 0) * 100)
+      bank += Math.round((Number(r.bank) || 0) * 100)
+    })
+    return { cashPaise: cash, bankPaise: bank }
+  }, [rows])
+
+  var walletAfterPaise = walletBalance == null ? null : walletBalance - totals.cashPaise
+
+  async function handleSave() {
+    setError('')
+    var validRows = rows.filter(function (r) {
+      return r.employeeId && (Math.round((Number(r.cash) || 0) * 100) > 0 || Math.round((Number(r.bank) || 0) * 100) > 0)
+    })
+    if (validRows.length === 0) {
+      setError('Add at least one employee with a cash or bank amount')
       return
     }
 
-    var empIds = empList.map(function (e) { return e.employee_id })
-
-    // Individual accrual (salary_credit) rows for per-mode + per-row staleness
-    var { data: creditData } = await supabase.from('ledger_entries')
-      .select('*')
-      .eq('ledger_type', 'user_salary')
-      .eq('ref_type', 'salary_credit')
-      .in('party_uuid', empIds)
-      .is('deleted_at', null)
-      .limit(2000)
-    setCredits(creditData || [])
-
-    // Recently Paid (last 7 days) — payments + adjustments
-    var sevenAgo = new Date()
-    sevenAgo.setDate(sevenAgo.getDate() - 7)
-    var sevenAgoStr = sevenAgo.toISOString().split('T')[0]
-    var { data: paidData } = await supabase.from('ledger_entries')
-      .select('*')
-      .eq('ledger_type', 'user_salary')
-      .in('ref_type', ['salary_payment', 'salary_adjustment'])
-      .gte('entry_date', sevenAgoStr)
-      .is('deleted_at', null)
-      .order('id', { ascending: false })
-      .limit(200)
-    setRecentPaid(paidData || [])
-
-    setLoading(false)
-  }
-
-  var empById = useMemo(function () {
-    var m = {}
-    employees.forEach(function (e) { m[e.employee_id] = e })
-    return m
-  }, [employees])
-
-  // Group unpaid credits per (employee, mode)
-  var cards = useMemo(function () {
-    var groups = { cash: {}, bank: {} }
-    var today = new Date().toISOString().split('T')[0]
-    credits.forEach(function (c) {
-      var mode = c.metadata && c.metadata.mode
-      if (mode !== 'cash' && mode !== 'bank') return
-      var key = c.party_uuid
-      if (!groups[mode][key]) {
-        groups[mode][key] = { employee_id: key, mode: mode, rows: [], accrual_sum_paise: 0 }
+    setSaving(true)
+    var payload = validRows.map(function (r) {
+      return {
+        employee_id: r.employeeId,
+        cash_paise: Math.round((Number(r.cash) || 0) * 100),
+        bank_paise: Math.round((Number(r.bank) || 0) * 100)
       }
-      groups[mode][key].rows.push(c)
-      groups[mode][key].accrual_sum_paise += (c.credit_paise || 0)
     })
-
-    function build(modeGroups, mode) {
-      return Object.keys(modeGroups).map(function (empId) {
-        var g = modeGroups[empId]
-        var emp = empById[empId] || {}
-        var modeBalance = mode === 'cash' ? (emp.cash_balance_paise || 0) : (emp.bank_balance_paise || 0)
-        if (modeBalance <= 0) return null
-        // per-mode oldest = smallest entry_date across accrual rows
-        var oldest = g.rows.reduce(function (min, r) {
-          if (!min) return r.entry_date
-          return r.entry_date < min ? r.entry_date : min
-        }, null)
-        var staleDays = oldest ? Math.floor((new Date(today) - new Date(oldest)) / 86400000) : 0
-        return {
-          employee_id: empId,
-          employee_name: emp.employee_name || '—',
-          employee_code: emp.employee_code || '',
-          mode: mode,
-          balance_paise: modeBalance,
-          rows: g.rows.slice().sort(function (a, b) { return (a.entry_date || '').localeCompare(b.entry_date || '') }),
-          oldest_accrual: oldest,
-          stale_days: staleDays,
-          cash_balance_paise: emp.cash_balance_paise || 0,
-          bank_balance_paise: emp.bank_balance_paise || 0
-        }
-      }).filter(Boolean)
+    var res = await supabase.rpc('fn_record_salary_payout', { p_date: date, p_entries: payload })
+    if (res.error) {
+      setError(res.error.message || 'Could not save payout')
+      setSaving(false)
+      return
     }
 
-    return {
-      cash: build(groups.cash, 'cash'),
-      bank: build(groups.bank, 'bank')
+    var batchId = res.data
+    var totalCashPaise = payload.reduce(function (s, p) { return s + p.cash_paise }, 0)
+    var totalBankPaise = payload.reduce(function (s, p) { return s + p.bank_paise }, 0)
+
+    if (totalCashPaise > 0) {
+      var wRes = await supabase.rpc('wallet_self_debit', {
+        p_amount_paise: totalCashPaise,
+        p_description: 'Salary payout — ' + validRows.length + ' employee(s)',
+        p_ref_type: 'salary_payout',
+        p_ref_id: String(batchId)
+      })
+      if (wRes.error) {
+        setError('Payout was recorded, but your wallet debit failed: ' + wRes.error.message + '. Let an admin know.')
+        setSaving(false)
+        loadRecent()
+        return
+      }
     }
-  }, [credits, empById])
 
-  var filtered = useMemo(function () {
-    var qs = search.trim().toLowerCase()
-    var minD = Number(minStaleDays) || 0
-    function apply(list) {
-      return list.filter(function (r) {
-          if (qs) {
-            var hay = (r.employee_name + ' ' + r.employee_code).toLowerCase()
-            if (hay.indexOf(qs) === -1) return false
-          }
-          if (minD > 0 && r.stale_days < minD) return false
-          if (onlyStale && r.stale_days < 30) return false
-          return true
-        })
-        .sort(function (a, b) {
-          if (a.stale_days !== b.stale_days) return b.stale_days - a.stale_days
-          return b.balance_paise - a.balance_paise
-        })
-    }
-    return { cash: apply(cards.cash), bank: apply(cards.bank) }
-  }, [cards, search, minStaleDays, onlyStale])
+    try {
+      logActivity('SALARY_PAYOUT_RECORD',
+        validRows.length + ' employee(s) | cash ' + (totalCashPaise / 100) + ' | bank ' + (totalBankPaise / 100))
+    } catch (_) {}
 
-  var totals = useMemo(function () {
-    return {
-      cash: filtered.cash.reduce(function (s, r) { return s + r.balance_paise }, 0),
-      bank: filtered.bank.reduce(function (s, r) { return s + r.balance_paise }, 0),
-      staleCount: filtered.cash.filter(function (r) { return r.stale_days >= 30 }).length
-        + filtered.bank.filter(function (r) { return r.stale_days >= 30 }).length
-    }
-  }, [filtered])
-
-  function staleChip(days) {
-    if (days >= 30) return { cls: 'bg-red-50 text-red-700 border-red-200', label: '⏳ ' + days + 'd unpaid' }
-    if (days >= 15) return { cls: 'bg-amber-50 text-amber-700 border-amber-200', label: days + 'd unpaid' }
-    if (days >= 7) return { cls: 'bg-orange-50 text-orange-700 border-orange-200', label: days + 'd unpaid' }
-    return { cls: 'bg-gray-50 text-gray-600 border-gray-200', label: days + 'd' }
-  }
-
-  function openPay(row) {
-    setPayTarget({
-      employee: {
-        employee_id: row.employee_id,
-        employee_name: row.employee_name,
-        employee_code: row.employee_code,
-        cash_balance_paise: row.cash_balance_paise,
-        bank_balance_paise: row.bank_balance_paise
-      },
-      lockedMode: row.mode
-    })
-  }
-
-  function onPaySuccess() {
-    try { logActivity('SALARY_PAYOUTS_PAY', 'ok') } catch (_) {}
-    setPayTarget(null)
-    loadAll()
+    setSaving(false)
+    setSaved({ count: validRows.length })
+    setRows([emptyRow(Date.now())])
+    setExtraEmployees([])
+    loadWallet()
+    loadRecent()
+    setTimeout(function () { setSaved(null) }, 3000)
   }
 
   if (!canView) {
     return <p className="text-gray-400 text-sm text-center py-12">You don't have access to Salary Payouts.</p>
   }
 
-  function renderCard(mode) {
-    var list = mode === 'cash' ? filtered.cash : filtered.bank
-    var icon = mode === 'cash' ? '💵' : '🏦'
-    var label = mode === 'cash' ? 'Cash' : 'Bank'
-    var total = mode === 'cash' ? totals.cash : totals.bank
+  function renderDropdownCell(row) {
     return (
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-gray-500">{icon} {label} Payouts</p>
-            <p className="text-lg font-bold text-gray-900">{formatPoints(total)}</p>
-          </div>
-          <p className="text-[11px] text-gray-500">{list.length} pending</p>
-        </div>
-        {list.length === 0 ? (
-          <p className="text-gray-400 text-sm text-center py-8">No {label.toLowerCase()} payouts pending.</p>
-        ) : (
-          <div>
-            {list.map(function (r) {
-              var chip = staleChip(r.stale_days)
-              var key = mode + ':' + r.employee_id
-              var isExpanded = expandedKey === key
-              if (mode === 'bank') {
-                // Bank card notes wallet-untouched to reduce paying user's mental load
-              }
-              return (
-                <div key={key} className="border-b border-gray-100 last:border-b-0">
-                  <div className="px-3 py-2.5 flex items-center gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate">{r.employee_name}</p>
-                      <div className="flex gap-1.5 mt-0.5 flex-wrap items-center">
-                        <span className={"text-[10px] font-semibold px-1.5 py-0.5 border rounded " + chip.cls}>{chip.label}</span>
-                        <span className="text-[10px] text-gray-500">{r.rows.length} accrual{r.rows.length !== 1 ? 's' : ''}</span>
-                        {r.employee_code && <span className="text-[10px] text-gray-400">· {r.employee_code}</span>}
-                      </div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-sm font-bold text-amber-800">{formatPoints(r.balance_paise)}</p>
-                    </div>
-                    <div className="flex gap-1 flex-shrink-0 print:hidden">
-                      <button onClick={function () { openPay(r) }}
-                        className="px-2.5 py-1.5 text-[11px] font-bold rounded-md bg-indigo-600 text-white hover:bg-indigo-700">
-                        Pay
-                      </button>
-                      <button onClick={function () { setExpandedKey(isExpanded ? null : key) }}
-                        className="px-2 py-1.5 text-[11px] font-semibold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200">
-                        {isExpanded ? '▲' : '▼'}
-                      </button>
-                    </div>
-                  </div>
-                  {isExpanded && (
-                    <div className="px-3 pb-3 bg-gray-50 border-t border-gray-100">
-                      {r.rows.map(function (row) {
-                        var rowDays = Math.floor((new Date() - new Date(row.entry_date)) / 86400000)
-                        var rc = staleChip(rowDays)
-                        return (
-                          <div key={row.id} className="flex items-center gap-2 py-1.5 text-[11px]">
-                            <span className={"px-1.5 py-0.5 border rounded font-semibold " + rc.cls}>{rc.label}</span>
-                            <span className="flex-1 truncate text-gray-700">
-                              {row.metadata && row.metadata.salary_month ? row.metadata.salary_month : row.entry_date}
-                            </span>
-                            <span className="font-semibold text-gray-900">{formatPoints(row.credit_paise || 0)}</span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+      <SearchDropdown
+        items={employeeItems}
+        value={row.employeeId}
+        onChange={function (val) { updateRow(row.id, { employeeId: val }) }}
+        allowAdd
+        onAdd={async function (typed) {
+          var emp = await quickAddEmployee(typed)
+          if (emp) updateRow(row.id, { employeeId: String(emp.id) })
+        }}
+        placeholder="Search or add employee..." />
     )
+  }
+
+  function renderCashInput(row, cls) {
+    return (
+      <input type="number" min="0" step="any" value={row.cash}
+        onChange={function (e) { updateRow(row.id, { cash: e.target.value }) }}
+        placeholder="0"
+        className={cls}
+        style={{ fontSize: '16px' }} />
+    )
+  }
+
+  function renderBankInput(row, cls) {
+    return (
+      <input type="number" min="0" step="any" value={row.bank}
+        onChange={function (e) { updateRow(row.id, { bank: e.target.value }) }}
+        placeholder="0"
+        className={cls}
+        style={{ fontSize: '16px' }} />
+    )
+  }
+
+  function rowNote(row) {
+    var cash = Math.round((Number(row.cash) || 0) * 100)
+    var bank = Math.round((Number(row.bank) || 0) * 100)
+    if (cash > 0 && bank > 0) return { text: 'Cash deducts wallet · bank record-only', cls: 'text-gray-500' }
+    if (cash > 0) return { text: 'Deducts from your wallet', cls: 'text-amber-700' }
+    if (bank > 0) return { text: 'Record-only — no wallet change', cls: 'text-blue-700' }
+    return { text: '', cls: 'text-gray-300' }
   }
 
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between print:hidden">
-        <div>
-          <h2 className="text-lg font-bold text-gray-900">Salary Payouts</h2>
-          <p className="text-xs text-gray-500">Pending salary settlements — cash & bank</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0">
+            <Icon name="bank" size={18} />
+          </span>
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Salary Payouts</h2>
+            <p className="text-xs text-gray-500">Cash deducts from your PC wallet — bank is record-only.</p>
+          </div>
         </div>
-        <button onClick={function () { window.print() }}
-          className="px-3 py-2 text-xs font-semibold rounded-lg bg-white text-gray-700 border border-gray-200 hover:bg-gray-50">
-          🖨 Print
-        </button>
       </div>
 
-      {/* Stale banner */}
-      {totals.staleCount > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-2">
-          <span className="text-lg">⚠</span>
-          <p className="text-sm text-red-700 font-medium">
-            {totals.staleCount} payout{totals.staleCount !== 1 ? 's' : ''} unpaid ≥ 30 days
-          </p>
+      {/* Date + wallet */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-2.5">
+          <label htmlFor="salpay-date" className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-0.5">
+            Payment date <span className="font-normal normal-case text-gray-400">· backdating allowed</span>
+          </label>
+          <input id="salpay-date" type="date" value={date} max={todayStr()}
+            onChange={function (e) { setDate(e.target.value) }}
+            className="w-full border-none p-0 text-sm font-bold text-gray-900 bg-transparent focus:ring-0"
+            style={{ fontSize: '16px' }} />
         </div>
-      )}
-
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-2 print:hidden">
-        <SearchField
-          value={search}
-          onChange={function (v) { setSearch(v) }}
-          placeholder="Search employee..."
-          className="flex-1"
-        />
-        <input type="number" value={minStaleDays} onChange={function (e) { setMinStaleDays(e.target.value) }}
-          placeholder="Min stale days" min="0"
-          className="w-full sm:w-40 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white"
-          style={{ fontSize: '16px' }} />
-        <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer bg-white border border-gray-200 rounded-lg px-3 py-2">
-          <input type="checkbox" checked={onlyStale} onChange={function (e) { setOnlyStale(e.target.checked) }} />
-          Only ≥30d
-        </label>
+        <div className="flex-1 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-800 mb-0.5">Your PC wallet</div>
+          <div className="text-sm font-extrabold text-amber-800 tabular-nums">
+            {walletBalance == null ? 'Loading…' : formatPoints(walletBalance)}
+          </div>
+        </div>
       </div>
 
-      {/* Two-card grid */}
-      {loading ? (
-        <p className="text-gray-400 text-sm text-center py-12">Loading payouts...</p>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {renderCard('cash')}
-          {renderCard('bank')}
-        </div>
+      {error && (
+        <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>
       )}
 
-      {/* Recently paid */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden print:hidden">
+      {/* Entry table */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        {/* Desktop table */}
+        <div className="hidden sm:block">
+          <div className="grid border-b border-gray-200 bg-gray-50"
+            style={{ gridTemplateColumns: 'minmax(220px,2fr) 140px 140px minmax(160px,1fr) 36px' }}>
+            <div className="px-4 py-2 text-[10.5px] font-bold uppercase tracking-wider text-gray-500">Employee</div>
+            <div className="px-3 py-2 text-[10.5px] font-bold uppercase tracking-wider text-gray-500 text-right">Cash (pts)</div>
+            <div className="px-3 py-2 text-[10.5px] font-bold uppercase tracking-wider text-gray-500 text-right">Bank (pts)</div>
+            <div className="px-4 py-2 text-[10.5px] font-bold uppercase tracking-wider text-gray-500">Note</div>
+            <div />
+          </div>
+          {rows.map(function (row) {
+            var note = rowNote(row)
+            return (
+              <div key={row.id} className="grid items-center border-b border-gray-100 last:border-b-0"
+                style={{ gridTemplateColumns: 'minmax(220px,2fr) 140px 140px minmax(160px,1fr) 36px' }}>
+                <div className="px-4 py-2.5">{renderDropdownCell(row)}</div>
+                <div className="px-3 py-2.5">
+                  {renderCashInput(row, 'w-full px-2.5 py-2 border border-amber-200 bg-amber-50 rounded-lg text-sm text-right tabular-nums focus:ring-2 focus:ring-indigo-300')}
+                </div>
+                <div className="px-3 py-2.5">
+                  {renderBankInput(row, 'w-full px-2.5 py-2 border border-blue-200 bg-blue-50 rounded-lg text-sm text-right tabular-nums focus:ring-2 focus:ring-indigo-300')}
+                </div>
+                <div className={'px-4 py-2.5 text-xs ' + note.cls}>{note.text}</div>
+                <div className="flex items-center justify-center">
+                  <button onClick={function () { removeRow(row.id) }} aria-label="Remove this row"
+                    className="w-6 h-6 rounded-full border border-gray-200 text-gray-400 hover:bg-gray-50 hover:text-red-500 flex items-center justify-center">
+                    <Icon name="close" size={12} />
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+          <button onClick={addRow} className="w-full border-t border-dashed border-gray-200 py-3 text-indigo-600 font-semibold text-sm hover:bg-indigo-50 flex items-center justify-center gap-1.5">
+            <Icon name="plus" size={14} /> Add employee
+          </button>
+          <div className="grid border-t-2 border-gray-200 bg-gray-50"
+            style={{ gridTemplateColumns: 'minmax(220px,2fr) 140px 140px minmax(160px,1fr) 36px' }}>
+            <div className="px-4 py-2.5 text-xs font-extrabold text-gray-900">TOTAL</div>
+            <div className="px-3 py-2.5 text-sm font-extrabold text-amber-800 text-right tabular-nums">{formatPoints(totals.cashPaise)}</div>
+            <div className="px-3 py-2.5 text-sm font-extrabold text-blue-800 text-right tabular-nums">{formatPoints(totals.bankPaise)}</div>
+            <div className="px-4 py-2.5 text-xs text-gray-500">Grand total {formatPoints(totals.cashPaise + totals.bankPaise)}</div>
+            <div />
+          </div>
+        </div>
+
+        {/* Mobile stacked */}
+        <div className="sm:hidden divide-y divide-gray-100">
+          {rows.map(function (row) {
+            var note = rowNote(row)
+            return (
+              <div key={row.id} className="p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">{renderDropdownCell(row)}</div>
+                  <button onClick={function () { removeRow(row.id) }} aria-label="Remove this row"
+                    className="w-7 h-7 flex-shrink-0 rounded-full border border-gray-200 text-gray-400 hover:bg-gray-50 hover:text-red-500 flex items-center justify-center">
+                    <Icon name="close" size={13} />
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-amber-700 mb-1">Cash (pts)</label>
+                    {renderCashInput(row, 'w-full px-2.5 py-2 border border-amber-200 bg-amber-50 rounded-lg text-sm tabular-nums')}
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-blue-700 mb-1">Bank (pts)</label>
+                    {renderBankInput(row, 'w-full px-2.5 py-2 border border-blue-200 bg-blue-50 rounded-lg text-sm tabular-nums')}
+                  </div>
+                </div>
+                {note.text && <p className={'text-[11px] ' + note.cls}>{note.text}</p>}
+              </div>
+            )
+          })}
+          <button onClick={addRow} className="w-full py-3 text-indigo-600 font-semibold text-sm hover:bg-indigo-50 flex items-center justify-center gap-1.5">
+            <Icon name="plus" size={14} /> Add employee
+          </button>
+          <div className="p-3 bg-gray-50 space-y-1">
+            <div className="flex justify-between text-xs text-gray-600"><span>Total cash</span><span className="font-bold text-amber-800 tabular-nums">{formatPoints(totals.cashPaise)}</span></div>
+            <div className="flex justify-between text-xs text-gray-600"><span>Total bank</span><span className="font-bold text-blue-800 tabular-nums">{formatPoints(totals.bankPaise)}</span></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Wallet-after + Save */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <p className="text-xs text-gray-500">
+          Wallet after this payout:{' '}
+          <span className={'font-extrabold tabular-nums ' + (walletAfterPaise != null && walletAfterPaise < 0 ? 'text-red-600' : 'text-emerald-700')}>
+            {walletAfterPaise == null ? '—' : formatPoints(walletAfterPaise)}
+          </span>
+        </p>
+        <div className="flex items-center gap-3">
+          {saved && (
+            <span className="text-xs font-bold text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5">
+              ✓ Recorded for {saved.count} employee(s)
+            </span>
+          )}
+          <button onClick={handleSave} disabled={saving}
+            className="px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+            {saving ? 'Saving...' : 'Save Payout'}
+          </button>
+        </div>
+      </div>
+
+      {/* Recent payouts */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <button onClick={function () { setShowRecent(!showRecent) }}
           className="w-full px-4 py-3 flex items-center justify-between text-sm font-semibold text-gray-700 hover:bg-gray-50">
-          <span>Recently Paid (last 7 days) — {recentPaid.length} entries</span>
-          <span className="text-gray-400">{showRecent ? '▲' : '▼'}</span>
+          <span>Recent Payouts — {recent.length} entries</span>
+          <Icon name={showRecent ? 'chevronUp' : 'chevronDown'} size={14} className="text-gray-400" />
         </button>
         {showRecent && (
           <div className="border-t border-gray-100 max-h-96 overflow-y-auto">
-            {recentPaid.length === 0 ? (
-              <p className="text-gray-400 text-sm text-center py-4">Nothing in the last 7 days.</p>
+            {recent.length === 0 ? (
+              <p className="text-gray-400 text-sm text-center py-4">No payouts recorded yet.</p>
             ) : (
-              recentPaid.map(function (r) {
-                var meta = r.metadata || {}
-                var name = meta.employee_name || '—'
-                var isAdj = r.ref_type === 'salary_adjustment'
+              recent.map(function (r) {
+                var emp = r.employees || {}
                 return (
                   <div key={r.id} className="px-3 py-2 border-b border-gray-100 last:border-b-0 flex items-center gap-2 text-xs">
-                    <span className={"px-1.5 py-0.5 rounded font-semibold text-[10px] " +
-                      (isAdj ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-green-50 text-green-700 border border-green-200")}>
-                      {isAdj ? 'ADJ' : 'PAY'}
-                    </span>
-                    <span className="flex-1 truncate text-gray-800">{name}</span>
-                    <span className="text-gray-500">{meta.mode === 'cash' ? '💵' : meta.mode === 'bank' ? '🏦' : ''}</span>
-                    <span className="text-gray-500">{r.entry_date}</span>
-                    <span className="font-semibold text-gray-900">{formatPoints(r.debit_paise || r.credit_paise || 0)}</span>
+                    <span className="flex-1 truncate text-gray-800 font-medium">{emp.full_name || '—'}</span>
+                    <span className="text-gray-500">{formatDate(r.payout_date)}</span>
+                    {r.cash_paise > 0 && <span className="font-semibold text-amber-800 tabular-nums">💵 {formatPoints(r.cash_paise)}</span>}
+                    {r.bank_paise > 0 && <span className="font-semibold text-blue-800 tabular-nums">🏦 {formatPoints(r.bank_paise)}</span>}
                   </div>
                 )
               })
@@ -353,16 +382,6 @@ function SalaryPayouts({ profile }) {
           </div>
         )}
       </div>
-
-      {/* Pay modal — locked to the card's mode */}
-      {payTarget && (
-        <PaySalaryModal
-          employee={payTarget.employee}
-          lockedMode={payTarget.lockedMode}
-          profile={profile}
-          onClose={function () { setPayTarget(null) }}
-          onSuccess={onPaySuccess} />
-      )}
     </div>
   )
 }
