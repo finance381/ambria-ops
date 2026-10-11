@@ -238,7 +238,7 @@ function DecorVarCost({ profile, inAdmin }) {
   async function loadRecord(id) {
     setRecordLoading(true)
     var { data, error } = await supabase.from('decor_var_costs')
-      .select('*, creator:created_by(name), submitter:submitted_by(name), decor_var_cost_entries(id, entry_date, lines, amount_paise, updated_at)')
+      .select('*, creator:created_by(name), submitter:submitted_by(name), event:event_id(event_name, client_name, session, venue_name, department, total_plates), decor_var_cost_entries(id, entry_date, lines, amount_paise, updated_at)')
       .eq('id', id).maybeSingle()
     setRecordLoading(false)
     if (error || !data) { setRecordErr(error ? error.message : 'This sheet could not be found'); return null }
@@ -831,6 +831,12 @@ function DecorVarCost({ profile, inAdmin }) {
     var sheet = getSheet(cur.sheet_code)
     var rates = ed.sheet.rates
     var dayPaise = entryAmountPaise(sheet, cleanLines(sheet, ed.lines), rates)
+    // Same rule as the sheet overview's "Edit details" button.
+    var canEditEntry = cur.status === 'draft' && (cur.created_by === profile.id || canApprove)
+    async function handleEditDetailsFromEntry() {
+      if (!(await confirmLeaveEntry())) return
+      editDetails()
+    }
     var q = query.trim().toLowerCase()
     var groups = rowGroups(sheet).filter(function (g) {
       if (filledOnly && !g.rows.some(function (r) { return num(ed.lines[r.key]) })) return false
@@ -855,11 +861,31 @@ function DecorVarCost({ profile, inAdmin }) {
               onChange={function (e) { dirtyRef.current = true; var v = e.target.value; setEd(function (x) { return Object.assign({}, x, { entry_date: v }) }); setEdErr('') }}
               className={INPUT + INPUT_OK + ' !w-auto flex-1 min-w-[160px]'} />
           </div>
-          {cur.is_function && (
-            <p className="mt-2 text-[11.5px] text-slate-500">
-              Function {formatDate(cur.function_date)}{venueLabel(cur.venue_id, cur.sub_venue_id) ? ' · ' + venueLabel(cur.venue_id, cur.sub_venue_id) : ''}
-            </p>
-          )}
+          <div className="mt-2 pt-2 border-t border-slate-100 flex items-start justify-between gap-2">
+            <div className="min-w-0 space-y-0.5">
+              {cur.is_function ? (
+                <>
+                  <p className="text-[11.5px] font-semibold text-slate-600">
+                    Function {formatDate(cur.function_date)}{venueLabel(cur.venue_id, cur.sub_venue_id) ? ' · ' + venueLabel(cur.venue_id, cur.sub_venue_id) : ''}
+                  </p>
+                  {cur.event && (
+                    <p className="text-[11.5px] text-slate-500">
+                      {[cur.event.event_name, cur.event.client_name, cur.event.session, cur.event.total_plates ? cur.event.total_plates + ' plates' : null]
+                        .filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-[11.5px] font-semibold text-slate-500">Not for a function</p>
+              )}
+            </div>
+            {canEditEntry && (
+              <button type="button" onClick={handleEditDetailsFromEntry}
+                className="shrink-0 text-[11.5px] font-bold text-indigo-600 hover:text-indigo-700 px-1">
+                Edit
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Find a row in a 38-row sheet without scrolling it end to end. */}
