@@ -117,6 +117,10 @@ function DecorVarCost({ profile, inAdmin }) {
   var [scope, setScope] = useState('mine')
   var [records, setRecords] = useState(null)
   var [listErr, setListErr] = useState('')
+  var [deptFilter, setDeptFilter] = useState('')
+  var [dateFrom, setDateFrom] = useState('')
+  var [dateTo, setDateTo] = useState('')
+  var [filtersOpen, setFiltersOpen] = useState(false)
 
   // ── reference rows ──
   var [subVenues, setSubVenues] = useState([])
@@ -624,6 +628,22 @@ function DecorVarCost({ profile, inAdmin }) {
 
   // ── list ───────────────────────────────────────────────────────────────
   function renderList() {
+    var filterCount = (deptFilter ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0)
+    function resetFilters() { setDeptFilter(''); setDateFrom(''); setDateTo('') }
+    var filteredRecords = (records || []).filter(function (r) {
+      if (deptFilter && r.sheet_code !== deptFilter) return false
+      if (dateFrom || dateTo) {
+        var dates = (r.decor_var_cost_entries || []).map(function (e) { return e.entry_date })
+        var matches = dates.some(function (d) {
+          if (dateFrom && d < dateFrom) return false
+          if (dateTo && d > dateTo) return false
+          return true
+        })
+        if (!matches) return false
+      }
+      return true
+    })
+
     return (
       <div className="space-y-3">
         {header('Decor Var Cost', 'Decor cost sheets, date by date', (
@@ -645,8 +665,69 @@ function DecorVarCost({ profile, inAdmin }) {
             })}
           </div>
         )}
+
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <button type="button" onClick={function () { setFiltersOpen(!filtersOpen) }} aria-pressed={filtersOpen}
+              className={'flex-1 h-10 inline-flex items-center justify-center gap-1.5 rounded-xl border text-[12.5px] font-bold transition-colors ' +
+                (filtersOpen ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')}>
+              <Icon name="filter" size={13} />Filters{filterCount > 0 ? ' · ' + filterCount : ''}
+              <Icon name={filtersOpen ? 'chevronUp' : 'chevronDown'} size={13} />
+            </button>
+            {filterCount > 0 && (
+              <button type="button" onClick={resetFilters}
+                className="shrink-0 h-10 px-3.5 rounded-xl text-[12.5px] font-bold text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors">
+                Reset
+              </button>
+            )}
+          </div>
+          {filtersOpen && (
+            <div className={CARD + ' p-3.5 space-y-3'}>
+              <div>
+                <label className="block text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Department</label>
+                <div className="flex gap-1.5 flex-wrap">
+                  <button type="button" onClick={function () { setDeptFilter('') }} aria-pressed={deptFilter === ''}
+                    className={'px-3 py-1.5 rounded-full border text-[11.5px] font-bold transition-colors ' +
+                      (deptFilter === '' ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')}>
+                    All
+                  </button>
+                  {SHEETS.map(function (s) {
+                    var on = deptFilter === s.code
+                    return (
+                      <button key={s.code} type="button" onClick={function () { setDeptFilter(on ? '' : s.code) }} aria-pressed={on}
+                        className={'px-3 py-1.5 rounded-full border text-[11.5px] font-bold transition-colors ' +
+                          (on ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')}>
+                        {s.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label htmlFor="dvc-filter-from" className="block text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-slate-500 mb-1.5">From</label>
+                  <input id="dvc-filter-from" type="date" value={dateFrom} max={dateTo || undefined}
+                    onChange={function (e) { setDateFrom(e.target.value) }}
+                    className={INPUT + INPUT_OK} />
+                </div>
+                <div>
+                  <label htmlFor="dvc-filter-to" className="block text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-slate-500 mb-1.5">To</label>
+                  <input id="dvc-filter-to" type="date" value={dateTo} min={dateFrom || undefined}
+                    onChange={function (e) { setDateTo(e.target.value) }}
+                    className={INPUT + INPUT_OK} />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {errorBar(listErr)}
         {records === null && <p className="text-[13.5px] text-slate-500 text-center py-10">Loading…</p>}
+        {records && records.length > 0 && filteredRecords.length === 0 && (
+          <div className={CARD + ' px-6 py-10 text-center'}>
+            <p className="text-[13.5px] text-slate-500">No cost sheets match these filters.</p>
+          </div>
+        )}
         {records && records.length === 0 && !listErr && (
           <div className={CARD + ' px-6 py-10 text-center'}>
             <span className="mx-auto w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 inline-flex items-center justify-center mb-3">
@@ -660,9 +741,9 @@ function DecorVarCost({ profile, inAdmin }) {
             </button>
           </div>
         )}
-        {records && records.length > 0 && (
+        {filteredRecords.length > 0 && (
           <div className={'grid gap-2.5 grid-cols-1' + (wide ? ' lg:grid-cols-2 xl:grid-cols-3' : '')}>
-            {records.map(function (r) {
+            {filteredRecords.map(function (r) {
               var sh = getSheet(r.sheet_code)
               var ents = r.decor_var_cost_entries || []
               var soFar = ents.reduce(function (s, e) { return s + (e.amount_paise || 0) }, 0)
