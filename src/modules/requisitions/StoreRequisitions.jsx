@@ -17,6 +17,19 @@ function StoreRequisitions({ profile }) {
   var [view, setView] = useState('list')
   var [editId, setEditId] = useState(null)
   var [detailId, setDetailId] = useState(null)
+  // Opening a row's detail (or its edit form) fully replaces the list's own
+  // returned JSX with a separate tree, so the list unmounts rather than just
+  // being covered — coming back always landed at the top of the list,
+  // regardless of where the person had scrolled to find that row. Captured
+  // once on the way out of 'list' below, consumed once on the way back.
+  var scrollMemory = useRef(null)
+  useEffect(function () {
+    if (view === 'list' && scrollMemory.current != null) {
+      var y = scrollMemory.current
+      scrollMemory.current = null
+      requestAnimationFrame(function () { window.scrollTo(0, y) })
+    }
+  }, [view])
   var [reqs, setReqs] = useState([])
   var [loading, setLoading] = useState(true)
   var [deletingId, setDeletingId] = useState(null)
@@ -79,6 +92,17 @@ function StoreRequisitions({ profile }) {
     load()
   }
 
+  function openForm(id) {
+    scrollMemory.current = window.scrollY
+    setEditId(id)
+    setView('form')
+  }
+  function openDetail(id) {
+    scrollMemory.current = window.scrollY
+    setDetailId(id)
+    setView('detail')
+  }
+
   if (view === 'form') {
     return (
       <StoreRequisitionForm
@@ -106,7 +130,7 @@ function StoreRequisitions({ profile }) {
           <h2 className="text-lg font-bold text-gray-900">Store Requisition</h2>
           <p className="text-xs text-gray-400">{visibleReqs.length} store requisitions</p>
         </div>
-        <button onClick={function () { setEditId(null); setView('form') }}
+        <button onClick={function () { openForm(null) }}
           className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
           + New Store Requisition
         </button>
@@ -178,7 +202,7 @@ function StoreRequisitions({ profile }) {
         <div className="space-y-3">
           {visibleReqs.map(function (r) {
             return (
-              <div key={r.id} onClick={function () { setDetailId(r.id); setView('detail') }}
+              <div key={r.id} onClick={function () { openDetail(r.id) }}
                 className="bg-white border border-gray-200 rounded-xl p-4 cursor-pointer hover:border-indigo-300 transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -203,7 +227,7 @@ function StoreRequisitions({ profile }) {
                   </div>
                   <div className="flex items-center gap-3">
                     <p className="text-sm font-bold text-indigo-600 whitespace-nowrap">{formatPoints(r.total_paise || 0)}</p>
-                    <button onClick={function (ev) { ev.stopPropagation(); setEditId(r.id); setView('form') }} aria-label="Edit"
+                    <button onClick={function (ev) { ev.stopPropagation(); openForm(r.id) }} aria-label="Edit"
                       className="w-8 h-8 rounded-lg bg-gray-50 text-gray-500 flex items-center justify-center hover:bg-indigo-50 hover:text-indigo-600 transition-colors">
                       <Icon name="edit" size={14} />
                     </button>

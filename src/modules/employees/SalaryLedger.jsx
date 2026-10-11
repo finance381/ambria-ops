@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { pushBack } from '../../lib/backNav'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
@@ -33,6 +33,19 @@ function SalaryLedger({ profile, inAdmin }) {
   var [entries, setEntries] = useState([])
   var [entriesLoading, setEntriesLoading] = useState(false)
   var [showDeleted, setShowDeleted] = useState(false)
+  // Opening an employee fully replaces the list's own returned JSX with a
+  // separate tree, so the list unmounts rather than just being covered —
+  // coming back always landed at the top of the list, regardless of where
+  // the person had scrolled to find that row. Captured once on the way out
+  // of 'list' below, consumed once on the way back.
+  var scrollMemory = useRef(null)
+  useEffect(function () {
+    if (view === 'list' && scrollMemory.current != null) {
+      var y = scrollMemory.current
+      scrollMemory.current = null
+      requestAnimationFrame(function () { window.scrollTo(0, y) })
+    }
+  }, [view])
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () {
     if (selectedEmp) loadEntries(selectedEmp, showDeleted)
   })
@@ -127,6 +140,7 @@ function SalaryLedger({ profile, inAdmin }) {
   // header's arrow and a swipe return to the list, and the page needs no Back
   // of its own. The admin console has no arrow and keeps the button.
   async function openEmployee(emp) {
+    scrollMemory.current = window.scrollY
     if (!inAdmin) pushBack(function () { backToList() })
     setSelectedEmp(emp)
     setView('detail')

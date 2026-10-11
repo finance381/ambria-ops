@@ -68,6 +68,19 @@ function Purchase({ profile, mode }) {
   var [queueLoading, setQueueLoading] = useState(true)
   var [saving, setSaving] = useState(false)
   useRealtime(['purchase_orders', 'purchase_order_items'], function () { if (!saving) { loadQueue(); loadPos() } })
+  // Opening a PO's detail fully replaces the list's own returned JSX with a
+  // separate tree, so the list unmounts rather than just being covered —
+  // coming back always landed at the top of the list, regardless of where
+  // the person had scrolled to find that PO. Captured once on the way out
+  // of 'list' below, consumed once on the way back.
+  var scrollMemory = useRef(null)
+  useEffect(function () {
+    if (view === 'list' && scrollMemory.current != null) {
+      var y = scrollMemory.current
+      scrollMemory.current = null
+      requestAnimationFrame(function () { window.scrollTo(0, y) })
+    }
+  }, [view])
   var [vendorList, setVendorList] = useState([])
   var [staffList, setStaffList] = useState([])
   var [receivingItems, setReceivingItems] = useState([])
@@ -281,6 +294,7 @@ function Purchase({ profile, mode }) {
   // ─── OPEN PO DETAIL ───
   async function openPoDetail(po) {
     if (saving) return
+    scrollMemory.current = window.scrollY
     setSaving(true)
     var { data } = await supabase
       .from('purchase_order_items')

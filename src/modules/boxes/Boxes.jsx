@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { titleCase } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
@@ -47,6 +47,19 @@ function Boxes({ profile }) {
   var [activeBox, setActiveBox] = useState(null)
   var [boxItems, setBoxItems] = useState([])
   var [itemsLoading, setItemsLoading] = useState(false)
+  // Opening a detail (or the form) fully replaces the list's own returned
+  // JSX with a separate tree, so the list unmounts rather than just being
+  // covered — coming back always landed at the top of the list, regardless
+  // of where the person had scrolled to find that row. Captured once on the
+  // way out of 'list' below, consumed once on the way back.
+  var scrollMemory = useRef(null)
+  useEffect(function () {
+    if (view === 'list' && scrollMemory.current != null) {
+      var y = scrollMemory.current
+      scrollMemory.current = null
+      requestAnimationFrame(function () { window.scrollTo(0, y) })
+    }
+  }, [view])
   var [addItemSearch, setAddItemSearch] = useState('')
   var [searchResults, setSearchResults] = useState([])
   var [searching, setSearching] = useState(false)
@@ -94,6 +107,7 @@ function Boxes({ profile }) {
   // ── FORM ──
 
   function openForm(box) {
+    scrollMemory.current = window.scrollY
     setEditBox(box || null)
     setFormLabel(box?.label || '')
     setFormCategory(box?.category_id ? String(box.category_id) : '')
@@ -136,6 +150,7 @@ function Boxes({ profile }) {
   // ── DETAIL ──
 
   async function openDetail(box) {
+    scrollMemory.current = window.scrollY
     setActiveBox(box)
     setView('detail')
     setAddItemSearch('')
