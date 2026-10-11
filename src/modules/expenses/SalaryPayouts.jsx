@@ -26,12 +26,12 @@ function SalaryPayouts(props) {
 
   var refData = useReferenceData()
 
+  var [mode, setMode] = useState('list')  // 'list' | 'form'
   var [date, setDate] = useState(todayStr)
   var [rows, setRows] = useState(function () { return [emptyRow(1)] })
   var [extraEmployees, setExtraEmployees] = useState([])  // optimistic quick-added employees, before refData catches up
   var [walletBalance, setWalletBalance] = useState(null)
   var [recent, setRecent] = useState([])
-  var [showRecent, setShowRecent] = useState(false)
   var [saving, setSaving] = useState(false)
   var [error, setError] = useState('')
   var [saved, setSaved] = useState(null)
@@ -159,9 +159,18 @@ function SalaryPayouts(props) {
     setSaved({ count: validRows.length })
     setRows([emptyRow(Date.now())])
     setExtraEmployees([])
+    setMode('list')
     loadWallet()
     loadRecent()
     setTimeout(function () { setSaved(null) }, 3000)
+  }
+
+  function openForm() {
+    setError('')
+    setDate(todayStr())
+    setRows([emptyRow(Date.now())])
+    setExtraEmployees([])
+    setMode('form')
   }
 
   if (!canView) {
@@ -212,16 +221,84 @@ function SalaryPayouts(props) {
     return { text: '', cls: 'text-gray-300' }
   }
 
+  if (mode === 'list') {
+    return (
+      <div className="space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0">
+              <Icon name="bank" size={18} />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold text-gray-900">Salary Payouts</h2>
+              <p className="text-xs text-gray-500 truncate">Who's been paid, and what's left in your PC wallet.</p>
+            </div>
+          </div>
+          <button onClick={openForm}
+            className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">
+            <Icon name="plus" size={14} /> Add Payout
+          </button>
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 inline-block">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-800 mb-0.5">Your PC wallet</div>
+          <div className="text-sm font-extrabold text-amber-800 tabular-nums">
+            {walletBalance == null ? 'Loading…' : formatPoints(walletBalance)}
+          </div>
+        </div>
+
+        {saved && (
+          <div className="text-xs font-bold text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+            ✓ Recorded for {saved.count} employee(s)
+          </div>
+        )}
+
+        {/* Recent payouts — the main view */}
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+            <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Payout history — {recent.length} entries</p>
+          </div>
+          {recent.length === 0 ? (
+            <p className="text-gray-400 text-sm text-center py-10">No payouts recorded yet. Click "Add Payout" to log the first one.</p>
+          ) : (
+            <div className="max-h-[70vh] overflow-y-auto divide-y divide-gray-100">
+              {recent.map(function (r) {
+                var emp = r.employees || {}
+                return (
+                  <div key={r.id} className="px-4 py-2.5 flex items-center gap-3 text-sm">
+                    <span className="flex-1 min-w-0 truncate text-gray-800 font-semibold">{emp.full_name || '—'}</span>
+                    <span className="text-xs text-gray-500 flex-shrink-0">{formatDate(r.payout_date)}</span>
+                    <span className="w-24 text-right flex-shrink-0 font-semibold tabular-nums text-amber-800">
+                      {r.cash_paise > 0 ? formatPoints(r.cash_paise) : '—'}
+                    </span>
+                    <span className="w-24 text-right flex-shrink-0 font-semibold tabular-nums text-blue-800">
+                      {r.bank_paise > 0 ? formatPoints(r.bank_paise) : '—'}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
+          <button onClick={function () { setMode('list') }} aria-label="Back to list"
+            className="w-8 h-8 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 flex items-center justify-center flex-shrink-0">
+            <Icon name="arrowLeft" size={15} />
+          </button>
           <span className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0">
             <Icon name="bank" size={18} />
           </span>
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Salary Payouts</h2>
+            <h2 className="text-lg font-bold text-gray-900">Add Payout</h2>
             <p className="text-xs text-gray-500">Cash deducts from your PC wallet — bank is record-only.</p>
           </div>
         </div>
@@ -355,33 +432,6 @@ function SalaryPayouts(props) {
         </div>
       </div>
 
-      {/* Recent payouts */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <button onClick={function () { setShowRecent(!showRecent) }}
-          className="w-full px-4 py-3 flex items-center justify-between text-sm font-semibold text-gray-700 hover:bg-gray-50">
-          <span>Recent Payouts — {recent.length} entries</span>
-          <Icon name={showRecent ? 'chevronUp' : 'chevronDown'} size={14} className="text-gray-400" />
-        </button>
-        {showRecent && (
-          <div className="border-t border-gray-100 max-h-96 overflow-y-auto">
-            {recent.length === 0 ? (
-              <p className="text-gray-400 text-sm text-center py-4">No payouts recorded yet.</p>
-            ) : (
-              recent.map(function (r) {
-                var emp = r.employees || {}
-                return (
-                  <div key={r.id} className="px-3 py-2 border-b border-gray-100 last:border-b-0 flex items-center gap-2 text-xs">
-                    <span className="flex-1 truncate text-gray-800 font-medium">{emp.full_name || '—'}</span>
-                    <span className="text-gray-500">{formatDate(r.payout_date)}</span>
-                    {r.cash_paise > 0 && <span className="font-semibold text-amber-800 tabular-nums">💵 {formatPoints(r.cash_paise)}</span>}
-                    {r.bank_paise > 0 && <span className="font-semibold text-blue-800 tabular-nums">🏦 {formatPoints(r.bank_paise)}</span>}
-                  </div>
-                )
-              })
-            )}
-          </div>
-        )}
-      </div>
     </div>
   )
 }
