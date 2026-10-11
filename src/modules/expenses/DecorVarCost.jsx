@@ -247,6 +247,14 @@ function DecorVarCost({ profile, inAdmin }) {
       entries: (data.decor_var_cost_entries || []).slice().sort(function (a, b) { return a.entry_date < b.entry_date ? -1 : 1 }),
     })
     setCur(rec)
+    // event_id wasn't picked for this sheet (optional since venue/sub venue
+    // became optional) — still worth showing what's booked on that date,
+    // same list the setup screen's picker already fetches, just read-only here.
+    if (rec.is_function && rec.function_date && !rec.event_id) {
+      loadEventsByDate(rec.function_date)
+    } else {
+      setEvents([])
+    }
     return rec
   }
 
@@ -538,6 +546,15 @@ function DecorVarCost({ profile, inAdmin }) {
     var s = subVenues.find(function (x) { return String(x.id) === String(subId) })
     if (!v) return ''
     return v.name + (s ? ' · ' + s.name : '')
+  }
+
+  // No event picked for this sheet (optional) — show what events exist on
+  // the function date anyway, as an unconfirmed hint rather than nothing.
+  function fallbackFunctionLines() {
+    if (!cur || cur.event || !cur.is_function || events.length === 0) return []
+    return events.map(function (e) {
+      return [e.event_name, e.client_name, e.session].filter(Boolean).join(' · ')
+    })
   }
 
   function header(title, sub, right) {
@@ -882,6 +899,9 @@ function DecorVarCost({ profile, inAdmin }) {
                         .filter(Boolean).join(' · ')}
                     </p>
                   )}
+                  {fallbackFunctionLines().map(function (line, i) {
+                    return <p key={i} className="text-[11.5px] text-slate-400">{(i === 0 ? 'On this date (not linked): ' : '· ') + line}</p>
+                  })}
                 </>
               ) : (
                 <p className="text-[11.5px] font-semibold text-slate-500">Not for a function</p>
@@ -1305,6 +1325,23 @@ function DecorVarCost({ profile, inAdmin }) {
                   <p className="flex items-start gap-2 text-[13.5px] font-semibold text-slate-800">
                     <Icon name="mapPin" size={14} className="shrink-0 mt-0.5 text-slate-400" /><span className="min-w-0 break-words">{venueLabel(cur.venue_id, cur.sub_venue_id) || '—'}</span>
                   </p>
+                  {cur.event && (
+                    <p className="flex items-start gap-2 text-[12.5px] font-medium text-slate-500">
+                      <Icon name="tag" size={13} className="shrink-0 mt-0.5 text-slate-400" />
+                      <span className="min-w-0 break-words">
+                        {[cur.event.event_name, cur.event.client_name, cur.event.session, cur.event.total_plates ? cur.event.total_plates + ' plates' : null]
+                          .filter(Boolean).join(' · ')}
+                      </span>
+                    </p>
+                  )}
+                  {fallbackFunctionLines().map(function (line, i) {
+                    return (
+                      <p key={i} className="flex items-start gap-2 text-[12.5px] font-medium text-slate-400">
+                        <Icon name="tag" size={13} className="shrink-0 mt-0.5 text-slate-300" />
+                        <span className="min-w-0 break-words">{(i === 0 ? 'On this date (not linked): ' : '') + line}</span>
+                      </p>
+                    )
+                  })}
                 </>
               ) : (
                 <p className="flex items-center gap-2 text-[13.5px] font-semibold text-slate-500">
@@ -1353,7 +1390,7 @@ function DecorVarCost({ profile, inAdmin }) {
                   <div className="min-w-0 flex-1">
                     <p className="font-display text-[14px] font-bold tracking-[-0.01em] text-slate-900">{shortDate(e.entry_date)}{isFn ? ' · Function' : ''}</p>
                     <p className="text-[12.5px] font-medium text-slate-500">{n + (n === 1 ? ' row' : ' rows')} · <span data-notranslate className="font-bold text-slate-800 tabular-nums">{formatPoints(e.amount_paise)}</span></p>
-                    {e.remark && <p className="text-[11.5px] text-slate-400 italic truncate">{e.remark}</p>}
+                    {e.remark && <p className="mt-0.5 text-[13px] font-medium text-slate-600 italic break-words">{e.remark}</p>}
                   </div>
                   <Icon name={dayOpen ? 'chevronUp' : 'chevronDown'} size={16} className="shrink-0 text-slate-400" />
                   </button>
