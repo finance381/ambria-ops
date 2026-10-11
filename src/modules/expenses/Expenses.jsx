@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import ExpenseFormMulti from './ExpenseForm'
@@ -107,6 +107,23 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
   // which is what looked like "the list re-renders and drops me to the top".
   useRealtime(['expenses', 'expense_allocations'], function () { loadMyExpenses(false, true); loadApprovalExpenses(false) })
   var [detailExp, setDetailExp] = useState(null)
+  // Opening a detail (to review/acknowledge it) swaps the whole page over to
+  // view === 'detail' — the list/approve/all tab underneath isn't just
+  // covered, it's gone from the returned JSX, so the page the person was
+  // scrolled through always came back at the top. The list/approve/all
+  // filters themselves (statusFilter etc., and AllExpenses' own cached ones)
+  // already live above this remount and were never actually lost — only the
+  // scroll position was. Captured once on the way into detail and consumed
+  // once on the way back to whichever tab it came from, below.
+  var scrollMemory = useRef(null)
+  useEffect(function () {
+    if ((view === 'list' || view === 'approve' || view === 'all') && scrollMemory.current != null) {
+      var y = scrollMemory.current
+      scrollMemory.current = null
+      requestAnimationFrame(function () { window.scrollTo(0, y) })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view])
   var [statusFilter, setStatusFilter] = useState('')
   var [dateFrom, setDateFrom] = useState('')
   var [dateTo, setDateTo] = useState('')
@@ -415,6 +432,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
 
   function openDetail(exp) {
     var returnTo = exp._fromApprove ? 'approve' : exp._fromAll ? 'all' : 'list'
+    scrollMemory.current = window.scrollY
     pushBack(function () { setView(returnTo); setDetailExp(null); setEditExp(null) })
     setDetailExp(exp)
     setView('detail')
