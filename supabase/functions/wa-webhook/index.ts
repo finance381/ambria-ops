@@ -108,6 +108,47 @@ async function notifyInboxSubscribers(supa, SUPABASE_URL, SERVICE_ROLE, displayN
   }
 }
 
+// Alerts the same "Inbox notifications" subscribers when this webhook
+// silently drops an inbound message — e.g. the Oct 2026 incident, where a
+// migration never got run and every insert failed for 5 days with nobody
+// noticing, since Meta always got a 200 back regardless (so it never
+// retried, and never showed an error on Meta's own side either). Throttled
+// to at most one alert per 15 minutes so a burst of failures sharing one
+// root cause doesn't flood everyone's phone with duplicates.
+async function alertOpsFailure(supa, SUPABASE_URL, SERVICE_ROLE, context, detail) {
+  try {
+    var recentRes = await supa.from("notifications").select("id")
+      .eq("type", "wa_webhook_error")
+      .gte("created_at", new Date(Date.now() - 15 * 60 * 1000).toISOString())
+      .limit(1)
+    if (recentRes.data && recentRes.data.length > 0) return
+
+    var subsRes = await supa.from("wa_inbox_notification_subscribers").select("user_id")
+    var userIds = (subsRes.data || []).map(function (r) { return r.user_id })
+    if (userIds.length === 0) return
+
+    var title = "WhatsApp inbound message failed to save"
+    var body = context + (detail ? ": " + String(detail).slice(0, 200) : "")
+
+    for (var i = 0; i < userIds.length; i++) {
+      var uid = userIds[i]
+      var insRes = await supa.from("notifications").insert({
+        user_id: uid, type: "wa_webhook_error", title: title, body: body, link: "broadcast:inbox",
+      })
+      if (insRes.error) continue
+      try {
+        await fetch(SUPABASE_URL + "/functions/v1/send-push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + SERVICE_ROLE },
+          body: JSON.stringify({ user_id: uid, title: title, body: body, link: "broadcast:inbox" }),
+        })
+      } catch (pushErr) { /* best-effort, same as every other send-push call in this file */ }
+    }
+  } catch (alertErr) {
+    console.error("wa-webhook: alertOpsFailure itself threw")
+  }
+}
+
 // Meta hands back a media id, never the file itself — a second call resolves
 // that id to a short-lived signed CDN url (expires in minutes), which a third
 // call then has to fetch before it dies. Re-uploading into our own storage is
@@ -171,7 +212,11 @@ async function handleInboundMessage(supa, value, msg, SUPABASE_URL, SERVICE_ROLE
     var insContact = await supa.from("wa_contacts").insert({
       phone_e164: fromPhone, name: displayName, source: "inbound", opt_status: "implied",
     }).select("id").single()
-    if (insContact.error) { console.error("wa-webhook: contact insert failed"); return }
+    if (insContact.error) {
+      console.error("wa-webhook: contact insert failed")
+      await alertOpsFailure(supa, SUPABASE_URL, SERVICE_ROLE, "Contact insert failed", insContact.error.message)
+      return
+    }
     contactId = insContact.data.id
   } else if (displayName && !(contactRes.data.name || "").trim()) {
     // A contact imported with no name (CSV, LMS pull, manually added) gets
@@ -204,7 +249,11 @@ async function handleInboundMessage(supa, value, msg, SUPABASE_URL, SERVICE_ROLE
     location_lng: locationData ? locationData.lng : null,
     location_name: locationData ? locationData.name : null,
   })
-  if (insMsg.error) { console.error("wa-webhook: inbound message insert failed: " + insMsg.error.message); return }
+  if (insMsg.error) {
+    console.error("wa-webhook: inbound message insert failed: " + insMsg.error.message)
+    await alertOpsFailure(supa, SUPABASE_URL, SERVICE_ROLE, "Inbound message insert failed", insMsg.error.message)
+    return
+  }
 
   var MEDIA_PREVIEW_LABEL = { image: "📷 Photo", video: "🎥 Video", audio: "🎤 Voice message", document: "📄 Document", sticker: "Sticker", location: "📍 Location" }
   var notifyPreview = bodyText || MEDIA_PREVIEW_LABEL[messageType] || "(unsupported message type)"
@@ -328,6 +377,7 @@ serve(async function (req) {
     }
   } catch (procErr) {
     console.error("wa-webhook: processing error: " + (procErr && procErr.message))
+    await alertOpsFailure(supa, SUPABASE_URL, SERVICE_ROLE, "Webhook processing error", procErr && procErr.message)
   }
 
   return new Response("EVENT_RECEIVED", { status: 200 })

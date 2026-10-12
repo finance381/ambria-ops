@@ -1378,10 +1378,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       if (!isEditing && e.expenseDate < _minStr) return 'Entry ' + (i + 1) + ': Date is more than 3 days old — contact admin or raise a requisition'
       var fields = getSubTypeFields(e.expenseSubTypeId)
       for (var f = 0; f < fields.length; f++) {
-        // Employees-lookup (source='job_departments') is always required — the salary-ledger trigger
-        // silently no-ops without it, which would look like a successful save with no salary record.
-        var isEmpLookup = fields[f].type === 'lookup' && fields[f].source === 'job_departments'
-        if ((fields[f].required || isEmpLookup) && !(e.fieldValues[fields[f].key] || '').toString().trim()) {
+        if (fields[f].required && !(e.fieldValues[fields[f].key] || '').toString().trim()) {
           return 'Entry ' + (i + 1) + ': ' + fields[f].label + ' is required'
         }
       }

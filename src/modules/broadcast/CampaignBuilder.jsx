@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
-import { CTRL, BTN_GHOST, BTN_PRIMARY, BTN_SEND, CARD, Labeled, Notice } from './ui'
+import { CTRL, BTN_GHOST, BTN_PRIMARY, BTN_SEND, CARD, Labeled, Notice, TagsInput, useTagSuggestions } from './ui'
 
 // Contact fields fn_wa_resolve_mapping (migration 00029) actually supports —
 // keep this list in sync with that function's CASE branches.
@@ -40,6 +40,21 @@ function StepCard({ n, title, hint, icon, children }) {
   )
 }
 
+// A send loop outlives the component — it's a plain async function, not
+// tied to CampaignBuilder's lifecycle, and going Back (Campaigns.jsx just
+// swaps this out for the list, no page reload) doesn't stop it. Reopening
+// the same still-sending campaign would otherwise show Resume Sending again
+// and let a second loop start alongside the first, each pulling 'queued'
+// rows from wa-send with no row claiming between them — a real chance of
+// double-sending a few messages. Module-level (survives the unmount that
+// stops a fresh instance from knowing about it any other way), keyed by
+// campaign id so sending two different campaigns at once is unaffected.
+var activeSendLoops = {}
+
+function sleep(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms) })
+}
+
 // Sending has four real gates in this file — saveDraft needs a name and a
 // template, refreshPreview needs a saved id, and openSendConfirm needs a
 // preview. They used to surface only as errors after you pressed the wrong
@@ -66,7 +81,9 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
   var [name, setName] = useState('')
   var [templateId, setTemplateId] = useState('')
   var [listId, setListId] = useState('')
-  var [tagsText, setTagsText] = useState('')
+  var [tags, setTags] = useState([])
+  var [excludeTags, setExcludeTags] = useState([])
+  var tagSuggestions = useTagSuggestions()
   var [venueIds, setVenueIds] = useState([])
   var [source, setSource] = useState('')
   var [minLastSentDays, setMinLastSentDays] = useState('')
@@ -77,6 +94,12 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
   var [scheduleLater, setScheduleLater] = useState(false)
   var [mapping, setMapping] = useState({})
   var [currentId, setCurrentId] = useState(campaignId || null)
+  // A send interrupted partway (tab closed, network drop) leaves the
+  // campaign's own status at 'sending' with some wa_messages rows still
+  // 'queued' — rpc_wa_campaign_send refuses to queue a second time for
+  // anything but 'draft'/'scheduled', so reopening the campaign has to offer
+  // Resume instead of Send, driven off this.
+  var [campaignStatus, setCampaignStatus] = useState(null)
   var [saving, setSaving] = useState(false)
   var [error, setError] = useState('')
   var [notice, setNotice] = useState('')
@@ -113,8 +136,10 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
         var c = res.data
         setName(c.name); setTemplateId(String(c.template_id))
         setListId(c.list_id ? String(c.list_id) : '')
+        setCampaignStatus(c.status)
         var f = c.audience_filter_json || {}
-        setTagsText((f.tags || []).join(', '))
+        setTags(f.tags || [])
+        setExcludeTags(f.exclude_tags || [])
         setVenueIds((f.venue_ids || []).map(String))
         setSource(f.source || '')
         setMinLastSentDays(f.min_last_sent_days != null ? String(f.min_last_sent_days) : '')
@@ -153,8 +178,8 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
 
   function buildAudienceFilter() {
     var f = {}
-    var tags = tagsText.split(',').map(function (t) { return t.trim() }).filter(Boolean)
     if (tags.length > 0) f.tags = tags
+    if (excludeTags.length > 0) f.exclude_tags = excludeTags
     if (venueIds.length > 0) f.venue_ids = venueIds.map(Number)
     if (source) f.source = source
     if (minLastSentDays) f.min_last_sent_days = Number(minLastSentDays)
@@ -175,6 +200,14 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
       variable_mapping_json: mapping,
       scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
     }
+    // fn_wa_queue_due_campaigns (migration 00093) is what actually fires a
+    // scheduled send unattended — it only looks at rows already in
+    // 'draft'/'scheduled', so this has to flip status itself. Only while the
+    // campaign hasn't started sending yet — editing a campaign's name after
+    // it's already sent/partial/etc. must never reset its status back.
+    if (!campaignStatus || campaignStatus === 'draft' || campaignStatus === 'scheduled') {
+      payload.status = scheduledAt ? 'scheduled' : 'draft'
+    }
 
     var res
     if (currentId) {
@@ -185,6 +218,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
     setSaving(false)
     if (res.error) { setError(res.error.message); return }
     setCurrentId(res.data.id)
+    setCampaignStatus(res.data.status)
     setNotice('Draft saved.')
   }
 
@@ -204,28 +238,80 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
     setConfirmOpen(true)
   }
 
+  // wa-send only ever does one bounded batch per call (see its own header
+  // comment — a single call covering a few-thousand-recipient campaign blew
+  // past Supabase's ~150s Edge Function limit and the whole send died with
+  // nothing sent past that point). This keeps calling it until it reports
+  // nothing left queued, surfacing a running total instead of one opaque
+  // "Sending…" the whole time.
+  async function runSendLoop(targetTotal) {
+    if (activeSendLoops[currentId]) {
+      setError('This campaign is already sending — it was started from this tab (possibly from before you navigated Back). Wait for it to finish rather than starting a second one.')
+      return
+    }
+    activeSendLoops[currentId] = true
+    setSending(true); setError('')
+    // Nothing rendered here at all until the first batch's wa-send call
+    // resolved — which, at up to ~1s/message through fn_wa_can_send + the
+    // Meta call + the 100ms throttle, could be the better part of a minute
+    // of looking at a page that appears to have done nothing. This shows
+    // "Sending… 0 / total" the instant the loop starts instead of waiting
+    // on real numbers, and a smaller batch size below means the real first
+    // update isn't far behind it either.
+    setSendProgress({ sent: 0, failed: 0, remaining: targetTotal || 1, total: targetTotal })
+    var sessionRes = await supabase.auth.getSession()
+    var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
+    var authHeaders = token ? { Authorization: 'Bearer ' + token } : {}
+
+    var remaining = 1 // just needs to be truthy to enter the loop once
+    var lastData = null
+    while (remaining > 0) {
+      var invokeRes = await supabase.functions.invoke('wa-send', {
+        body: { campaign_id: currentId, batch_size: 40 }, headers: authHeaders,
+      })
+      if (invokeRes.error) {
+        delete activeSendLoops[currentId]
+        setSending(false)
+        setError('Send stopped partway — ' + await edgeFnErrorMessage(invokeRes.error) + '. Reopen this campaign to resume where it left off.')
+        return
+      }
+      lastData = invokeRes.data
+      remaining = lastData.remaining
+      setSendProgress({ sent: lastData.sent, failed: lastData.failed, remaining: remaining, total: targetTotal })
+      // claimed: false means fn_wa_cron_tick (migration 00093) currently
+      // holds this campaign's batch — it polls every minute independently of
+      // this tab, so there's no point retrying immediately; a short pause
+      // avoids hammering wa-send in a tight empty loop until it's free again.
+      if (lastData.claimed === false && remaining > 0) await sleep(5000)
+    }
+
+    delete activeSendLoops[currentId]
+    setCampaignStatus(lastData.failed > 0 ? 'partial' : 'sent')
+    setSending(false)
+    if (onSaved) onSaved()
+  }
+
   async function confirmSend() {
     if (sending) return
-    setSending(true); setError('')
+    setError('')
     var needsToken = preview && preview.recipient_count > confirmThreshold
     var sendRes = await supabase.rpc('rpc_wa_campaign_send', {
       p_campaign_id: currentId,
       p_confirm_token: needsToken ? confirmToken : null,
     })
-    if (sendRes.error) { setSending(false); setError(sendRes.error.message); return }
-
-    var sessionRes = await supabase.auth.getSession()
-    var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
+    if (sendRes.error) { setError(sendRes.error.message); return }
+    setCampaignStatus('sending')
     setConfirmOpen(false)
-    setSendProgress('sending')
+    await runSendLoop(preview.recipient_count)
+  }
 
-    var invokeRes = await supabase.functions.invoke('wa-send', {
-      body: { campaign_id: currentId }, headers: token ? { Authorization: 'Bearer ' + token } : {},
-    })
-    setSending(false)
-    if (invokeRes.error) { setError('Send failed: ' + await edgeFnErrorMessage(invokeRes.error)); setSendProgress(null); return }
-    setSendProgress('done')
-    if (onSaved) onSaved()
+  // For a campaign that's already mid-send (status 'sending' from a prior,
+  // interrupted run) — the messages are already queued, so this skips
+  // straight to the batch loop rather than re-running rpc_wa_campaign_send,
+  // which would reject it outright (only 'draft'/'scheduled' may queue).
+  async function resumeSend() {
+    if (sending) return
+    await runSendLoop((preview && preview.recipient_count) || null)
   }
 
   var varCount = selectedTemplate ? (selectedTemplate.variable_count || 0) : 0
@@ -312,9 +398,13 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
               )}
               {!listId && (
                 <>
-                  <Labeled label="Tags" hint="Comma-separated — a contact matching any of them is included">
-                    <input type="text" value={tagsText} onChange={function (ev) { setTagsText(ev.target.value) }}
-                      placeholder="delhi, wedding" className={CTRL} />
+                  <Labeled label="Tags" hint="A contact matching any of them is included">
+                    <TagsInput value={tags} onChange={setTags} suggestions={tagSuggestions}
+                      placeholder="delhi, wedding" />
+                  </Labeled>
+                  <Labeled label="Exclude tags" hint="A contact matching any of them is left out, even if it also matched Tags above">
+                    <TagsInput value={excludeTags} onChange={setExcludeTags} suggestions={tagSuggestions}
+                      placeholder="opted_out_promo, vip" />
                   </Labeled>
                   <div>
                     <label className="block text-[12px] font-semibold text-slate-900 mb-1">Venues</label>
@@ -451,6 +541,33 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
                 </div>
               </div>
             )}
+            {/* A send that didn't finish (tab closed, connection dropped
+                mid-loop) leaves the campaign at 'sending' with some
+                recipients still queued — rpc_wa_campaign_send won't queue a
+                second time for anything but draft/scheduled, so this is the
+                only way back in. !sendProgress keeps it from flashing once
+                the loop below has already picked back up and is reporting
+                live progress of its own. */}
+            {campaignStatus === 'sending' && !sending && !sendProgress && activeSendLoops[currentId] && (
+              <div className={CARD + ' p-3.5 border-indigo-200 bg-indigo-50/60'}>
+                <p className="text-[12.5px] font-bold text-slate-900 mb-1">Still sending</p>
+                <p className="text-[11.5px] text-slate-600 leading-snug">
+                  This campaign is still sending in the background from earlier in this tab — no need to resume it here, it'll keep going even on this screen.
+                </p>
+              </div>
+            )}
+            {campaignStatus === 'sending' && !sending && !sendProgress && !activeSendLoops[currentId] && (
+              <div className={CARD + ' p-3.5 border-amber-200 bg-amber-50/60'}>
+                <p className="text-[12.5px] font-bold text-slate-900 mb-1">Send was interrupted</p>
+                <p className="text-[11.5px] text-slate-600 leading-snug mb-2">
+                  This campaign started sending but didn't finish — some recipients may still be queued.
+                </p>
+                <button onClick={resumeSend} className={BTN_SEND + ' w-full'}>
+                  <Icon name="refresh" size={14} />
+                  Resume Sending
+                </button>
+              </div>
+            )}
             <div className={CARD + ' overflow-hidden'}>
               <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 bg-indigo-50/70 border-b border-indigo-100">
                 <p className="flex items-center gap-2 text-[13px] font-bold text-slate-900">
@@ -502,10 +619,12 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
                       </div>
                     )}
 
-                    <button onClick={openSendConfirm} className={BTN_SEND + ' w-full'}>
-                      <Icon name="send" size={14} />
-                      Send Campaign
-                    </button>
+                    {(!campaignStatus || campaignStatus === 'draft' || campaignStatus === 'scheduled') && (
+                      <button onClick={openSendConfirm} className={BTN_SEND + ' w-full'}>
+                        <Icon name="send" size={14} />
+                        Send Campaign
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <p className="text-[12px] text-slate-500 leading-snug">
@@ -518,11 +637,18 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
             {sendProgress && (
               <div className={CARD + ' px-3.5 py-3'}>
                 <p className="flex items-center gap-2 text-[12.5px] font-semibold text-slate-800">
-                  <span className={sendProgress === 'sending' ? 'text-indigo-600' : 'text-emerald-600'}>
-                    <Icon name={sendProgress === 'sending' ? 'refresh' : 'checkCircle'} size={15} />
+                  <span className={sendProgress.remaining > 0 ? 'text-indigo-600' : 'text-emerald-600'}>
+                    <Icon name={sendProgress.remaining > 0 ? 'refresh' : 'checkCircle'} size={15} />
                   </span>
-                  {sendProgress === 'sending' ? 'Sending…' : 'Send complete'}
+                  {sendProgress.remaining > 0
+                    ? 'Sending… ' + (sendProgress.sent + sendProgress.failed) + (sendProgress.total ? ' / ' + sendProgress.total : '')
+                    : 'Send complete — ' + sendProgress.sent + ' sent' + (sendProgress.failed > 0 ? ', ' + sendProgress.failed + ' failed' : '')}
                 </p>
+                {sendProgress.remaining > 0 && (
+                  <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                    Keep this tab open until this finishes — a few thousand recipients can take a while. If it's interrupted, reopen this campaign to resume.
+                  </p>
+                )}
               </div>
             )}
           </div>

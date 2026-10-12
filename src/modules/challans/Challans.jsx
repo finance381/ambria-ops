@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
@@ -124,6 +124,19 @@ function Challans({ profile }) {
   var [activeChallan, setActiveChallan] = useState(null)
   var [challanItems, setChallanItems] = useState([])
   var [itemsLoading, setItemsLoading] = useState(false)
+  // Opening a detail (or the form) fully replaces the list's own returned
+  // JSX with a separate tree, so the list unmounts rather than just being
+  // covered — coming back always landed at the top of the list, regardless
+  // of where the person had scrolled to find that row. Captured once on the
+  // way out of 'list' below, consumed once on the way back.
+  var scrollMemory = useRef(null)
+  useEffect(function () {
+    if (view === 'list' && scrollMemory.current != null) {
+      var y = scrollMemory.current
+      scrollMemory.current = null
+      requestAnimationFrame(function () { window.scrollTo(0, y) })
+    }
+  }, [view])
 
   // Add items
   var [addMode, setAddMode] = useState('') // 'item' | 'box'
@@ -208,6 +221,7 @@ function Challans({ profile }) {
   // ── FORM ──
 
   function openForm(challan) {
+    scrollMemory.current = window.scrollY
     setEditChallan(challan || null)
     setFormType(challan?.type || 'event_dispatch')
     setFormSourceVenue(challan?.source_venue_id ? String(challan.source_venue_id) : '')
@@ -336,6 +350,7 @@ function Challans({ profile }) {
   // ── DETAIL ──
 
   async function openDetail(challan) {
+    scrollMemory.current = window.scrollY
     setActiveChallan(challan)
     setView('detail')
     setAddMode('')

@@ -48,6 +48,22 @@ function Requisitions({ profile, onBack }) {
   var [pendingReceiptsCount, setPendingReceiptsCount] = useState(0)
   useRealtime(['requisitions', 'requisition_items', 'expenses'], function () { loadMyReqs(false); loadApprovalReqs(false); loadAllReqs(false); loadReceiptsCount() })
   var [detailReq, setDetailReq] = useState(null)
+  // Opening a detail (to review/approve it) swaps the whole page over to
+  // view === 'detail' — the list/approve/all tab underneath isn't just
+  // covered, it's gone from the returned JSX, so the page the person was
+  // scrolled through always came back at the top. The tab's own filter state
+  // already lives above this remount and was never actually lost — only the
+  // scroll position was. Captured once on the way into detail and consumed
+  // once on the way back to whichever tab it came from, below.
+  var scrollMemory = useRef(null)
+  useEffect(function () {
+    if ((view === 'list' || view === 'approve' || view === 'all') && scrollMemory.current != null) {
+      var y = scrollMemory.current
+      scrollMemory.current = null
+      requestAnimationFrame(function () { window.scrollTo(0, y) })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view])
   var [detailItems, setDetailItems] = useState([])
   var [statusFilter, setStatusFilter] = useState('')
   var [editReq, setEditReq] = useState(null)
@@ -275,6 +291,7 @@ function Requisitions({ profile, onBack }) {
   }
 
   async function openDetail(req) {
+    scrollMemory.current = window.scrollY
     pushBack(function () { setView(req._fromApprove ? 'approve' : 'list'); setDetailReq(null); setDetailItems([]) })
     setDetailReq(req)
     if (req.req_type === 'expense') {

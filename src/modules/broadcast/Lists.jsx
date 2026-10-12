@@ -5,7 +5,7 @@ import { formatDate } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
 import Icon from '../../components/ui/Icon'
 import SearchField from '../../components/ui/SearchField'
-import { CTRL, TEXTAREA, BTN_GHOST, BTN_PRIMARY, BTN_DANGER, TH, TD, CARD, Chip, Labeled, Notice, EmptyState, CHIP_INFO, CHIP_NEUTRAL } from './ui'
+import { CTRL, TEXTAREA, BTN_GHOST, BTN_PRIMARY, BTN_DANGER, TH, TD, CARD, Chip, Labeled, Notice, EmptyState, CHIP_INFO, CHIP_NEUTRAL, TagsInput, useTagSuggestions } from './ui'
 import { appConfirm } from '../../components/ui/AppDialog'
 
 var SOURCE_OPTIONS = ['', 'lms', 'contract', 'csv', 'manual', 'inbound']
@@ -22,7 +22,9 @@ function ListFormModal({ open, list, onClose, onSaved }) {
   var [name, setName] = useState(list ? list.name : '')
   var [description, setDescription] = useState(list ? (list.description || '') : '')
   var [type, setType] = useState(list ? list.type : 'static')
-  var [tagsText, setTagsText] = useState(list && list.filter_json ? (list.filter_json.tags || []).join(', ') : '')
+  var [tags, setTags] = useState(list && list.filter_json ? (list.filter_json.tags || []) : [])
+  var [excludeTags, setExcludeTags] = useState(list && list.filter_json ? (list.filter_json.exclude_tags || []) : [])
+  var tagSuggestions = useTagSuggestions()
   var [source, setSource] = useState(list && list.filter_json ? (list.filter_json.source || '') : '')
   var [minDays, setMinDays] = useState(list && list.filter_json && list.filter_json.min_last_sent_days != null ? String(list.filter_json.min_last_sent_days) : '')
   var [saving, setSaving] = useState(false)
@@ -34,7 +36,8 @@ function ListFormModal({ open, list, onClose, onSaved }) {
     setDescription(list ? (list.description || '') : '')
     setType(list ? list.type : 'static')
     var f = (list && list.filter_json) || {}
-    setTagsText((f.tags || []).join(', '))
+    setTags(f.tags || [])
+    setExcludeTags(f.exclude_tags || [])
     setSource(f.source || '')
     setMinDays(f.min_last_sent_days != null ? String(f.min_last_sent_days) : '')
     setError('')
@@ -45,9 +48,9 @@ function ListFormModal({ open, list, onClose, onSaved }) {
     setSaving(true); setError('')
     var payload = { name: name.trim(), description: description.trim() || null, type: type }
     if (type === 'dynamic') {
-      var tags = tagsText.split(',').map(function (t) { return t.trim() }).filter(Boolean)
       var filter = {}
       if (tags.length > 0) filter.tags = tags
+      if (excludeTags.length > 0) filter.exclude_tags = excludeTags
       if (source) filter.source = source
       if (minDays) filter.min_last_sent_days = Number(minDays)
       payload.filter_json = filter
@@ -96,9 +99,15 @@ function ListFormModal({ open, list, onClose, onSaved }) {
         {type === 'dynamic' && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3">
             <div className="sm:col-span-2">
-              <Labeled label="Tags" hint="Comma-separated — a contact matching any of them is included">
-                <input type="text" value={tagsText} onChange={function (ev) { setTagsText(ev.target.value) }}
-                  placeholder="delhi, wedding" className={CTRL} />
+              <Labeled label="Tags" hint="A contact matching any of them is included">
+                <TagsInput value={tags} onChange={setTags} suggestions={tagSuggestions}
+                  placeholder="delhi, wedding" />
+              </Labeled>
+            </div>
+            <div className="sm:col-span-2">
+              <Labeled label="Exclude tags" hint="A contact matching any of them is left out, even if it also matched Tags above">
+                <TagsInput value={excludeTags} onChange={setExcludeTags} suggestions={tagSuggestions}
+                  placeholder="opted_out_promo, vip" />
               </Labeled>
             </div>
             <Labeled label="Source">
@@ -276,6 +285,7 @@ function Lists({ profile }) {
     var f = l.filter_json || {}
     var parts = []
     if (f.tags && f.tags.length > 0) parts.push('tags: ' + f.tags.join(', '))
+    if (f.exclude_tags && f.exclude_tags.length > 0) parts.push('excluding: ' + f.exclude_tags.join(', '))
     if (f.source) parts.push('source: ' + f.source)
     if (f.min_last_sent_days != null) parts.push('idle ' + f.min_last_sent_days + 'd+')
     return parts.length > 0 ? parts.join(' · ') : 'Everyone (no filter)'

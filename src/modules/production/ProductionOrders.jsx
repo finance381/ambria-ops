@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase, getImageUrl } from '../../lib/supabase'
 import { formatDate, formatPaise, titleCase } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
@@ -87,6 +87,19 @@ function ProductionOrders({ profile }) {
   // Detail
   var [activeOrder, setActiveOrder] = useState(null)
   var [qtyInput, setQtyInput] = useState('')
+  // Opening a detail fully replaces the list's own returned JSX with a
+  // separate tree, so the list unmounts rather than just being covered —
+  // coming back always landed at the top of the list, regardless of where
+  // the person had scrolled to find that row. Captured once on the way out
+  // of 'list' below, consumed once on the way back.
+  var scrollMemory = useRef(null)
+  useEffect(function () {
+    if (view === 'list' && scrollMemory.current != null) {
+      var y = scrollMemory.current
+      scrollMemory.current = null
+      requestAnimationFrame(function () { window.scrollTo(0, y) })
+    }
+  }, [view])
 
   var isAdmin = isPrivilegedRole(profile)
 
@@ -196,6 +209,7 @@ function ProductionOrders({ profile }) {
   // ── FORM ──
 
   function openForm(order) {
+    scrollMemory.current = window.scrollY
     setEditOrder(order || null)
     setOrderMode(order?.event_id ? 'event' : (order ? 'general' : ''))
     setFEventDate('')
@@ -292,6 +306,7 @@ function ProductionOrders({ profile }) {
   // ── DETAIL ──
 
   function openDetail(order) {
+    scrollMemory.current = window.scrollY
     setActiveOrder(order)
     setQtyInput(String(order.qty_completed || 0))
     setView('detail')

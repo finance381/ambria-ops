@@ -91,7 +91,7 @@ var GROUPS = [
   {
     key: 'events', label: 'Events', icon: 'calendar', items: [
       { key: 'events.list', label: 'Events', icon: 'calendar', tab: 'events' },
-      { key: 'events.list', id: 'events.contracts', label: 'Contracts', icon: 'fileText', tab: 'contracts', noBadge: true },
+      { key: 'events.contracts', id: 'events.contracts', label: 'Contracts', icon: 'fileText', tab: 'contracts', noBadge: true },
       { key: 'events.extra_plate_collect', label: 'Extra Plates', icon: 'utensils', tab: 'extra_plates' },
     ]
   },

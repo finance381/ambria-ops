@@ -117,6 +117,10 @@ function DecorVarCost({ profile, inAdmin }) {
   var [scope, setScope] = useState('mine')
   var [records, setRecords] = useState(null)
   var [listErr, setListErr] = useState('')
+  var [deptFilter, setDeptFilter] = useState('')
+  var [dateFrom, setDateFrom] = useState('')
+  var [dateTo, setDateTo] = useState('')
+  var [filtersOpen, setFiltersOpen] = useState(false)
 
   // ── reference rows ──
   var [subVenues, setSubVenues] = useState([])
@@ -238,7 +242,7 @@ function DecorVarCost({ profile, inAdmin }) {
   async function loadRecord(id) {
     setRecordLoading(true)
     var { data, error } = await supabase.from('decor_var_costs')
-      .select('*, creator:created_by(name), submitter:submitted_by(name), decor_var_cost_entries(id, entry_date, lines, amount_paise, updated_at)')
+      .select('*, creator:created_by(name), submitter:submitted_by(name), event:event_id(event_name, client_name, session, venue_name, department, total_plates), decor_var_cost_entries(id, entry_date, lines, amount_paise, remark, updated_at)')
       .eq('id', id).maybeSingle()
     setRecordLoading(false)
     if (error || !data) { setRecordErr(error ? error.message : 'This sheet could not be found'); return null }
@@ -247,6 +251,14 @@ function DecorVarCost({ profile, inAdmin }) {
       entries: (data.decor_var_cost_entries || []).slice().sort(function (a, b) { return a.entry_date < b.entry_date ? -1 : 1 }),
     })
     setCur(rec)
+    // event_id wasn't picked for this sheet (optional since venue/sub venue
+    // became optional) — still worth showing what's booked on that date,
+    // same list the setup screen's picker already fetches, just read-only here.
+    if (rec.is_function && rec.function_date && !rec.event_id) {
+      loadEventsByDate(rec.function_date)
+    } else {
+      setEvents([])
+    }
     return rec
   }
 
@@ -311,11 +323,13 @@ function DecorVarCost({ profile, inAdmin }) {
   }
 
   function setupProblem(h) {
-    if (h.is_function) {
-      if (!h.function_date) return 'Pick the function date'
-      if (!h.venue_id) return 'Pick the venue'
-      if (venueSubs(h.venue_id).length > 0 && !h.sub_venue_id) return 'Pick the sub venue'
-    }
+    // Venue/sub venue used to be required whenever "For a function?" was on
+    // — dropped per request: a function's venue isn't always known/relevant
+    // at the time a cost sheet is opened, and the fields are still fillable,
+    // just optional. function_date stays required — it's what a function
+    // sheet is actually keyed on (suggestDate, the functions-on-this-date
+    // picker, etc. all assume it's there).
+    if (h.is_function && !h.function_date) return 'Pick the function date'
     if (!h.sheet_code) return 'Pick the department'
     return ''
   }
@@ -386,6 +400,7 @@ function DecorVarCost({ profile, inAdmin }) {
     setEd({
       id: entry ? entry.id : null,
       entry_date: entry ? entry.entry_date : suggestDate(c),
+      remark: entry ? (entry.remark || '') : '',
       lines: entry ? Object.assign({}, entry.lines) : {},
       sheet: {
         rates: Object.assign({}, c.sheet.rates),
@@ -445,6 +460,7 @@ function DecorVarCost({ profile, inAdmin }) {
       p_entry_date: ed.entry_date,
       p_lines: lines,
       p_amount_paise: entryAmountPaise(sheet, lines, sheetData.rates),
+      p_remark: ed.remark ? ed.remark.trim() : null,
     })
     setEdSaving(false)
     if (error) { setEdErr(error.message); return }
@@ -536,6 +552,15 @@ function DecorVarCost({ profile, inAdmin }) {
     return v.name + (s ? ' · ' + s.name : '')
   }
 
+  // No event picked for this sheet (optional) — show what events exist on
+  // the function date anyway, as an unconfirmed hint rather than nothing.
+  function fallbackFunctionLines() {
+    if (!cur || cur.event || !cur.is_function || events.length === 0) return []
+    return events.map(function (e) {
+      return [e.event_name, e.client_name, e.session].filter(Boolean).join(' · ')
+    })
+  }
+
   function header(title, sub, right) {
     return (
       <div className="flex items-center gap-2.5">
@@ -603,6 +628,22 @@ function DecorVarCost({ profile, inAdmin }) {
 
   // ── list ───────────────────────────────────────────────────────────────
   function renderList() {
+    var filterCount = (deptFilter ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0)
+    function resetFilters() { setDeptFilter(''); setDateFrom(''); setDateTo('') }
+    var filteredRecords = (records || []).filter(function (r) {
+      if (deptFilter && r.sheet_code !== deptFilter) return false
+      if (dateFrom || dateTo) {
+        var dates = (r.decor_var_cost_entries || []).map(function (e) { return e.entry_date })
+        var matches = dates.some(function (d) {
+          if (dateFrom && d < dateFrom) return false
+          if (dateTo && d > dateTo) return false
+          return true
+        })
+        if (!matches) return false
+      }
+      return true
+    })
+
     return (
       <div className="space-y-3">
         {header('Decor Var Cost', 'Decor cost sheets, date by date', (
@@ -624,8 +665,69 @@ function DecorVarCost({ profile, inAdmin }) {
             })}
           </div>
         )}
+
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <button type="button" onClick={function () { setFiltersOpen(!filtersOpen) }} aria-pressed={filtersOpen}
+              className={'flex-1 h-10 inline-flex items-center justify-center gap-1.5 rounded-xl border text-[12.5px] font-bold transition-colors ' +
+                (filtersOpen ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')}>
+              <Icon name="filter" size={13} />Filters{filterCount > 0 ? ' · ' + filterCount : ''}
+              <Icon name={filtersOpen ? 'chevronUp' : 'chevronDown'} size={13} />
+            </button>
+            {filterCount > 0 && (
+              <button type="button" onClick={resetFilters}
+                className="shrink-0 h-10 px-3.5 rounded-xl text-[12.5px] font-bold text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors">
+                Reset
+              </button>
+            )}
+          </div>
+          {filtersOpen && (
+            <div className={CARD + ' p-3.5 space-y-3'}>
+              <div>
+                <label className="block text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Department</label>
+                <div className="flex gap-1.5 flex-wrap">
+                  <button type="button" onClick={function () { setDeptFilter('') }} aria-pressed={deptFilter === ''}
+                    className={'px-3 py-1.5 rounded-full border text-[11.5px] font-bold transition-colors ' +
+                      (deptFilter === '' ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')}>
+                    All
+                  </button>
+                  {SHEETS.map(function (s) {
+                    var on = deptFilter === s.code
+                    return (
+                      <button key={s.code} type="button" onClick={function () { setDeptFilter(on ? '' : s.code) }} aria-pressed={on}
+                        className={'px-3 py-1.5 rounded-full border text-[11.5px] font-bold transition-colors ' +
+                          (on ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')}>
+                        {s.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label htmlFor="dvc-filter-from" className="block text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-slate-500 mb-1.5">From</label>
+                  <input id="dvc-filter-from" type="date" value={dateFrom} max={dateTo || undefined}
+                    onChange={function (e) { setDateFrom(e.target.value) }}
+                    className={INPUT + INPUT_OK} />
+                </div>
+                <div>
+                  <label htmlFor="dvc-filter-to" className="block text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-slate-500 mb-1.5">To</label>
+                  <input id="dvc-filter-to" type="date" value={dateTo} min={dateFrom || undefined}
+                    onChange={function (e) { setDateTo(e.target.value) }}
+                    className={INPUT + INPUT_OK} />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {errorBar(listErr)}
         {records === null && <p className="text-[13.5px] text-slate-500 text-center py-10">Loading…</p>}
+        {records && records.length > 0 && filteredRecords.length === 0 && (
+          <div className={CARD + ' px-6 py-10 text-center'}>
+            <p className="text-[13.5px] text-slate-500">No cost sheets match these filters.</p>
+          </div>
+        )}
         {records && records.length === 0 && !listErr && (
           <div className={CARD + ' px-6 py-10 text-center'}>
             <span className="mx-auto w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 inline-flex items-center justify-center mb-3">
@@ -639,9 +741,9 @@ function DecorVarCost({ profile, inAdmin }) {
             </button>
           </div>
         )}
-        {records && records.length > 0 && (
+        {filteredRecords.length > 0 && (
           <div className={'grid gap-2.5 grid-cols-1' + (wide ? ' lg:grid-cols-2 xl:grid-cols-3' : '')}>
-            {records.map(function (r) {
+            {filteredRecords.map(function (r) {
               var sh = getSheet(r.sheet_code)
               var ents = r.decor_var_cost_entries || []
               var soFar = ents.reduce(function (s, e) { return s + (e.amount_paise || 0) }, 0)
@@ -684,7 +786,7 @@ function DecorVarCost({ profile, inAdmin }) {
   function renderSetup() {
     var editing = !!(cur && cur.id)
     var subs = hdr.venue_id ? venueSubs(hdr.venue_id) : []
-    var fnDone = hdr.is_function ? !!(hdr.function_date && hdr.venue_id && (subs.length === 0 || hdr.sub_venue_id)) : true
+    var fnDone = hdr.is_function ? !!hdr.function_date : true
     var groups = groupFunctions(events)
     var picked = hdr.event_id ? groups.filter(function (g) { return g.contracts.some(function (c) { return String(c.id) === hdr.event_id }) }) : []
     var shown = picked.length === 1 ? picked : groups
@@ -829,6 +931,12 @@ function DecorVarCost({ profile, inAdmin }) {
     var sheet = getSheet(cur.sheet_code)
     var rates = ed.sheet.rates
     var dayPaise = entryAmountPaise(sheet, cleanLines(sheet, ed.lines), rates)
+    // Same rule as the sheet overview's "Edit details" button.
+    var canEditEntry = cur.status === 'draft' && (cur.created_by === profile.id || canApprove)
+    async function handleEditDetailsFromEntry() {
+      if (!(await confirmLeaveEntry())) return
+      editDetails()
+    }
     var q = query.trim().toLowerCase()
     var groups = rowGroups(sheet).filter(function (g) {
       if (filledOnly && !g.rows.some(function (r) { return num(ed.lines[r.key]) })) return false
@@ -853,11 +961,40 @@ function DecorVarCost({ profile, inAdmin }) {
               onChange={function (e) { dirtyRef.current = true; var v = e.target.value; setEd(function (x) { return Object.assign({}, x, { entry_date: v }) }); setEdErr('') }}
               className={INPUT + INPUT_OK + ' !w-auto flex-1 min-w-[160px]'} />
           </div>
-          {cur.is_function && (
-            <p className="mt-2 text-[11.5px] text-slate-500">
-              Function {formatDate(cur.function_date)}{venueLabel(cur.venue_id, cur.sub_venue_id) ? ' · ' + venueLabel(cur.venue_id, cur.sub_venue_id) : ''}
-            </p>
-          )}
+          <div className="mt-2.5">
+            <label htmlFor="dvc-remark" className="block text-[11.5px] font-bold text-slate-500 mb-1">Remark for this day</label>
+            <input id="dvc-remark" type="text" value={ed.remark} placeholder="Optional note about this day's entry..."
+              onChange={function (e) { dirtyRef.current = true; var v = e.target.value; setEd(function (x) { return Object.assign({}, x, { remark: v }) }) }}
+              className={INPUT + INPUT_OK + ' w-full'} />
+          </div>
+          <div className="mt-2 pt-2 border-t border-slate-100 flex items-start justify-between gap-2">
+            <div className="min-w-0 space-y-0.5">
+              {cur.is_function ? (
+                <>
+                  <p className="text-[11.5px] font-semibold text-slate-600">
+                    Function {formatDate(cur.function_date)}{venueLabel(cur.venue_id, cur.sub_venue_id) ? ' · ' + venueLabel(cur.venue_id, cur.sub_venue_id) : ''}
+                  </p>
+                  {cur.event && (
+                    <p className="text-[11.5px] text-slate-500">
+                      {[cur.event.event_name, cur.event.client_name, cur.event.session, cur.event.total_plates ? cur.event.total_plates + ' plates' : null]
+                        .filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                  {fallbackFunctionLines().map(function (line, i) {
+                    return <p key={i} className="text-[11.5px] text-slate-400">{(i === 0 ? 'On this date (not linked): ' : '· ') + line}</p>
+                  })}
+                </>
+              ) : (
+                <p className="text-[11.5px] font-semibold text-slate-500">Not for a function</p>
+              )}
+            </div>
+            {canEditEntry && (
+              <button type="button" onClick={handleEditDetailsFromEntry}
+                className="shrink-0 text-[11.5px] font-bold text-indigo-600 hover:text-indigo-700 px-1">
+                Edit
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Find a row in a 38-row sheet without scrolling it end to end. */}
@@ -1269,6 +1406,23 @@ function DecorVarCost({ profile, inAdmin }) {
                   <p className="flex items-start gap-2 text-[13.5px] font-semibold text-slate-800">
                     <Icon name="mapPin" size={14} className="shrink-0 mt-0.5 text-slate-400" /><span className="min-w-0 break-words">{venueLabel(cur.venue_id, cur.sub_venue_id) || '—'}</span>
                   </p>
+                  {cur.event && (
+                    <p className="flex items-start gap-2 text-[12.5px] font-medium text-slate-500">
+                      <Icon name="tag" size={13} className="shrink-0 mt-0.5 text-slate-400" />
+                      <span className="min-w-0 break-words">
+                        {[cur.event.event_name, cur.event.client_name, cur.event.session, cur.event.total_plates ? cur.event.total_plates + ' plates' : null]
+                          .filter(Boolean).join(' · ')}
+                      </span>
+                    </p>
+                  )}
+                  {fallbackFunctionLines().map(function (line, i) {
+                    return (
+                      <p key={i} className="flex items-start gap-2 text-[12.5px] font-medium text-slate-400">
+                        <Icon name="tag" size={13} className="shrink-0 mt-0.5 text-slate-300" />
+                        <span className="min-w-0 break-words">{(i === 0 ? 'On this date (not linked): ' : '') + line}</span>
+                      </p>
+                    )
+                  })}
                 </>
               ) : (
                 <p className="flex items-center gap-2 text-[13.5px] font-semibold text-slate-500">
@@ -1317,6 +1471,7 @@ function DecorVarCost({ profile, inAdmin }) {
                   <div className="min-w-0 flex-1">
                     <p className="font-display text-[14px] font-bold tracking-[-0.01em] text-slate-900">{shortDate(e.entry_date)}{isFn ? ' · Function' : ''}</p>
                     <p className="text-[12.5px] font-medium text-slate-500">{n + (n === 1 ? ' row' : ' rows')} · <span data-notranslate className="font-bold text-slate-800 tabular-nums">{formatPoints(e.amount_paise)}</span></p>
+                    {e.remark && <p className="mt-0.5 text-[13px] font-medium text-slate-600 italic break-words">{e.remark}</p>}
                   </div>
                   <Icon name={dayOpen ? 'chevronUp' : 'chevronDown'} size={16} className="shrink-0 text-slate-400" />
                   </button>

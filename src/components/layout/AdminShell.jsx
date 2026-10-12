@@ -145,7 +145,7 @@ function SubTabs({ tabs, active, onChange, large }) {
 var SUB_TAB_CONFIG = {
   events: [
     { key: 'events',       label: 'Events',        icon: 'calendar', component: Events,            perm: 'events.list' },
-    { key: 'contracts',    label: 'Contracts',     icon: 'fileText', component: ContractList,      perm: 'events.list' },
+    { key: 'contracts',    label: 'Contracts',     icon: 'fileText', component: ContractList,      perm: 'events.contracts' },
     { key: 'extra_plates', label: 'Extra Plates',  icon: 'utensils', component: ExtraPlateCollect, perm: 'events.extra_plate_collect' },
   ],
   inventory: [
@@ -282,7 +282,7 @@ var ADMIN_TABS = [
     // Quote Calc lives only in the separate mobile Shell.jsx nav, not here.
     // Including it just showed this tab to quote-only users with nothing
     // behind it to open.
-    anyPerm: ['events.list','events.extra_plate_collect'] },
+    anyPerm: ['events.list','events.extra_plate_collect','events.contracts'] },
   { key: 'masters',     label: 'Masters',     icon: 'settings',
     blurb: 'The lists every other screen picks from.',
     anyPerm: ['admin.masters', 'hr.casual_roster'] },

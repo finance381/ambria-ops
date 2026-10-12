@@ -77,6 +77,8 @@ export var PERM_GROUPS = [
       ] },
     { key: 'events.extra_plate_collect', label: 'Extra Plate Collection', scope: 'mobile', dataScope: true,
       note: 'F&B floor staff collecting extra plate revenue on event day' },
+    { key: 'events.contracts',           label: 'Contracts',              scope: 'both',
+      note: 'The raw per-contract list (balances, pax, venue rental/decor/entertainment breakdown) — separate from events.list so it can be restricted on its own' },
     { key: 'events.quote',               label: 'Quote Calculator',       scope: 'both' },
     { key: 'events.ratecard',            label: 'Rate Card Editor',       scope: 'both' },
   ]},

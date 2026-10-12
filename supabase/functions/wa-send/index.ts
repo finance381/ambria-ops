@@ -3,7 +3,22 @@
 // Two invocation modes (client calls this right after the RPC that queued
 // the row(s) succeeds):
 //   { message_id }  — single message (quick-send, conversation reply)
-//   { campaign_id } — batch: every 'queued' row for that campaign, 100ms apart
+//   { campaign_id } — one batch (default 100, see BATCH_SIZE below) of
+//     'queued' rows for that campaign, 100ms apart
+//
+// A campaign send used to pull every queued row and loop over all of them in
+// one call — fine at a few hundred recipients, but a 4,800-recipient send
+// at ~1s/message (the fn_wa_can_send round trip + the Meta call + two more
+// DB writes + the 100ms throttle) runs 60-90 minutes, and Supabase kills an
+// Edge Function invocation at a ~150s wall-clock limit ("Request idle
+// timeout limit (150s) reached" — seen in production on exactly this kind
+// of send). Only ever processing one bounded batch per call, and reporting
+// how many are still queued, is what lets the caller (CampaignBuilder.jsx)
+// keep calling this in a loop until the whole campaign is through — each
+// individual call now always finishes well inside the platform's limit.
+// sent_count/failed_count/blocked_count on wa_campaigns accumulate across
+// calls rather than being overwritten, and wa_campaigns only moves out of
+// 'sending' once a batch reports zero remaining.
 //
 // Never logs phone numbers or message bodies to console — only message/
 // contact/campaign ids. Request/response payloads ARE stored in
@@ -93,6 +108,20 @@ serve(async function (req) {
       } catch (e) {}
     }
 
+    // Recounted from wa_messages itself rather than read-current-and-add —
+    // every processed message already carries its own final status, so this
+    // is self-healing: a campaign whose last batch update never landed (a
+    // crash, or another caller's claim winning this one) still reports its
+    // true cumulative total on the next call rather than forgetting whatever
+    // already happened. sent also counts delivered/read since wa-webhook
+    // advances a row past 'sent' once Meta reports delivery.
+    async function countStatus(campaignId, statuses) {
+      var q = supa.from("wa_messages").select("id", { count: "exact", head: true }).eq("campaign_id", campaignId)
+      q = statuses.length === 1 ? q.eq("status", statuses[0]) : q.in("status", statuses)
+      var res = await q
+      return res.count || 0
+    }
+
     // Sends one wa_messages row. Returns 'sent' | 'failed' | 'blocked'.
     async function sendOne(row) {
       var category = row.wa_templates ? row.wa_templates.category : "utility"
@@ -124,9 +153,25 @@ serve(async function (req) {
           await supa.from("wa_messages").update({ status: "failed", error_code: "template_params_missing", failed_at: new Date().toISOString() }).eq("id", row.id)
           return "failed"
         }
-        var components = params.length > 0
-          ? [{ type: "body", parameters: params.map(function (v) { return { type: "text", text: String(v) } }) }]
-          : []
+        var components = []
+        // A template with an image/video/document header needs its own
+        // "header" component on every send, carrying that media — omitting
+        // it is exactly Meta's 132012 "Parameter format does not match
+        // format in the created template" ("expected IMAGE, received
+        // UNKNOWN"): Meta isn't told anything belongs in the header slot at
+        // all, let alone the right type. header_content already holds a
+        // public URL (broadcast-media storage) — the Send API takes a plain
+        // link here; only the separate Create-Template-example flow
+        // (wa-template-meta) needs the two-step upload-a-handle dance.
+        var headerType = row.wa_templates.header_type
+        if (headerType && headerType !== "text" && headerType !== "null" && row.wa_templates.header_content) {
+          var headerParam = { type: headerType }
+          headerParam[headerType] = { link: row.wa_templates.header_content }
+          components.push({ type: "header", parameters: [headerParam] })
+        }
+        if (params.length > 0) {
+          components.push({ type: "body", parameters: params.map(function (v) { return { type: "text", text: String(v) } }) })
+        }
         metaPayload = {
           messaging_product: "whatsapp", to: phone, type: "template",
           template: { name: row.wa_templates.name, language: { code: row.wa_templates.language || "en" }, components: components },
@@ -176,7 +221,7 @@ serve(async function (req) {
 
     if (body.message_id) {
       var msgRes = await supa.from("wa_messages")
-        .select("*, wa_contacts(phone_e164), wa_templates(name, language, category, variable_count)")
+        .select("*, wa_contacts(phone_e164), wa_templates(name, language, category, variable_count, header_type, header_content)")
         .eq("id", body.message_id).maybeSingle()
       if (msgRes.error || !msgRes.data) return bad(404, "message_not_found", "Message not found")
       if (msgRes.data.status !== "queued") return bad(409, "not_queued", "Message is not in queued state")
@@ -186,9 +231,52 @@ serve(async function (req) {
     }
 
     if (body.campaign_id) {
+      // Now reachable two ways that can genuinely overlap: a browser tab's
+      // own send loop, and fn_wa_cron_tick (migration 00093) polling every
+      // minute for anything still 'sending' — exactly so a scheduled or
+      // interrupted campaign keeps going with nobody watching. Without a
+      // real claim, both could pull the same 'queued' rows in the gap
+      // between this SELECT and each row's own UPDATE and send a few
+      // messages twice. batch_claimed_at is a plain optimistic lock: only
+      // one caller's UPDATE actually matches and returns a row, and it
+      // self-expires after 3 minutes so a crashed call never locks a
+      // campaign out of ever being retried.
+      var claimCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString()
+      var claimRes = await supa.from("wa_campaigns")
+        .update({ batch_claimed_at: new Date().toISOString() })
+        .eq("id", body.campaign_id)
+        .or("batch_claimed_at.is.null,batch_claimed_at.lt." + claimCutoff)
+        .select("id")
+      // Degrades to the old unclaimed behavior rather than hard-failing
+      // every send if migration 00093 (adds this column) hasn't been run
+      // yet — a real race is still better than every send erroring out.
+      var claimSkipped = !!claimRes.error
+      if (claimRes.error) console.error("wa-send claim_failed (proceeding unclaimed): " + claimRes.error.message)
+      if (!claimSkipped && (!claimRes.data || claimRes.data.length === 0)) {
+        var busySent = await countStatus(body.campaign_id, ["sent", "delivered", "read"])
+        var busyFailed = await countStatus(body.campaign_id, ["failed"])
+        var busyCampRes = await supa.from("wa_campaigns").select("blocked_count").eq("id", body.campaign_id).maybeSingle()
+        var busyRemainingRes = await supa.from("wa_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("campaign_id", body.campaign_id).eq("status", "queued")
+        return ok({
+          claimed: false, sent: busySent, failed: busyFailed,
+          blocked: (busyCampRes.data && busyCampRes.data.blocked_count) || 0,
+          batch_total: 0, remaining: busyRemainingRes.count || 0,
+        })
+      }
+
+      // Conservative default: fn_wa_can_send + the Meta call + two more DB
+      // writes + the 100ms throttle can run close to 1s/message under real
+      // network latency, and 100 * ~1s sits safely under the 150s platform
+      // limit even on a slow batch. Clamped so a client can't accidentally
+      // request a batch large enough to time out again.
+      var BATCH_SIZE = Math.min(Math.max(parseInt(body.batch_size, 10) || 40, 1), 300)
+
       var queueRes = await supa.from("wa_messages")
-        .select("*, wa_contacts(phone_e164), wa_templates(name, language, category, variable_count)")
+        .select("*, wa_contacts(phone_e164), wa_templates(name, language, category, variable_count, header_type, header_content)")
         .eq("campaign_id", body.campaign_id).eq("status", "queued")
+        .order("id", { ascending: true }).limit(BATCH_SIZE)
       if (queueRes.error) return bad(500, "queue_fetch_failed", queueRes.error.message)
 
       var rows = queueRes.data || []
@@ -201,19 +289,35 @@ serve(async function (req) {
         if (i < rows.length - 1) await sleep(100)
       }
 
-      // blocked_count already has the send-time resolve_audience count from
-      // rpc_wa_campaign_send; add whatever the re-check above additionally
-      // blocked (conditions can shift between queueing and actual send).
-      var campRes = await supa.from("wa_campaigns").select("blocked_count").eq("id", body.campaign_id).maybeSingle()
-      var priorBlocked = (campRes.data && campRes.data.blocked_count) || 0
+      var newSent = await countStatus(body.campaign_id, ["sent", "delivered", "read"])
+      var newFailed = await countStatus(body.campaign_id, ["failed"])
 
-      await supa.from("wa_campaigns").update({
-        sent_count: sent, failed_count: failed, blocked_count: priorBlocked + blocked,
-        status: failed > 0 ? "partial" : "sent",
-        completed_at: new Date().toISOString(),
-      }).eq("id", body.campaign_id)
+      // blocked_count can't get the same fully-recounted treatment: most of
+      // it is contacts fn_wa_resolve_audience already excluded before any
+      // wa_messages row ever existed for them (nothing to recount), set once
+      // by rpc_wa_campaign_send. Keep that read-current-and-add this batch's
+      // own re-check blocks — correct as long as every batch's write
+      // actually lands, which the new bounded-batch size is what guarantees.
+      var campRes = await supa.from("wa_campaigns")
+        .select("blocked_count").eq("id", body.campaign_id).maybeSingle()
+      var newBlocked = ((campRes.data && campRes.data.blocked_count) || 0) + blocked
 
-      return ok({ sent: sent, failed: failed, blocked: blocked, total: rows.length })
+      var remainingRes = await supa.from("wa_messages")
+        .select("id", { count: "exact", head: true })
+        .eq("campaign_id", body.campaign_id).eq("status", "queued")
+      var remaining = remainingRes.count || 0
+
+      // Always release the claim here, win or lose — it only needs to cover
+      // this one batch's processing, not the gap until whoever calls next.
+      var campUpdate = { sent_count: newSent, failed_count: newFailed, blocked_count: newBlocked }
+      if (!claimSkipped) campUpdate.batch_claimed_at = null
+      if (remaining === 0) {
+        campUpdate.status = newFailed > 0 ? "partial" : "sent"
+        campUpdate.completed_at = new Date().toISOString()
+      }
+      await supa.from("wa_campaigns").update(campUpdate).eq("id", body.campaign_id)
+
+      return ok({ claimed: true, sent: newSent, failed: newFailed, blocked: newBlocked, batch_total: rows.length, remaining: remaining })
     }
 
     return bad(400, "missing_target", "message_id or campaign_id required")
