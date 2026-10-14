@@ -445,18 +445,19 @@ serve(async (req) => {
       // reached them, and that's not something to act on.
       //
       // Confirmed live (contract #00674 / Venue_00674_676, "Sanjay Kumar" /
-      // HALDI): LMS's own list endpoints paginate with page_limit as a page
-      // *number* against a dataset other LMS users are actively editing —
-      // fetching this department's ~85 pages sequentially takes long enough
-      // that the ordering shifts mid-walk, so a handful of rows land in the
-      // gap between two page boundaries and are skipped entirely that run
-      // (confirmed directly against the live API: 841 rows fetched across 85
-      // pages, only 784 distinct headids — the other 57 were duplicates from
-      // a shifted window, and this contract fell in a gap the same way).
-      // That's not "LMS no longer has it" — it still shows in their UI the
-      // whole time — so flagging it cancelled after a single miss was wrong.
-      // A grace window gives a transient pagination miss several more sync
-      // runs to re-catch the row before treating it as actually gone.
+      // HALDI, and several others since): LMS's own list endpoint returns
+      // 841 rows across 85 pages with only 784 distinct headids — 57
+      // duplicates from the page window shifting under concurrent edits —
+      // and a handful of contracts (including this one) are simply never in
+      // that list at all, in repeated independent scans minutes apart, while
+      // still fully visible and editable in LMS's own UI. For a genuinely
+      // transient miss, the grace window below gives several more sync runs
+      // a chance to re-catch the row before treating it as actually gone.
+      // For a PERMANENT gap like this one — the row can never be re-synced,
+      // so without the exemption check it would just get re-cancelled again
+      // a few hours after any manual restore — lms_stale_exempt (set by hand
+      // once a row like this is confirmed still live in LMS) opts it out of
+      // this pass entirely.
       var staleGraceCutoff = new Date(Date.parse(syncStartedAt) - 3 * 60 * 60 * 1000).toISOString()
       if (result.errors.length === 0) {
         var { data: staleRows } = await supabase
@@ -465,6 +466,7 @@ serve(async (req) => {
           .like("lms_event_id", dep.name + "_%")
           .lt("synced_at", staleGraceCutoff)
           .is("lms_cancelled_at", null)
+          .eq("lms_stale_exempt", false)
           .select("id")
         result.stale = (staleRows || []).length
         if (result.stale > 0) {
