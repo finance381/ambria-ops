@@ -117,11 +117,37 @@ function Inbox({ profile, inAdmin }) {
   // the scrollable list and remounts it a moment later at the top, which is
   // what looked like "clicking any conversation refreshes the list and puts
   // me back at the top." Only the very first load needs the spinner.
+  //
+  // A silent refresh also used to re-sort the whole list by last_message_at
+  // every time it ran — harmless on its own, but the realtime subscription
+  // below fires on every wa_messages row in the table, so a live campaign
+  // blast (thousands of outbound sends) was re-sorting the entire visible
+  // list every few seconds, reshuffling rows out from under whatever the
+  // person was looking at. Merging the fresh data into the existing order
+  // instead keeps every row where it already was; a genuinely new
+  // conversation still shows up, just prepended rather than wherever the
+  // sort would otherwise have dropped it. The next real (non-silent) load —
+  // opening the tab fresh — re-sorts normally.
   function loadConversations(silent) {
     if (!silent) setLoading(true)
     supabase.from('wa_conversations').select('*, wa_contacts(id, name, phone_e164, venue_affinity, opt_status)')
       .order('last_message_at', { ascending: false }).limit(200)
-      .then(function (res) { setConversations(res.data || []); setLoading(false) })
+      .then(function (res) {
+        var rows = res.data || []
+        if (!silent) {
+          setConversations(rows)
+        } else {
+          setConversations(function (prev) {
+            var byId = {}
+            rows.forEach(function (r) { byId[r.id] = r })
+            var prevIds = {}
+            var merged = prev.map(function (c) { prevIds[c.id] = true; return byId[c.id] || c })
+            var fresh = rows.filter(function (r) { return !prevIds[r.id] })
+            return fresh.concat(merged)
+          })
+        }
+        setLoading(false)
+      })
   }
 
   useEffect(function () {
