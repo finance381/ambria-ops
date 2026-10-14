@@ -58,10 +58,33 @@ function Btn({ label, onClick, disabled, variant, style }) {
   )
 }
 
+// A plain controlled <input value={value}> here snapped straight back to
+// "0" the instant you cleared the field (onChange(0) -> parent state 0 ->
+// re-renders showing "0"), before you could ever type a replacement digit.
+// Keeping the box's own text in local state — synced from value only while
+// not focused — lets it actually sit blank (or "-", or "16.") mid-edit; the
+// parent still gets a real number (0 while blank) for any live calc that
+// reads it, same as before.
 function Num({ value, onChange }) {
+  var [text, setText] = useState(value == null ? '' : String(value))
+  var focused = useRef(false)
+
+  useEffect(function () {
+    if (!focused.current) setText(value == null ? '' : String(value))
+  }, [value])
+
+  function handleInput(e) {
+    var v = e.target.value
+    setText(v)
+    var n = v === '' || v === '-' ? 0 : +v
+    if (!isNaN(n)) onChange(n)
+  }
+
   return (
-    <input type="number" inputMode="decimal" step="any" value={value == null ? '' : value}
-      onInput={function (e) { onChange(e.target.value === '' ? 0 : +e.target.value) }}
+    <input type="number" inputMode="decimal" step="any" value={text}
+      onFocus={function () { focused.current = true }}
+      onBlur={function () { focused.current = false; setText(value == null ? '' : String(value)) }}
+      onInput={handleInput}
       style={{
         width: '100%', padding: '7px 4px', borderRadius: 7, border: '1px solid ' + C.border,
         fontSize: 13, fontWeight: 600, textAlign: 'center', color: C.maroon, background: C.bg,
