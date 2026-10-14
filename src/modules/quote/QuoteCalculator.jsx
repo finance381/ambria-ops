@@ -388,6 +388,9 @@ function RateRow({ q, t, f, showAll, onBrand }) {
           }}>
             <div style={{ fontSize: 9.5, color: x.tone.lf || x.tone.fg, fontWeight: 700, letterSpacing: 0.7, marginBottom: 3, opacity: x.tone.lf ? 1 : 0.75 }}>{x.label}</div>
             <div style={{ fontSize: 17, fontWeight: 800, color: x.tone.fg }}>{x.val}</div>
+            {x.label === 'FLOOR' && (
+              <div style={{ fontSize: 7, fontWeight: 600, color: x.tone.fg, opacity: 0.65, marginTop: 2, lineHeight: 1.2 }}>Requires Senior insight</div>
+            )}
           </div>
         )
       })}
@@ -765,6 +768,9 @@ function LivePreview({ page, guestName, venName, etLabel, pax, slotLabel, effVm,
                   }}>
                     <div style={{ fontSize: 9, fontWeight: 700, color: t.tone.fg, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 3, opacity: 0.75 }}>{t.label}</div>
                     <div style={{ fontSize: 13, fontWeight: 800, color: t.tone.fg }}>{t.val}</div>
+                    {t.label === 'Floor' && (
+                      <div style={{ fontSize: 6.5, fontWeight: 600, color: t.tone.fg, opacity: 0.65, marginTop: 2, lineHeight: 1.2 }}>Requires Senior insight</div>
+                    )}
                   </div>
                 )
               })}
@@ -2779,6 +2785,9 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
                 <div style={{ fontSize: 9, fontWeight: 700, color: x.tone.fg, marginBottom: 2, opacity: 0.75 }}>{x.label}</div>
                 <div style={{ fontSize: 14, fontWeight: 800, color: diff >= 0 ? UP_FG : DOWN_FG }}>{diff >= 0 ? '+' : ''}{rd(diff)}L</div>
                 <div style={{ fontSize: 10, color: x.tone.fg, opacity: 0.6 }}>{pct >= 0 ? '+' : ''}{pct}%</div>
+                {x.label === 'vs FLOOR' && (
+                  <div style={{ fontSize: 6.5, fontWeight: 600, color: x.tone.fg, opacity: 0.65, marginTop: 2, lineHeight: 1.2 }}>Requires Senior insight</div>
+                )}
               </div>)
             })}
           </div>)}
