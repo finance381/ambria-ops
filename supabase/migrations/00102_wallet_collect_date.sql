@@ -11,6 +11,12 @@ BEGIN;
 ALTER TABLE public.wallet_transactions
   ADD COLUMN IF NOT EXISTS collection_date date;
 
+-- CREATE OR REPLACE only replaces a function with the exact same argument
+-- signature — adding p_collection_date makes this a distinct overload
+-- instead, same overload-ambiguity bug 00079 already fixed once for this
+-- very function. Drop the old 6-arg signature first so only one remains.
+DROP FUNCTION IF EXISTS public.fn_wallet_collect(bigint, text, bigint, text, text, text);
+
 CREATE OR REPLACE FUNCTION public.fn_wallet_collect(
   p_event_id bigint,
   p_payment_mode text,
