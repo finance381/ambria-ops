@@ -280,12 +280,20 @@ function ContractList({ profile, deepLinkContractId }) {
                     <p className="sm:hidden mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-slate-500">
                       {c.contract_no && <span className="font-mono">#{c.contract_no}</span>}
                       <span className="inline-flex items-center gap-1"><Icon name="calendar" size={12} className="text-slate-400" />{formatDate(c.function_date || c.contract_date)}</span>
-                      {c.venue_name && <span className="inline-flex items-center gap-1"><Icon name="mapPin" size={12} className="text-slate-400" />{c.venue_name}</span>}
+                      {c.contract_date && c.function_date && (
+                        <span className="text-slate-400">Contracted {formatDate(c.contract_date)}</span>
+                      )}
+                      {(c.venue_name || c.location) && <span className="inline-flex items-center gap-1"><Icon name="mapPin" size={12} className="text-slate-400" />{[c.venue_name, c.location].filter(Boolean).join(' · ')}</span>}
                     </p>
                   </div>
                   <span className="hidden sm:block font-mono text-[12.5px] text-slate-600">{c.contract_no ? '#' + c.contract_no : '—'}</span>
-                  <span className="hidden sm:block text-[13px] text-slate-700 tabular-nums">{formatDate(c.function_date || c.contract_date)}</span>
-                  <span className="hidden sm:block text-[13px] text-slate-600 truncate">{c.venue_name || '—'}</span>
+                  <div className="hidden sm:block">
+                    <span className="block text-[13px] text-slate-700 tabular-nums">{formatDate(c.function_date || c.contract_date)}</span>
+                    {c.contract_date && c.function_date && (
+                      <span className="block text-[10.5px] text-slate-400 tabular-nums">Contracted {formatDate(c.contract_date)}</span>
+                    )}
+                  </div>
+                  <span className="hidden sm:block text-[13px] text-slate-600 truncate">{[c.venue_name, c.location].filter(Boolean).join(' · ') || '—'}</span>
                   <span className="hidden sm:block text-right">
                     {isAdmin && c.balance_amount ? (
                       <span className={'text-[13px] font-bold tabular-nums ' + (c.balance_amount < 0 ? 'text-red-600' : 'text-emerald-600')}>
