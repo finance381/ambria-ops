@@ -144,6 +144,7 @@ function _buildGroups(rows) {
       event_name: primary.event_name,
       client_name: primary.client_name,
       venue_name: primary.venue_name,
+      location: primary.location,
       session: primary.session,
       function_date: primary.function_date
     })
@@ -1244,6 +1245,7 @@ function EventLedger(props) {
         {(function () {
           var facts = []
           if (eventDetail.venue_name) facts.push({ k: 'venue', icon: 'mapPin', label: 'Venue', text: eventDetail.venue_name })
+          if (eventDetail.location) facts.push({ k: 'location', icon: 'mapPin', label: 'Sub-venue', text: eventDetail.location })
           if (eventDetail.session) facts.push({ k: 'session', icon: 'utensils', label: 'Session', text: eventDetail.session })
           var heads = eventDetail.pax > 0 ? eventDetail.pax : (eventDetail.total_plates > 0 ? eventDetail.total_plates : 0)
           if (heads > 0) {
@@ -1315,6 +1317,7 @@ function EventLedger(props) {
               {(function () {
                 var facts = []
                 if (eventDetail.venue_name) facts.push({ k: 'venue', icon: 'mapPin', text: eventDetail.venue_name })
+                if (eventDetail.location) facts.push({ k: 'location', icon: 'mapPin', text: eventDetail.location })
                 if (eventDetail.session) facts.push({ k: 'session', icon: 'clock', text: eventDetail.session })
                 var heads = eventDetail.pax > 0 ? eventDetail.pax : (eventDetail.total_plates > 0 ? eventDetail.total_plates : 0)
                 if (heads > 0) {
@@ -1957,7 +1960,7 @@ function EventLedger(props) {
                                   {g.venue_name && (
                                     <span className="mt-0.5 inline-flex items-center gap-1 text-[12px] font-semibold text-slate-500">
                                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: venueColor(g.venue_name) }} />
-                                      {g.venue_name}
+                                      {g.venue_name}{g.location ? ' · ' + g.location : ''}
                                     </span>
                                   )}
                                 </span>
@@ -2032,11 +2035,11 @@ function EventLedger(props) {
                             <span className="block font-display text-[15px] font-bold text-slate-900 leading-snug truncate">
                               {g.event_name || 'Event'}{g.client_name ? ' — ' + g.client_name : ''}
                             </span>
-                            {(g.venue_name || g.session) && (
+                            {(g.venue_name || g.location || g.session) && (
                               <span className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-500">
                                 <Icon name="mapPin" size={12} className="shrink-0 text-slate-400" />
                                 <span className="min-w-0 truncate">
-                                  {g.venue_name || ''}{g.venue_name && g.session ? ' · ' : ''}{g.session || ''}
+                                  {[g.venue_name, g.location, g.session].filter(Boolean).join(' · ')}
                                 </span>
                               </span>
                             )}

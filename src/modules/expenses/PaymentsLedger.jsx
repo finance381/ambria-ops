@@ -336,9 +336,9 @@ function PaymentsLedger({ profile }) {
       vendorIds.length > 0 ? supabase.from('vendors').select('id, name').in('id', vendorIds) : Promise.resolve({ data: [] }),
       walletIdsForOwners.length > 0 ? supabase.from('wallets').select('id, user_id, profiles(id, name)').in('id', walletIdsForOwners) : Promise.resolve({ data: [] }),
       // EPC back-links so collections can be split from plain event collections
-      collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id, extras_charged, plates_returned, discount_paise, events(id, event_name, client_name, function_date, venue_name, session)').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
+      collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id, extras_charged, plates_returned, discount_paise, events(id, event_name, client_name, function_date, venue_name, location, session)').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
       profileIds.length > 0 ? supabase.from('profiles').select('id, name').in('id', profileIds) : Promise.resolve({ data: [] }),
-      candidateEventIds.length > 0 ? supabase.from('events').select('id, event_name, client_name, function_date, venue_name, session').in('id', candidateEventIds) : Promise.resolve({ data: [] }),
+      candidateEventIds.length > 0 ? supabase.from('events').select('id, event_name, client_name, function_date, venue_name, location, session').in('id', candidateEventIds) : Promise.resolve({ data: [] }),
       expenseIdsForCheck.length > 0 ? supabase.from('expenses').select('id, checked_by, checked_at, tally_entered_by, tally_entered_at').in('id', expenseIdsForCheck) : Promise.resolve({ data: [] }),
     ])
 
@@ -527,7 +527,7 @@ function PaymentsLedger({ profile }) {
     if (r.source === 'collection' && (r._eventId || r._performedBy)) {
       Promise.all([
         r._eventId
-          ? supabase.from('events').select('id, contract_no, event_name, client_name, function_date, venue_name').eq('id', r._eventId).maybeSingle()
+          ? supabase.from('events').select('id, contract_no, event_name, client_name, function_date, venue_name, location').eq('id', r._eventId).maybeSingle()
           : Promise.resolve({ data: null }),
         r._performedBy
           ? supabase.from('profiles').select('name').eq('id', r._performedBy).maybeSingle()
@@ -952,7 +952,7 @@ function PaymentsLedger({ profile }) {
                     {r.description && <p className="mt-0.5 text-[12.5px] font-medium text-slate-600 leading-snug break-words">{r.description}</p>}
                     {r.source === 'collection' && r._eventInfo && (function () {
                       var ei = r._eventInfo
-                      var bits = [ei.function_date ? formatDate(ei.function_date) : null, ei.client_name, venueLabelWithCode(ei.venue_name), ei.session].filter(Boolean)
+                      var bits = [ei.function_date ? formatDate(ei.function_date) : null, ei.client_name, venueLabelWithCode(ei.venue_name), ei.location, ei.session].filter(Boolean)
                       if (bits.length === 0) return null
                       return <p className="mt-0.5 text-[11.5px] text-indigo-600 leading-snug break-words">{bits.join(' \u00b7 ')}</p>
                     })()}
@@ -1069,6 +1069,7 @@ function PaymentsLedger({ profile }) {
                               ei.function_date ? formatDate(ei.function_date) : null,
                               ei.client_name,
                               venueLabelWithCode(ei.venue_name),
+                              ei.location,
                               ei.session,
                             ].filter(Boolean)
                             if (bits.length === 0) return null
@@ -1259,6 +1260,9 @@ function PaymentsLedger({ profile }) {
                     <div className="flex justify-between"><span className="text-gray-500">Client</span><span className="font-medium text-gray-800">{detailTarget.event.client_name || '—'}</span></div>
                     <div className="flex justify-between"><span className="text-gray-500">Function date</span><span className="font-medium text-gray-800">{formatDate(detailTarget.event.function_date)}</span></div>
                     <div className="flex justify-between"><span className="text-gray-500">Venue</span><span className="font-medium text-gray-800">{detailTarget.event.venue_name || '—'}</span></div>
+                    {detailTarget.event.location && (
+                      <div className="flex justify-between"><span className="text-gray-500">Sub-venue</span><span className="font-medium text-gray-800">{detailTarget.event.location}</span></div>
+                    )}
                   </>
                 )}
               </div>
