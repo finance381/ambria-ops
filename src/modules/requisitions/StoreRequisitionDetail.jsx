@@ -148,7 +148,7 @@ function StoreRequisitionDetail({ id, onBack }) {
               <p className="text-xl font-bold text-gray-900 tabular-nums mt-0.5">{plateSummary.extra}</p>
             </div>
             <div className="px-5">
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Balance plate</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Returned plate</p>
               <p className="text-xl font-bold text-gray-900 tabular-nums mt-0.5">{plateSummary.balance}</p>
             </div>
             <div className="px-5">

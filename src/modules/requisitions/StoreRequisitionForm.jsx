@@ -264,20 +264,25 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           var issues = res[0].data || []
           var colls = res[1].data || []
           var rows = events.map(function (e) {
+            var quota = e.total_plates || 0
             var issued = issues.filter(function (i) { return i.event_id === e.id && i.status === 'active' })
               .reduce(function (s, i) { return s + Number(i.plates_count || 0) }, 0)
-            var activeColls = colls.filter(function (c) { return c.event_id === e.id && (!c.status || c.status === 'active') })
-            var charged = activeColls.reduce(function (s, c) { return s + Number(c.extras_charged || 0) }, 0)
-            var returned = activeColls.reduce(function (s, c) { return s + Number(c.plates_returned || 0) }, 0)
-            var balance = Math.max(0, issued - charged - returned)
+            var returned = colls.filter(function (c) { return c.event_id === e.id && (!c.status || c.status === 'active') })
+              .reduce(function (s, c) { return s + Number(c.plates_returned || 0) }, 0)
+            // Mirrors ExtraPlateCollect.jsx's own Quota/Issued/Returned/Used/
+            // Extras math: "extra" is only the part issued beyond the quota
+            // (what's actually chargeable), and "actual" is what was issued
+            // minus whatever came back unused — not booking+charged, which
+            // only ever equalled the quota whenever nothing was chargeable.
+            var consumed = Math.max(0, issued - returned)
             return {
               id: e.id,
               event: e.event_name || e.client_name || '—',
               venueDate: (e.venue_name || '—') + ' · ' + e.function_date,
-              booking: e.total_plates || 0,
-              extra: issued,
-              balance: balance,
-              actual: (e.total_plates || 0) + charged,
+              booking: quota,
+              extra: Math.max(0, consumed - quota),
+              balance: returned,
+              actual: consumed,
             }
           })
           setContracts(rows)
