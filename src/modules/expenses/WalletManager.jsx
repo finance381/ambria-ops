@@ -1155,7 +1155,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   }
 
   async function cancelTransfer(t) {
-    if (!(await appConfirm('Cancel this transfer? ' + formatPoints(t.amount_paise) + ' will be refunded.'))) return
+    // Nothing is deducted from the sender until the recipient confirms
+    // (initiate_transfer no longer debits), so a still-pending transfer has
+    // nothing to "refund" — this just voids the request.
+    if (!(await appConfirm('Cancel this transfer of ' + formatPoints(t.amount_paise) + '? Nothing has been deducted from your wallet yet.'))) return
     var { error } = await supabase.rpc('cancel_transfer', { p_transfer_id: t.id })
     if (error) { alert('Cancel failed: ' + error.message); return }
     try { await logActivity('WALLET_TRANSFER_CANCEL', formatPoints(t.amount_paise)) } catch (_) {}
@@ -1472,7 +1475,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           </div>
           <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
             {isTransfer
-              ? 'The sender is refunded ' + formatPoints(t.amount_paise) + '. If the recipient already confirmed receiving it, it is clawed back out of their wallet too. This cannot be undone.'
+              ? (t._pending
+                  ? 'Nothing has been deducted from the sender’s wallet yet — this just cancels the request. This cannot be undone.'
+                  : 'The sender is refunded ' + formatPoints(t.amount_paise) + ', and it is clawed back out of the recipient’s wallet too. This cannot be undone.')
               : 'Wallet will be debited ' + formatPoints(t.amount_paise) + ' and the event ledger reversed. This cannot be undone.'}
           </div>
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason</label>
@@ -4599,7 +4604,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                           📷 Confirm
                         </button>
                         {canCancelTransfer && (
-                          <button onClick={function () { openCancel({ reference_id: t.id, amount_paise: t.amount_paise, description: t.description, _cpName: t._fromName }, 'transfer') }}
+                          <button onClick={function () { openCancel({ reference_id: t.id, amount_paise: t.amount_paise, description: t.description, _cpName: t._fromName, _pending: true }, 'transfer') }}
                             className="px-3 py-1.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
                             🚫 Reject
                           </button>
@@ -4968,7 +4973,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         📷 Confirm
                       </button>
                       {canCancelTransfer && (
-                        <button onClick={function () { openCancel({ reference_id: t.id, amount_paise: t.amount_paise, description: t.description, _cpName: t._fromName }, 'transfer') }}
+                        <button onClick={function () { openCancel({ reference_id: t.id, amount_paise: t.amount_paise, description: t.description, _cpName: t._fromName, _pending: true }, 'transfer') }}
                           className="px-3 py-1.5 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
                           🚫 Reject
                         </button>
