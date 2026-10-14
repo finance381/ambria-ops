@@ -91,6 +91,33 @@ const FUNC_NAMES: Record<string, string> = {
   "34": "DIWALI PARTY", "35": "GET TOGETHER", "36": "MATA KI CHOWKI",
 }
 
+// LMS's Venue-contract API (get_venue_contract_information_list) has no
+// usable sub-venue name field — confirmed directly against a live pull of
+// every page: fiscd_venue2/fiscd_address2 (what every other department uses
+// for this) don't exist on this endpoint at all, and fiscd_location_name is
+// always blank. All it gives is a bare numeric fiscd_location_id. This is
+// the same id -> name mapping already hand-maintained in our own
+// quote_config ("lms_locations", edited via the Quote Calculator's own
+// Location/Hall picker — see lms-push/index.ts's fisd_location_id, which
+// writes these exact ids back into LMS the other direction), copied here
+// so sync-events can resolve a name without a round trip to that table.
+// Flat by design: every id below is unique across all four venues.
+const VENUE_LOCATION_NAMES: Record<string, string> = {
+  "21": "Amber Lawn + Glass House", "22": "Amber Lawn", "23": "Glass House",
+  "24": "Carnelian Deck", "25": "Villa",
+  "26": "Emerald Lawn", "27": "Emerald Lawn + Glass House",
+  "28": "Emerald + Glass House + Alstonia", "29": "Alstonia Lawn",
+  "30": "Glass House", "31": "Banana Tree Lawn", "32": "Villa",
+  "41": "Banana Tree Lawn + Glasshouse + Emerald Lawn",
+  "47": "Alstonia + Banana Tree Lawn", "53": "Emerald Lawn + Banana Tree Lawn",
+  "36": "Aura Lawn + Pandal", "37": "Aura Lawn", "38": "Aura Pandal",
+  "39": "Valencia Glass House", "40": "Villa", "46": "Valencia Glass House + Lawn",
+  "51": "Valencia Swimming Pool + Lawn", "52": "Full Venue",
+  "42": "Restaurant Cafe", "43": "Restro Lawn", "44": "Glass House",
+  "45": "Restro Rooftop", "48": "Restro Lawn + Restro Glass House",
+  "49": "Glass House Front Area", "50": "Glass House Back Area",
+}
+
 function normalizeVenue(venueName: string, department: string): string {
   const v = (venueName || "").toLowerCase().trim()
   if (v.indexOf("pushpanjali") !== -1) return "Ambria Pushpanjali"
@@ -155,6 +182,14 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
   const entryById = dep.entryBy && e[dep.entryBy] ? String(e[dep.entryBy]).trim() : ""
   const createdName = entryById ? (lmsUserMap[entryById] || null) : null
 
+  // Venue contracts carry no venue2/address2 at all (see VENUE_LOCATION_NAMES'
+  // comment) — only a bare fiscd_location_id, resolved against that map.
+  // Every other department keeps the existing venue2+address2 text, which
+  // genuinely is populated for them (confirmed live for Catering).
+  const location = dep.name === "Venue"
+    ? (VENUE_LOCATION_NAMES[String(e.fiscd_location_id || "").trim()] || null)
+    : (e[dep.d + "venue2"] ? ((e[dep.d + "venue2"] || "") + " " + (e[dep.d + "address2"] || "")).trim() || null : null)
+
   return {
     // Dedup key: Dept_EntryNo_HeadId (unique per contract row)
     lms_event_id: dep.name + "_" + entryNo + "_" + headId,
@@ -163,7 +198,7 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
     department: dep.name,
     contract_type: e[dep.d + "lead_type"] || null,
     venue_name: normalizeVenue(e.venue1 || "", dep.name),
-    location: e[dep.d + "venue2"] ? ((e[dep.d + "venue2"] || "") + " " + (e[dep.d + "address2"] || "")).trim() || null : null,
+    location: location,
     contact_person: null,
     contact_number: e[dep.contactNo] || null,
     event_name: (e.functionname || FUNC_NAMES[String(e[dep.funcCode])] || "").trim(),
