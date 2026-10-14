@@ -868,7 +868,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           ? supabase.from('extra_plate_collections').select(EPC_COLS).in('cancel_wallet_tx_id', txnIds)
           : none,
         collRefIds.length > 0
-          ? supabase.from('events').select('id, client_name, session, function_date, event_name, venue_name').in('id', collRefIds)
+          ? supabase.from('events').select('id, client_name, session, function_date, event_name, venue_name, location').in('id', collRefIds)
           : none,
       ])
       if (!current()) return
@@ -1607,14 +1607,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var evData = null
     if (kind === 'collection' && txn.reference_id) {
       var { data: ev } = await supabase.from('events')
-        .select('id, contract_no, event_name, client_name, function_date, created_user_name, venue_name')
+        .select('id, contract_no, event_name, client_name, function_date, created_user_name, venue_name, location')
         .eq('id', Number(txn.reference_id)).maybeSingle()
       evData = ev || null
     } else if (kind === 'epc') {
       var epcRow = (epcRefs[txn.id] || {}).epc
       if (epcRow && epcRow.event_id) {
         var { data: ev2 } = await supabase.from('events')
-          .select('id, contract_no, event_name, client_name, function_date, created_user_name, venue_name')
+          .select('id, contract_no, event_name, client_name, function_date, created_user_name, venue_name, location')
           .eq('id', epcRow.event_id).maybeSingle()
         evData = ev2 || null
       }
@@ -1654,7 +1654,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               </h3>
               {ev && (
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {ev.event_name || '—'}{ev.client_name ? ' · ' + ev.client_name : ''}
+                  {[ev.event_name || '—', ev.client_name, venueLabelWithCode(ev.venue_name), ev.location].filter(Boolean).join(' · ')}
                 </p>
               )}
             </div>
@@ -4014,7 +4014,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             {/* Enrichment: collection → guest · session · event date, same facts the detail modal shows on click */}
             {t.reference_type === 'collection' && t.reference_id && collectionEventRefs[t.reference_id] && (function () {
               var ce = collectionEventRefs[t.reference_id]
-              var bits = [ce.function_date ? formatDate(ce.function_date) : null, ce.client_name, venueLabelWithCode(ce.venue_name), ce.session].filter(Boolean)
+              var bits = [ce.function_date ? formatDate(ce.function_date) : null, ce.client_name, venueLabelWithCode(ce.venue_name), ce.location, ce.session].filter(Boolean)
               if (bits.length === 0) return null
               return <p className="text-[11.5px] text-slate-500 mt-0.5">{bits.join(' · ')}</p>
             })()}
