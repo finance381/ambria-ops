@@ -1,13 +1,38 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
 import { isPrivilegedRole } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import EventDatePicker from '../../components/ui/EventDatePicker'
+import Icon from '../../components/ui/Icon'
 import { deptCls, deptOrder } from '../../lib/ui'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
+
+var ITEM_UNITS = ['Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens', 'Kg', 'Grams', 'Liters', 'ML', 'Meters', 'Feet', 'Rolls', 'Packets', 'Bags', 'Boxes', 'Cartons', 'Bottles', 'Sheets', 'Reams']
+
+// Same shape ExpenseForm.jsx's makeItem()/isItemComplete() use — a JV's item
+// purchase ends up in the same expenses.metadata.item_receipts list a new
+// expense's does (see submit() below), so the shape has to match exactly.
+function makeItem() {
+  return {
+    _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+    itemMode: 'existing',
+    itemQuery: '',
+    itemMatchedId: null,
+    itemMatchedSource: null,
+    itemMatchedCategoryId: null,
+    itemQty: '',
+    itemUnit: 'Pieces',
+    itemNotes: '',
+    itemRate: '',
+  }
+}
+
+function isItemComplete(im) {
+  return !!(im && String(im.itemQuery || '').trim() && Number(im.itemQty) > 0 && Number(im.itemRate) > 0)
+}
 
 function makeAlloc() {
   return { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8), departmentId: '', expenseTypeId: '', expenseSubTypeId: '', venueId: '', subVenueId: '', amountPts: '', remarks: '' }
@@ -64,6 +89,107 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
   var [eventId, setEventId] = useState(exp.event_id ? String(exp.event_id) : '')
   var [events, setEvents] = useState([])
   var [eventsLoading, setEventsLoading] = useState(false)
+  // Optional: buy item(s) as part of this adjustment — same input as
+  // ExpenseForm's own "Item select", feeding the same
+  // expenses.metadata.item_receipts list on submit (see submit() below).
+  var [isItemPurchase, setIsItemPurchase] = useState(false)
+  var [items, setItems] = useState([makeItem()])
+  var [editingItemIdx, setEditingItemIdx] = useState(0)
+  var [itemCategories, setItemCategories] = useState([])
+  var [itemSearchKey, setItemSearchKey] = useState('')
+  var [itemMatches, setItemMatches] = useState([])
+  var itemSearchTimer = useRef(null)
+
+  useEffect(function () {
+    supabase.from('categories').select('id, name').order('name').then(function (res) { setItemCategories(res.data || []) })
+  }, [])
+
+  function toggleItemPurchase() {
+    setIsItemPurchase(function (on) {
+      var next = !on
+      if (next) setItems(function (prev) { return prev && prev.length > 0 ? prev : [makeItem()] })
+      return next
+    })
+    setItemMatches([]); setItemSearchKey('')
+  }
+
+  function computeItemsTotal() {
+    return items.reduce(function (sum, it) { return sum + (Number(it.itemQty) || 0) * (Number(it.itemRate) || 0) }, 0)
+  }
+
+  function addItem() {
+    setItems(function (prev) {
+      var next = prev.concat([makeItem()])
+      setEditingItemIdx(next.length - 1)
+      return next
+    })
+  }
+
+  function removeItem(itemIdx) {
+    setItems(function (prev) {
+      if (prev.length <= 1) { setEditingItemIdx(0); return [makeItem()] }
+      setEditingItemIdx(function (cur) { return cur === itemIdx ? -1 : (cur > itemIdx ? cur - 1 : cur) })
+      return prev.filter(function (_, j) { return j !== itemIdx })
+    })
+    var key = String(itemIdx)
+    if (itemSearchKey === key) { setItemMatches([]); setItemSearchKey('') }
+  }
+
+  function toggleItemMode(itemIdx) {
+    setItems(function (prev) {
+      return prev.map(function (it, j) {
+        if (j !== itemIdx) return it
+        var nextMode = it.itemMode === 'new' ? 'existing' : 'new'
+        return Object.assign({}, it, { itemMode: nextMode, itemMatchedId: null, itemMatchedSource: null, itemMatchedCategoryId: null })
+      })
+    })
+    setEditingItemIdx(itemIdx)
+    var key = String(itemIdx)
+    if (itemSearchKey === key) { setItemMatches([]); setItemSearchKey('') }
+  }
+
+  function updateItem(itemIdx, field, val) {
+    setItems(function (prev) {
+      return prev.map(function (it, j) {
+        if (j !== itemIdx) return it
+        var ic = Object.assign({}, it)
+        ic[field] = val
+        if (field === 'itemQuery' && it.itemMode !== 'new') {
+          ic.itemMatchedId = null; ic.itemMatchedSource = null; ic.itemMatchedCategoryId = null
+        }
+        return ic
+      })
+    })
+    setEditingItemIdx(itemIdx)
+  }
+
+  function searchInventoryItems(itemIdx, term) {
+    setItemSearchKey(String(itemIdx))
+    if (itemSearchTimer.current) clearTimeout(itemSearchTimer.current)
+    if (!term || term.trim().length < 2) { setItemMatches([]); return }
+    itemSearchTimer.current = setTimeout(function () {
+      var q = term.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')
+      Promise.all([
+        supabase.from('inventory_items').select('id, name, unit, category_id').ilike('name', '%' + q + '%').eq('status', 'approved').order('name').limit(6),
+        supabase.from('catering_store_items').select('id, name, unit, category_id').ilike('name', '%' + q + '%').eq('status', 'approved').order('name').limit(6),
+      ]).then(function (results) {
+        var inv = (results[0].data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
+        var cs = (results[1].data || []).map(function (i) { return Object.assign({}, i, { _source: 'catering_store' }) })
+        setItemMatches(inv.concat(cs).slice(0, 8))
+      })
+    }, 300)
+  }
+
+  function pickItemMatch(itemIdx, item) {
+    setItems(function (prev) {
+      return prev.map(function (it, j) {
+        if (j !== itemIdx) return it
+        return Object.assign({}, it, { itemQuery: item.name, itemMatchedId: item.id, itemMatchedSource: item._source, itemMatchedCategoryId: item.category_id || null, itemUnit: item.unit || it.itemUnit })
+      })
+    })
+    setEditingItemIdx(itemIdx)
+    setItemMatches([]); setItemSearchKey('')
+  }
 
   useEffect(function () {
     if (exp.event_id && exp.expense_date) loadEventsByDate(exp.expense_date)
@@ -254,6 +380,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
       if (!a.departmentId) { setError('Row ' + (i + 1) + ': department required'); return }
       if (!Number(a.amountPts)) { setError('Row ' + (i + 1) + ': amount required'); return }
     }
+    if (isItemPurchase && !items.every(isItemComplete)) { setError('Finish or remove the incomplete item(s)'); return }
     setSaving(true)
 
     var payload = allocations.map(function (a) {
@@ -312,6 +439,46 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
       return
     }
 
+    // Same item_receipts shape and item_receipt_status ExpenseForm.jsx writes
+    // on a new expense — a JV's item purchase joins the parent expense's own
+    // list rather than starting a separate one, so the (not yet built)
+    // receiver step has exactly one list per expense to work through either
+    // way. Appended after fn_create_gv succeeds, not atomically with it — the
+    // same accepted two-call precedent as SalaryPayouts' wallet debit.
+    if (isItemPurchase) {
+      var itemReceipts = items.map(function (im) {
+        var qtyN = Number(im.itemQty) || 0
+        var rateN = Number(im.itemRate) || 0
+        return {
+          query: (im.itemQuery || '').trim(),
+          matched_item_id: im.itemMode === 'new' ? null : im.itemMatchedId,
+          matched_source: im.itemMode === 'new' ? 'new' : im.itemMatchedSource,
+          matched_category_id: im.itemMatchedCategoryId,
+          qty: qtyN,
+          unit: im.itemUnit,
+          notes: (im.itemNotes || '').trim() || null,
+          rate_paise: Math.round(rateN * 100),
+          line_total_paise: Math.round(qtyN * rateN * 100),
+          resulting_item_id: null,
+          received_by: null,
+          received_at: null,
+          cancel_reason: null,
+          source: 'gv',
+          gv_number: data?.gv_number || null,
+        }
+      })
+      try {
+        var { data: freshExp } = await supabase.from('expenses').select('metadata, item_receipt_status').eq('id', exp.id).single()
+        var freshMeta = (freshExp && freshExp.metadata && typeof freshExp.metadata === 'object') ? Object.assign({}, freshExp.metadata) : {}
+        freshMeta.item_receipts = (Array.isArray(freshMeta.item_receipts) ? freshMeta.item_receipts : []).concat(itemReceipts)
+        var statusUpdate = { metadata: freshMeta }
+        if (!freshExp || freshExp.item_receipt_status !== 'received') statusUpdate.item_receipt_status = 'pending'
+        await supabase.from('expenses').update(statusUpdate).eq('id', exp.id)
+      } catch (itemErr) {
+        console.error('GV_ITEM_RECEIPTS_APPEND_FAIL', itemErr)
+      }
+    }
+
     try { await logActivity({ action: 'gv_create', entity: 'expense', entity_id: exp.id, meta: { gv_number: data?.gv_number, fields_changed: data?.fields_changed || false } }) } catch (e) {}
 
     setSaving(false)
@@ -362,6 +529,197 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
         {isFunction && (
           <div className="mt-3 pt-3 border-t border-gray-100">
             {renderFunctionPicker()}
+          </div>
+        )}
+      </div>
+
+      {/* Optional: buy item(s) as part of this adjustment — same input as
+          ExpenseForm's "Item select", joining the same expenses.metadata.
+          item_receipts list on submit. */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className={"shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center transition-colors " + (isItemPurchase ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-400")}>
+              <Icon name="box" size={17} />
+            </span>
+            <div className="min-w-0">
+              <label className="block text-[13px] font-semibold text-gray-800">Item select</label>
+              <span className="block text-[11px] text-gray-500 leading-snug">Item enters inventory via receiver</span>
+            </div>
+          </div>
+          <button type="button" onClick={toggleItemPurchase} aria-pressed={isItemPurchase} aria-label="Item select" className="shrink-0 flex items-center gap-2">
+            <div className={"relative w-9 h-5 rounded-full transition-colors " + (isItemPurchase ? "bg-indigo-600" : "bg-slate-300")}>
+              <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (isItemPurchase ? "translate-x-4" : "translate-x-0.5")} />
+            </div>
+          </button>
+        </div>
+
+        {isItemPurchase && (
+          <div className="mt-3 pt-3 border-t border-gray-100 space-y-2.5">
+            {items.map(function (im, iIdx) {
+              var key = String(iIdx)
+              var lineTotal = (Number(im.itemQty) || 0) * (Number(im.itemRate) || 0)
+              var complete = isItemComplete(im)
+              var expanded = editingItemIdx === iIdx
+              if (!expanded) {
+                return (
+                  <div key={im._key} className={"border rounded-xl px-3 py-2.5 flex items-center gap-2 transition-colors " + (complete ? "bg-white border-gray-200" : "bg-amber-50/40 border-amber-200")}>
+                    <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400">{iIdx + 1}</span>
+                    <button type="button" onClick={function () { setEditingItemIdx(iIdx) }} className="flex-1 min-w-0 flex items-center gap-2 text-left hover:opacity-70">
+                      <div className="min-w-0 flex-1">
+                        <p className="flex items-center gap-1.5 text-[13px] font-semibold text-gray-900 truncate">
+                          {im.itemQuery ? im.itemQuery : <span className="font-normal text-gray-400">Unnamed item</span>}
+                          {im.itemMode === 'new'
+                            ? <Icon name="sparkle" size={12} className="shrink-0 text-gray-400" />
+                            : (im.itemMatchedId && <Icon name="check" size={12} className="shrink-0 text-indigo-600" />)}
+                        </p>
+                        <p className="text-[11px] text-gray-500 truncate tabular-nums">
+                          {(Number(im.itemQty) || 0)} {im.itemUnit} × {(Number(im.itemRate) || 0).toLocaleString('en-IN')} pts{im.itemNotes ? ' · ' + im.itemNotes : ''}
+                        </p>
+                      </div>
+                      {complete ? (
+                        <span className="shrink-0 text-[13px] font-bold text-gray-900 tabular-nums">{lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
+                      ) : (
+                        <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">Incomplete</span>
+                      )}
+                    </button>
+                    <button type="button" onClick={function () { removeItem(iIdx) }}
+                      className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors" title="Delete item" aria-label="Delete item">
+                      <Icon name="trash" size={14} />
+                    </button>
+                  </div>
+                )
+              }
+              return (
+                <div key={im._key} className="border border-gray-200 rounded-xl bg-white p-3 space-y-2.5"
+                  onFocusCapture={function () { if (editingItemIdx !== iIdx) setEditingItemIdx(iIdx) }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-gray-500">{'Item ' + (iIdx + 1)}</span>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={function () { toggleItemMode(iIdx) }}
+                        className="flex items-center gap-1.5" title={im.itemMode === 'new' ? 'Switch to inventory search' : 'Create as new item'}>
+                        <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.08em] text-gray-500">
+                          <Icon name={im.itemMode === 'new' ? 'sparkle' : 'box'} size={13} />
+                          {im.itemMode === 'new' ? 'New' : 'Inventory'}
+                        </span>
+                        <div className={"relative w-9 h-5 rounded-full transition-colors " + (im.itemMode === 'new' ? "bg-gray-400" : "bg-indigo-600")}>
+                          <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (im.itemMode === 'new' ? "translate-x-4" : "translate-x-0.5")} />
+                        </div>
+                      </button>
+                      <button type="button" onClick={function () { removeItem(iIdx) }}
+                        className="w-6 h-6 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors" title="Delete item" aria-label="Delete item">
+                        <Icon name="trash" size={14} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {im.itemMode === 'new' ? (
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-gray-600 mb-1">Item Name <span className="text-red-500">*</span></label>
+                        <input type="text" value={im.itemQuery} onChange={function (e) { updateItem(iIdx, 'itemQuery', e.target.value) }}
+                          placeholder="Item name (e.g. A4 Sheets, Broom, Chair)" maxLength="200"
+                          className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-[13px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" style={{ fontSize: '16px' }} />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-gray-600 mb-1">Category <span className="text-gray-500">(optional)</span></label>
+                        <select value={im.itemMatchedCategoryId || ''}
+                          onChange={function (e) { updateItem(iIdx, 'itemMatchedCategoryId', e.target.value ? Number(e.target.value) : null) }}
+                          className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-[13px] text-gray-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" style={{ fontSize: '16px' }}>
+                          <option value="">Category (optional)</option>
+                          {itemCategories.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
+                        </select>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                        Item Name <span className="text-red-500">*</span>
+                        {im.itemMatchedId && <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600"><Icon name="check" size={11} />Matched existing</span>}
+                      </label>
+                      <input type="text" value={im.itemQuery}
+                        onChange={function (e) { updateItem(iIdx, 'itemQuery', e.target.value); searchInventoryItems(iIdx, e.target.value) }}
+                        onFocus={function () { if (im.itemQuery && im.itemQuery.length >= 2) searchInventoryItems(iIdx, im.itemQuery) }}
+                        placeholder="Search or type new item name..."
+                        className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-[13px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" style={{ fontSize: '16px' }} />
+                      {itemSearchKey === key && itemMatches.length > 0 && (
+                        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                          {itemMatches.map(function (m) {
+                            return (
+                              <button key={m._source + '_' + m.id} type="button" onMouseDown={function (evt) { evt.preventDefault(); pickItemMatch(iIdx, m) }}
+                                className="w-full text-left px-3 py-2 hover:bg-indigo-50 border-b border-gray-50 last:border-0">
+                                <div className="text-[13px] text-gray-800 font-medium truncate">{m.name}</div>
+                                <div className="text-[10px] text-gray-500">{m._source === 'catering_store' ? 'Catering Store' : 'Inventory'}{m.unit ? ' · ' + m.unit : ''}</div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                      {im.itemQuery && !im.itemMatchedId && itemMatches.length === 0 && itemSearchKey === key && im.itemQuery.length >= 2 && (
+                        <p className="text-[10px] text-amber-600 mt-1">No match — receiver will create as new inventory item</p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-600 mb-1">Qty <span className="text-red-500">*</span></label>
+                      <input type="number" inputMode="numeric" value={im.itemQty} onChange={function (e) { updateItem(iIdx, 'itemQty', e.target.value) }}
+                        placeholder="0" min="0" step="any"
+                        className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-[13px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" style={{ fontSize: '16px' }} />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-600 mb-1">Unit</label>
+                      <select value={im.itemUnit} onChange={function (e) { updateItem(iIdx, 'itemUnit', e.target.value) }}
+                        className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-[13px] text-gray-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" style={{ fontSize: '16px' }}>
+                        {ITEM_UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-600 mb-1">Rate <span className="text-red-500">*</span></label>
+                      <input type="number" inputMode="decimal" value={im.itemRate} onChange={function (e) { updateItem(iIdx, 'itemRate', e.target.value) }}
+                        placeholder="0" min="0" step="any"
+                        className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-[13px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" style={{ fontSize: '16px' }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-600 mb-1">Notes <span className="font-normal text-gray-500">(brand, size, spec)</span></label>
+                    <div className="flex items-center gap-2">
+                      <input type="text" value={im.itemNotes} onChange={function (e) { updateItem(iIdx, 'itemNotes', e.target.value) }}
+                        placeholder="e.g. White ceramic, 10-inch round"
+                        className="flex-1 min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-[13px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" style={{ fontSize: '16px' }} />
+                      <button type="button" onClick={function () { setEditingItemIdx(-1) }}
+                        title={complete ? 'Done — collapse this item' : 'Collapse this item'}
+                        className={"shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border active:scale-95 transition-all " +
+                          (complete ? "text-indigo-700 bg-indigo-50 border-indigo-300 hover:bg-indigo-100" : "text-gray-500 bg-white border-gray-200 hover:bg-gray-50")}>
+                        <Icon name="chevronUp" size={16} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {lineTotal > 0 && (
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+                      <span className="text-[11px] font-medium text-gray-500">
+                        Line total <span className="text-[13px] font-bold text-gray-900 tabular-nums">{lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            <button type="button" onClick={addItem}
+              className="w-full py-2.5 rounded-xl border border-gray-200 text-[12px] font-semibold text-gray-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+              + Add item
+            </button>
+
+            {computeItemsTotal() > 0 && (
+              <div className="flex items-center justify-between text-[12px] font-bold text-gray-700 pt-1">
+                <span>Items total</span>
+                <span className="tabular-nums">{computeItemsTotal().toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
+              </div>
+            )}
           </div>
         )}
       </div>
