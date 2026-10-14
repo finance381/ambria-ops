@@ -176,13 +176,26 @@ import NotificationBell from '../ui/NotificationBell'
 import PageBackdrop from '../ui/PageBackdrop'
 import PageWave from '../ui/PageWave'
 
+// The screen on show (group / tab / sub) is kept in sessionStorage so a
+// refresh or pull-to-refresh lands back on it instead of the home grid. Per
+// browser tab only: opening the app afresh still starts at home.
+var NAV_KEY = 'ambria_nav'
+
+function readNav() {
+  try {
+    var v = JSON.parse(sessionStorage.getItem(NAV_KEY))
+    return v && typeof v === 'object' ? v : {}
+  } catch (e) { return {} }
+}
+
 function Shell({ profile, onSignOut }) {
-  var [activeGroup, setActiveGroup] = useState(null)
-  var [tab, setTab] = useState(null)
+  var [initialNav] = useState(readNav)
+  var [activeGroup, setActiveGroup] = useState(initialNav.group || null)
+  var [tab, setTab] = useState(initialNav.tab || null)
   // Which page inside a tab a tile asked for. Only the API Marketing group
   // uses it today; a tile without `sub` clears it, so the module falls back to
   // its own first page.
-  var [subTab, setSubTab] = useState(null)
+  var [subTab, setSubTab] = useState(initialNav.sub || null)
   // Set by navigateToExpenses when a ledger screen sends the user to a specific
   // expense's edit/Raise JV view instead of just the Expenses tab.
   var [deepLinkExpense, setDeepLinkExpense] = useState(null)
@@ -254,6 +267,27 @@ function Shell({ profile, onSignOut }) {
     group.items.forEach(function (f) { if (!f.noBadge) total += (badges[f.key] || 0) })
     return total
   }
+
+  useEffect(function () {
+    try { sessionStorage.setItem(NAV_KEY, JSON.stringify({ group: activeGroup, tab: tab, sub: subTab })) } catch (e) { /* private window, blocked storage */ }
+  }, [activeGroup, tab, subTab])
+
+  // After a refresh the restored screen has no back steps behind it. Rebuild
+  // them the way openGroup / openModule would have, so the back button still
+  // walks out to the group page and then home. A group the user can no longer
+  // see (permissions changed) drops them at home instead.
+  useEffect(function () {
+    if (!initialNav.group) return
+    var g = visibleGroups.find(function (x) { return x.key === initialNav.group })
+    if (!g) { setActiveGroup(null); setTab(null); setSubTab(null); return }
+    if (g.items.length === 1) {
+      pushBack(function () { setTab(null); setActiveGroup(null) })
+      return
+    }
+    pushBack(function () { setActiveGroup(null) })
+    if (initialNav.tab) pushBack(function () { setTab(null); setSubTab(null) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function goBack() {
     navBack()
