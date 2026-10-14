@@ -6,7 +6,7 @@ import { formatDateTime } from '../../lib/format'
 // plain colored text rather than another chip/stamp shape: two lookalike
 // badges in the same row read as one blurred-together signal, two different
 // weights read as two different facts.
-function EnteredMark({ entered, enteredByName, enteredAt, canToggle, canUnenter, busy, onToggle }) {
+function EnteredMark({ entered, enteredByName, enteredAt, canToggle, busy, onToggle }) {
   if (!entered) {
     if (!canToggle) return null
     return (
@@ -17,16 +17,21 @@ function EnteredMark({ entered, enteredByName, enteredAt, canToggle, canUnenter,
     )
   }
 
-  var interactive = canToggle && canUnenter
-  var title = 'Entered in Tally' + (enteredByName ? ' by ' + enteredByName : '') + (enteredAt ? ' · ' + formatDateTime(enteredAt) : '') +
-    (canToggle && !canUnenter ? ' (only they can undo)' : '')
+  // One-way once entered: this is a record that it's already been pushed
+  // into Tally, not a checkbox — letting whoever can toggle it un-enter it
+  // again (as a canUnenter prop here used to allow) meant the same bill
+  // could silently flip back to "not entered" after someone already acted
+  // on that being done.
+  var title = 'Entered in Tally' + (enteredByName ? ' by ' + enteredByName : '') + (enteredAt ? ' · ' + formatDateTime(enteredAt) : '')
 
+  // The name is printed, not just left in the hover title — a touch device
+  // has no hover, and "who did this" is the first thing anyone checking a
+  // Tally entry asks.
   return (
-    <button type="button" disabled={busy || !interactive} onClick={interactive ? onToggle : undefined} title={title}
-      className={"shrink-0 whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.04em] text-sky-600 transition-opacity " +
-        (interactive ? "cursor-pointer hover:opacity-70" : "cursor-default")}>
-      Entered
-    </button>
+    <span title={title} className="shrink-0 text-right leading-tight">
+      <span className="block whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.04em] text-sky-600">Entered</span>
+      {enteredByName && <span className="block whitespace-nowrap text-[9.5px] font-medium text-slate-400">{enteredByName}</span>}
+    </span>
   )
 }
 

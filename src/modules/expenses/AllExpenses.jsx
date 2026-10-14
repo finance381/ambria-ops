@@ -205,6 +205,8 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
       pushId(r.acknowledged_by)
       pushId(r.penalized_by)
       pushId(r.deleted_by)
+      pushId(r.tally_entered_by)
+      pushId(r.checked_by)
     })
     var aMap = {}
     if (aUserIds.length > 0) {
@@ -218,6 +220,8 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
         _acknowledgerName: aMap[r.acknowledged_by] || null,
         _penalizerName: aMap[r.penalized_by] || null,
         _deleterName: aMap[r.deleted_by] || null,
+        _enteredByName: aMap[r.tally_entered_by] || null,
+        _checkedByName: aMap[r.checked_by] || null,
       })
     })
     if (append) {
@@ -270,6 +274,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
       return Object.assign({}, x, {
         checked_by: nowChecked ? profile.id : null,
         checked_at: nowChecked ? new Date().toISOString() : null,
+        _checkedByName: nowChecked ? profile.name : null,
       })
     }) })
   }
@@ -286,6 +291,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
       return Object.assign({}, x, {
         tally_entered_by: nowEntered ? profile.id : null,
         tally_entered_at: nowEntered ? new Date().toISOString() : null,
+        _enteredByName: nowEntered ? profile.name : null,
       })
     }) })
   }
@@ -970,9 +976,9 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                       <span className="mt-1 flex justify-end" onClick={function (ev) { ev.stopPropagation() }}>
                         <EnteredMark
                           entered={!!exp.tally_entered_by}
+                          enteredByName={exp._enteredByName}
                           enteredAt={exp.tally_entered_at}
                           canToggle={canMarkEntered}
-                          canUnenter={exp.tally_entered_by === profile?.id || isAdmin}
                           busy={enteringExpId === exp.id}
                           onToggle={function () { toggleExpenseEntered(exp) }}
                         />
@@ -983,6 +989,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                         <CheckedStamp
                           variant="stamp"
                           checked={!!exp.checked_by}
+                          checkerName={exp._checkedByName}
                           checkedAt={exp.checked_at}
                           canToggle={canMarkChecked}
                           canUncheck={exp.checked_by === profile?.id || isAdmin}
