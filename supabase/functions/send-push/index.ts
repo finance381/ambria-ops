@@ -77,6 +77,7 @@ serve(async function (req) {
     var payload = JSON.stringify({ title: title, body: body.body || "", link: body.link || "/ambria-ops/" })
     var sent = 0
     var deadIds = []
+    var sentIds = []
     for (var i = 0; i < subs.length; i++) {
       var s = subs[i]
       try {
@@ -85,6 +86,7 @@ serve(async function (req) {
           payload
         )
         sent++
+        sentIds.push(s.id)
       } catch (err) {
         // 404/410 means the browser/OS has dropped this subscription —
         // nothing will ever succeed against it again, so stop trying.
@@ -94,6 +96,10 @@ serve(async function (req) {
     }
 
     if (deadIds.length > 0) await supa.from("push_subscriptions").delete().in("id", deadIds)
+    // Was always null before — nothing marked a subscription as still good,
+    // so there was no way to tell a live one from one that's just never
+    // failed yet. This is what actually makes staleness checkable.
+    if (sentIds.length > 0) await supa.from("push_subscriptions").update({ last_used_at: new Date().toISOString() }).in("id", sentIds)
 
     return ok({ sent: sent, total: subs.length, pruned: deadIds.length })
   } catch (e) {
