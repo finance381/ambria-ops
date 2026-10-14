@@ -2569,6 +2569,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   ) : (
                     <div className="space-y-1.5">
                       {lmsPayments.map(function (p, pi) {
+                        // LMS itself reports cash payments at 1/10th of the real
+                        // amount (the same quirk the Pending Balance "Cash ×10"
+                        // dot above works around) — bank entries are unaffected.
+                        // Shares that same toggle rather than always-correcting,
+                        // so this still matches what LMS's own screen shows by
+                        // default.
+                        var pIsCash = p.pay_mode && String(p.pay_mode).toLowerCase().indexOf('cash') !== -1
                         return (
                           <div key={pi} className="flex items-start justify-between gap-2 text-[11.5px] bg-white border border-slate-100 rounded-lg px-2.5 py-2">
                             <div className="min-w-0">
@@ -2593,7 +2600,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                               </div>
                             </div>
                             <div className="shrink-0 font-bold text-slate-800 tabular-nums" data-notranslate>
-                              {formatPoints(p.net_amount_paise)}
+                              {formatPoints(p.net_amount_paise * (pIsCash && showActualCash ? 10 : 1))}
                             </div>
                           </div>
                         )
