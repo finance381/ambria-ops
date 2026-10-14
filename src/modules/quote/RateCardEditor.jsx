@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { hasPerm } from '../../lib/permissions'
 import { appConfirm } from '../../components/ui/AppDialog'
@@ -25,6 +26,11 @@ var DECOR_OPTS = [
 ]
 
 function clone(o) { return JSON.parse(JSON.stringify(o)) }
+// Rental rates are always quoted in half-lakh steps (16.5, 7, 13.5...) —
+// auto-computed Target/Floor/Perfect values round to the nearest 0.5
+// instead of 2 decimal places, so they land on the same steps someone
+// would actually type by hand.
+function roundHalf(n) { return Math.round(n * 2) / 2 }
 
 // ── Shared UI atoms ──
 
@@ -83,6 +89,26 @@ function AddRow({ label, onClick }) {
       marginTop: 8,
     }}>+ {label}</button>
   )
+}
+
+// A small floating toast instead of a banner wedged above the tab bar —
+// that pushed every tab's content down by its own height for 3 seconds on
+// every single save, which shifted whatever you were looking at right out
+// from under your cursor. Portaled so the fixed position escapes this
+// page's own overflow:hidden wrapper.
+function SaveToast({ message }) {
+  if (!message) return null
+  var isError = message.indexOf('Error') === 0
+  return createPortal((
+    <div style={{
+      position: 'fixed', top: 24, left: '50%', transform: 'translateX(-50%)',
+      zIndex: 9999, padding: '10px 18px', borderRadius: 10,
+      background: isError ? '#FEE2E2' : '#DCFCE7',
+      color: isError ? C.red : C.green, fontWeight: 600, fontSize: 13,
+      boxShadow: '0 8px 24px rgba(0,0,0,0.18)', border: '1px solid ' + (isError ? '#FCA5A5' : '#86EFAC'),
+      maxWidth: '90vw', textAlign: 'center',
+    }}>{message}</div>
+  ), document.body)
 }
 
 function RemoveBtn({ onClick }) {
@@ -546,19 +572,19 @@ function RentalsEditor({ config, onSave, saving }) {
     var touchedTiers = [tier]
     if (tier === 'q' && vd.t[catIdx] && vd.f[catIdx]) {
       var qv = vd.q[catIdx][slotIdx] || 0
-      var tv = Math.round(qv * (1 - targetPctV) * 100) / 100
+      var tv = roundHalf(qv * (1 - targetPctV))
       vd.t[catIdx][slotIdx] = tv
-      vd.f[catIdx][slotIdx] = Math.round(tv * (1 - floorPctV) * 100) / 100
+      vd.f[catIdx][slotIdx] = roundHalf(tv * (1 - floorPctV))
       touchedTiers = ['q', 't', 'f']
     } else if (tier === 't' && vd.f[catIdx]) {
       var tv2 = vd.t[catIdx][slotIdx] || 0
-      vd.f[catIdx][slotIdx] = Math.round(tv2 * (1 - floorPctV) * 100) / 100
+      vd.f[catIdx][slotIdx] = roundHalf(tv2 * (1 - floorPctV))
       touchedTiers = ['t', 'f']
     }
     if (catIdx === kingsIdx && perfectIdx !== kingsIdx) {
       touchedTiers.forEach(function (tt) {
         if (vd[tt] && vd[tt][kingsIdx] && vd[tt][perfectIdx]) {
-          vd[tt][perfectIdx][slotIdx] = Math.round(((vd[tt][kingsIdx][slotIdx] || 0) - offV) * 100) / 100
+          vd[tt][perfectIdx][slotIdx] = roundHalf((vd[tt][kingsIdx][slotIdx] || 0) - offV)
         }
       })
     }
@@ -1811,13 +1837,7 @@ function RateCardEditor({ profile }) {
       </div>
 
       {/* Save feedback */}
-      {saveMsg && (
-        <div style={{
-          textAlign: 'center', marginBottom: 10, fontSize: 12, padding: 9, borderRadius: 9,
-          background: saveMsg.indexOf('Error') === 0 ? '#FEE2E2' : '#DCFCE7',
-          color: saveMsg.indexOf('Error') === 0 ? C.red : C.green, fontWeight: 600,
-        }}>{saveMsg}</div>
-      )}
+      <SaveToast message={saveMsg} />
 
       {tab === 'masters' && <><EventTypesEditor config={config} onSave={saveKey} saving={saving} /><InquiryModesEditor config={config} onSave={saveKey} saving={saving} /></>}
       {tab === 'config' && <CategoriesEditor config={config} onSave={saveKey} saving={saving} />}
