@@ -463,8 +463,21 @@ function RentalsEditor({ config, onSave, saving }) {
   var slots = config.slots || DEFAULT_SLOTS
   var [draft, setDraft] = useState(clone(rentals))
   var [selV, setSelV] = useState('')
+  // One shared number, not per-venue — filling a King's cell autofills that
+  // same venue's Perfect cell as King's minus this offset. Matched by label
+  // rather than hardcoded to index 0/1 so reordering categories doesn't
+  // silently repoint it.
+  var [offset, setOffset] = useState(config.rental_perfect_offset != null ? config.rental_perfect_offset : 0)
+  var kingsIdx = 0
+  var perfectIdx = 1
+  for (var _ci = 0; _ci < cats.length; _ci++) {
+    var _lbl = (cats[_ci].label || '').toLowerCase()
+    if (_lbl.indexOf('king') !== -1) kingsIdx = _ci
+    if (_lbl.indexOf('perfect') !== -1) perfectIdx = _ci
+  }
 
   useEffect(function () { setDraft(clone(config.rentals || {})) }, [config.rentals])
+  useEffect(function () { setOffset(config.rental_perfect_offset != null ? config.rental_perfect_offset : 0) }, [config.rental_perfect_offset])
 
   // Group venues by parent; each group holds one or more leaf items
   var groups = venues.map(function (p) {
@@ -520,6 +533,9 @@ function RentalsEditor({ config, onSave, saving }) {
     if (!d[selV]) d[selV] = emptyRental()
     d[selV] = padRental(d[selV])
     d[selV][tier][catIdx][slotIdx] = val
+    if (catIdx === kingsIdx && perfectIdx !== kingsIdx && d[selV][tier][perfectIdx]) {
+      d[selV][tier][perfectIdx][slotIdx] = Math.round((val - offset) * 100) / 100
+    }
     setDraft(d)
   }
 
@@ -527,6 +543,16 @@ function RentalsEditor({ config, onSave, saving }) {
 
   return (
     <Card title="Rental Rates (₹L)">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: 10, borderRadius: 9, background: '#FFF8F0', border: '1px solid ' + C.border }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>King's → Perfect offset (₹L)</div>
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Filling a King's cell autofills Perfect as King's − this, for every venue and sub-venue.</div>
+        </div>
+        <div style={{ width: 80, flexShrink: 0 }}>
+          <Num value={offset} onChange={setOffset} />
+        </div>
+        <Btn label="Save" variant="small" onClick={function () { onSave('rental_perfect_offset', offset) }} disabled={saving} />
+      </div>
       <div style={{ marginBottom: 16, padding: 10, background: C.bg, borderRadius: 8 }}>
         {groups.map(function (g, gi) {
           return (
