@@ -2589,7 +2589,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
                   }}>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{td.label}</span>
-                    <span style={{ fontSize: 10.5, fontWeight: 700, color: on ? C.violet : C.muted, whiteSpace: 'nowrap' }}>{td.pct > 0 ? '-' + (td.pct * 100) + '%' : 'Full'}</span>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: on ? C.violet : C.muted, whiteSpace: 'nowrap' }}>{td.pct > 0 ? '-' + (Math.round(td.pct * 10000) / 100) + '%' : 'Full'}</span>
                   </button>)
                 })}
               </div>
