@@ -32,6 +32,7 @@ function StoreRequisitionDetail({ id, onBack }) {
   var [plateSummary, setPlateSummary] = useState(null)
   var [plateLoading, setPlateLoading] = useState(false)
   var [selectedId, setSelectedId] = useState(null)
+  var [linkedEvents, setLinkedEvents] = useState([])
 
   useEffect(function () {
     setLoading(true)
@@ -63,6 +64,11 @@ function StoreRequisitionDetail({ id, onBack }) {
       if (reqRow && reqRow.event_ids && reqRow.event_ids.length > 0) {
         setPlateLoading(true)
         computePlateSummary(reqRow.event_ids).then(function (s) { setPlateSummary(s); setPlateLoading(false) })
+        supabase.from('events_safe').select('id, event_name, client_name, venue_name, function_date')
+          .in('id', reqRow.event_ids)
+          .then(function (evRes) { setLinkedEvents(evRes.data || []) })
+      } else {
+        setLinkedEvents([])
       }
     })
   }, [id])
@@ -104,6 +110,22 @@ function StoreRequisitionDetail({ id, onBack }) {
               )}
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">{createdByName || '—'} · submitted {formatDate(header.created_at)}</p>
+            {header.event_ids && header.event_ids.length > 0 && (
+              <p className="text-xs text-gray-500 mt-1 flex items-center gap-1.5 flex-wrap">
+                <span className="font-semibold text-gray-600">Linked to:</span>
+                {linkedEvents.length === 0 ? (
+                  <span className="text-gray-400">Loading…</span>
+                ) : linkedEvents.map(function (e, i) {
+                  return (
+                    <span key={e.id}>
+                      {(e.event_name || e.client_name || 'Event #' + e.id) +
+                        (e.venue_name ? ' (' + e.venue_name + (e.function_date ? ' · ' + formatDate(e.function_date) : '') + ')' : '')}
+                      {i < linkedEvents.length - 1 ? ',' : ''}
+                    </span>
+                  )
+                })}
+              </p>
+            )}
           </div>
         </div>
       </div>
