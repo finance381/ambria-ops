@@ -463,11 +463,15 @@ function RentalsEditor({ config, onSave, saving }) {
   var slots = config.slots || DEFAULT_SLOTS
   var [draft, setDraft] = useState(clone(rentals))
   var [selV, setSelV] = useState('')
-  // One shared number, not per-venue — filling a King's cell autofills that
-  // same venue's Perfect cell as King's minus this offset. Matched by label
-  // rather than hardcoded to index 0/1 so reordering categories doesn't
-  // silently repoint it.
+  // Three shared numbers, not per-venue. King's -> Perfect is a flat ₹L
+  // offset, same for whichever tier you're filling. Quote -> Target/Floor
+  // are % reductions, applied to whichever category you're filling (not
+  // just King's/Perfect) — fill Quote and the other two tiers follow.
+  // Matched to categories by label rather than hardcoded index 0/1 so
+  // reordering categories doesn't silently repoint it.
   var [offset, setOffset] = useState(config.rental_perfect_offset != null ? config.rental_perfect_offset : 0)
+  var [targetPct, setTargetPct] = useState(config.rental_target_pct != null ? config.rental_target_pct : 0)
+  var [floorPct, setFloorPct] = useState(config.rental_floor_pct != null ? config.rental_floor_pct : 0)
   var kingsIdx = 0
   var perfectIdx = 1
   for (var _ci = 0; _ci < cats.length; _ci++) {
@@ -478,6 +482,8 @@ function RentalsEditor({ config, onSave, saving }) {
 
   useEffect(function () { setDraft(clone(config.rentals || {})) }, [config.rentals])
   useEffect(function () { setOffset(config.rental_perfect_offset != null ? config.rental_perfect_offset : 0) }, [config.rental_perfect_offset])
+  useEffect(function () { setTargetPct(config.rental_target_pct != null ? config.rental_target_pct : 0) }, [config.rental_target_pct])
+  useEffect(function () { setFloorPct(config.rental_floor_pct != null ? config.rental_floor_pct : 0) }, [config.rental_floor_pct])
 
   // Group venues by parent; each group holds one or more leaf items
   var groups = venues.map(function (p) {
@@ -527,15 +533,73 @@ function RentalsEditor({ config, onSave, saving }) {
     return d
   }
 
+  // Cascades one slot's just-edited value outward: Quote -> Target/Floor
+  // (same category, % reduction) and, if the category is King's, that
+  // tier's Perfect cell too (flat ₹L offset). Mutates vd in place — callers
+  // clone first.
+  function cascadeSlot(vd, tier, catIdx, slotIdx, offV, targetPctV, floorPctV) {
+    if (tier === 'q' && vd.t[catIdx] && vd.f[catIdx]) {
+      var qv = vd.q[catIdx][slotIdx] || 0
+      vd.t[catIdx][slotIdx] = Math.round(qv * (1 - targetPctV) * 100) / 100
+      vd.f[catIdx][slotIdx] = Math.round(qv * (1 - floorPctV) * 100) / 100
+    }
+    if (catIdx === kingsIdx && perfectIdx !== kingsIdx) {
+      var tiersTouched = tier === 'q' ? TIERS : [tier]
+      tiersTouched.forEach(function (tt) {
+        if (vd[tt] && vd[tt][kingsIdx] && vd[tt][perfectIdx]) {
+          vd[tt][perfectIdx][slotIdx] = Math.round(((vd[tt][kingsIdx][slotIdx] || 0) - offV) * 100) / 100
+        }
+      })
+    }
+  }
+
+  // Re-applies the three shared offsets across an entire venue's grid
+  // (every category, every slot) — used both for the "Apply to all venues"
+  // bulk action and for live-recomputing the currently open venue the
+  // instant an offset field itself changes, rather than only on the next
+  // cell edit.
+  function applyOffsetsToVenueData(vd, offV, targetPctV, floorPctV) {
+    var d = clone(vd)
+    for (var ci = 0; ci < cats.length; ci++) {
+      for (var si = 0; si < slots.length; si++) {
+        cascadeSlot(d, 'q', ci, si, offV, targetPctV, floorPctV)
+      }
+    }
+    return d
+  }
+
   function updateCell(tier, catIdx, slotIdx, val) {
     if (!selV) return
     var d = clone(draft)
     if (!d[selV]) d[selV] = emptyRental()
     d[selV] = padRental(d[selV])
     d[selV][tier][catIdx][slotIdx] = val
-    if (catIdx === kingsIdx && perfectIdx !== kingsIdx && d[selV][tier][perfectIdx]) {
-      d[selV][tier][perfectIdx][slotIdx] = Math.round((val - offset) * 100) / 100
-    }
+    cascadeSlot(d[selV], tier, catIdx, slotIdx, offset, targetPct, floorPct)
+    setDraft(d)
+  }
+
+  // Live-recompute the venue currently on screen the moment an offset
+  // field itself changes — editing the offset used to only affect the
+  // *next* cell you typed into, leaving already-filled rates stale.
+  function updateOffset(setter, key, val) {
+    setter(val)
+    if (!selV) return
+    var offV = key === 'offset' ? val : offset
+    var targetV = key === 'target' ? val : targetPct
+    var floorV = key === 'floor' ? val : floorPct
+    setDraft(function (prev) {
+      var d = clone(prev)
+      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), offV, targetV, floorV)
+      return d
+    })
+  }
+
+  async function applyToAllVenues() {
+    if (!(await appConfirm('Recalculate every venue and sub-venue’s Target/Floor (and Perfect, from King’s) using the current offsets? This overwrites whatever is already in those cells.'))) return
+    var d = clone(draft)
+    leaves.forEach(function (lf) {
+      d[lf.id] = applyOffsetsToVenueData(padRental(d[lf.id] || emptyRental()), offset, targetPct, floorPct)
+    })
     setDraft(d)
   }
 
@@ -543,15 +607,40 @@ function RentalsEditor({ config, onSave, saving }) {
 
   return (
     <Card title="Rental Rates (₹L)">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: 10, borderRadius: 9, background: '#FFF8F0', border: '1px solid ' + C.border }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>King's → Perfect offset (₹L)</div>
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Filling a King's cell autofills Perfect as King's − this, for every venue and sub-venue.</div>
+      <div style={{ padding: 10, borderRadius: 9, background: '#FFF8F0', border: '1px solid ' + C.border, marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>King's → Perfect offset (₹L)</div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction. Filling a King's cell autofills Perfect as King's − this.</div>
+          </div>
+          <div style={{ width: 80, flexShrink: 0 }}>
+            <Num value={offset} onChange={function (v) { updateOffset(setOffset, 'offset', v) }} />
+          </div>
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_perfect_offset', offset) }} disabled={saving} />
         </div>
-        <div style={{ width: 80, flexShrink: 0 }}>
-          <Num value={offset} onChange={setOffset} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Quote → Target offset (%)</div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>% reduction. Filling any Quote cell autofills that row's Target.</div>
+          </div>
+          <div style={{ width: 80, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Num value={Math.round(targetPct * 10000) / 100} onChange={function (v) { updateOffset(setTargetPct, 'target', v / 100) }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.muted }}>%</span>
+          </div>
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_target_pct', targetPct) }} disabled={saving} />
         </div>
-        <Btn label="Save" variant="small" onClick={function () { onSave('rental_perfect_offset', offset) }} disabled={saving} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Quote → Floor offset (%)</div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>% reduction. Filling any Quote cell autofills that row's Floor.</div>
+          </div>
+          <div style={{ width: 80, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Num value={Math.round(floorPct * 10000) / 100} onChange={function (v) { updateOffset(setFloorPct, 'floor', v / 100) }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.muted }}>%</span>
+          </div>
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_floor_pct', floorPct) }} disabled={saving} />
+        </div>
+        <Btn label="Apply to all venues now" onClick={applyToAllVenues} disabled={saving} style={{ width: '100%', marginTop: 10 }} />
       </div>
       <div style={{ marginBottom: 16, padding: 10, background: C.bg, borderRadius: 8 }}>
         {groups.map(function (g, gi) {
