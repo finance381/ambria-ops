@@ -64,6 +64,24 @@ function StoreRequisitions({ profile }) {
       ;(names || []).forEach(function (n) { map[n.id] = n.name })
       rows = rows.map(function (r) { return Object.assign({}, r, { _createdByName: map[r.created_by] || null }) })
     }
+    // event_ids is the real link to a function — the "LINKED" badge only
+    // ever said whether one existed, never which. Collected across every
+    // row in one batch rather than one query per row.
+    var eventIds = []
+    rows.forEach(function (r) {
+      (r.event_ids || []).forEach(function (id) { if (eventIds.indexOf(id) === -1) eventIds.push(id) })
+    })
+    if (eventIds.length > 0) {
+      var { data: evRows } = await supabase.from('events_safe')
+        .select('id, event_name, client_name, venue_name, function_date')
+        .in('id', eventIds)
+      var evMap = {}
+      ;(evRows || []).forEach(function (e) { evMap[e.id] = e })
+      rows = rows.map(function (r) {
+        var linked = (r.event_ids || []).map(function (id) { return evMap[id] }).filter(Boolean)
+        return Object.assign({}, r, { _linkedEvents: linked })
+      })
+    }
     setReqs(rows)
     setLoading(false)
   }
@@ -224,6 +242,14 @@ function StoreRequisitions({ profile }) {
                       )}
                     </p>
                     <p className="text-xs text-gray-400 mt-0.5">{r._createdByName || '—'} · {formatDate(r.created_at)}</p>
+                    {r._linkedEvents && r._linkedEvents.length > 0 && (
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {r._linkedEvents.map(function (e) {
+                          return (e.event_name || e.client_name || 'Event #' + e.id) +
+                            (e.venue_name ? ' (' + e.venue_name + ')' : '')
+                        }).join(', ')}
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
                     <p className="text-sm font-bold text-indigo-600 whitespace-nowrap">{formatPoints(r.total_paise || 0)}</p>
