@@ -293,7 +293,10 @@ function ContractList({ profile, deepLinkContractId }) {
                       <span className="block text-[10.5px] text-slate-400 tabular-nums">Contracted {formatDate(c.contract_date)}</span>
                     )}
                   </div>
-                  <span className="hidden sm:block text-[13px] text-slate-600 truncate">{[c.venue_name, c.location].filter(Boolean).join(' · ') || '—'}</span>
+                  <div className="hidden sm:block min-w-0">
+                    <span className="block text-[13px] text-slate-600 truncate">{c.venue_name || '—'}</span>
+                    {c.location && <span className="block text-[11px] text-slate-400 truncate">{c.location}</span>}
+                  </div>
                   <span className="hidden sm:block text-right">
                     {isAdmin && c.balance_amount ? (
                       <span className={'text-[13px] font-bold tabular-nums ' + (c.balance_amount < 0 ? 'text-red-600' : 'text-emerald-600')}>
