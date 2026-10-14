@@ -18,6 +18,14 @@ import { appConfirm } from '../../components/ui/AppDialog'
 // question is meant to repeat if asked again, but an "always" catch-all
 // will greet on every single message. Keep "always" rules rare/generic and
 // lean on keyword rules for anything conversational.
+//
+// wa-webhook also enforces a 15-minute cooldown after any auto-reply has
+// just gone out to a contact — a guest typing short follow-up answers to
+// what that reply asked for (a date, a headcount, "vegetarian") can easily
+// contain a word that matches a different rule's keywords, and firing a
+// second unrelated reply on that reads as the bot talking over itself. The
+// same question asked again later, outside that window, still gets
+// answered as designed.
 function RuleFormModal({ open, rule, onClose, onSaved }) {
   var isEdit = !!rule
   var [name, setName] = useState('')

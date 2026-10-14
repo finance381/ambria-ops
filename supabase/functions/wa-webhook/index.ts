@@ -40,6 +40,23 @@ async function maybeAutoReply(supa, SUPABASE_URL, SERVICE_ROLE, contactId, bodyT
   if (!bodyText || !bodyText.trim()) return
   var lowerBody = bodyText.toLowerCase()
 
+  // A guest directly answering what our own first auto-reply just asked for
+  // (date, headcount, food preference, "basic"/"minimal"...) very often
+  // contains a stray word that happens to match some other rule's keyword
+  // list — "vegetarian" or "basic" are exactly the kind of ordinary words a
+  // keyword rule might reasonably key on. Firing a second, unrelated
+  // auto-reply on what is really just the guest filling in details we asked
+  // for reads as the bot blindly repeating itself. A short cooldown after
+  // any auto-reply already sent catches that case (a reply within minutes)
+  // without touching the documented behaviour of a genuinely new question —
+  // asked again hours or days later — getting answered again.
+  var AUTO_REPLY_COOLDOWN_MS = 15 * 60 * 1000
+  var recentAutoReplyRes = await supa.from("wa_messages").select("created_at")
+    .eq("contact_id", contactId).not("auto_reply_id", "is", null)
+    .order("created_at", { ascending: false }).limit(1)
+  var lastAutoReply = (recentAutoReplyRes.data || [])[0]
+  if (lastAutoReply && (Date.now() - new Date(lastAutoReply.created_at).getTime()) < AUTO_REPLY_COOLDOWN_MS) return
+
   // id as a secondary sort: two rules can share a priority (nothing in the
   // schema forbids it), and without a tiebreaker Postgres doesn't guarantee
   // which one comes first — this makes the older rule win consistently
