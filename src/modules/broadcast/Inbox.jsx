@@ -5,7 +5,8 @@ import { hasPerm } from '../../lib/permissions'
 import { formatDate } from '../../lib/format'
 import Icon from '../../components/ui/Icon'
 import SearchField from '../../components/ui/SearchField'
-import { CTRL, CARD, Chip, Notice, EmptyState, CHIP_GOOD, CHIP_NEUTRAL, WaMessageBody } from './ui'
+import { appConfirm } from '../../components/ui/AppDialog'
+import { CTRL, BTN_DANGER, CARD, Chip, Notice, EmptyState, CHIP_GOOD, CHIP_BAD, CHIP_NEUTRAL, WaMessageBody } from './ui'
 
 // Known limitation, traced to migration 00033: rpc_wa_conversation_reply never
 // populates wa_messages.template_params, so wa-send will fail loudly
@@ -108,10 +109,17 @@ function Inbox({ profile, inAdmin }) {
   var [templateVarValues, setTemplateVarValues] = useState({})
   var [sending, setSending] = useState(false)
   var [error, setError] = useState('')
+  var [optingOut, setOptingOut] = useState(false)
 
-  function loadConversations() {
-    setLoading(true)
-    supabase.from('wa_conversations').select('*, wa_contacts(id, name, phone_e164, venue_affinity)')
+  // silent: a background revalidation (opening a thread marks it read, or
+  // another message arrives over the realtime channel below) should patch
+  // the list in without the full-page "Loading…" swap — that swap unmounts
+  // the scrollable list and remounts it a moment later at the top, which is
+  // what looked like "clicking any conversation refreshes the list and puts
+  // me back at the top." Only the very first load needs the spinner.
+  function loadConversations(silent) {
+    if (!silent) setLoading(true)
+    supabase.from('wa_conversations').select('*, wa_contacts(id, name, phone_e164, venue_affinity, opt_status)')
       .order('last_message_at', { ascending: false }).limit(200)
       .then(function (res) { setConversations(res.data || []); setLoading(false) })
   }
@@ -123,7 +131,7 @@ function Inbox({ profile, inAdmin }) {
 
     var channel = supabase.channel('wa_inbox_live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'wa_messages' }, function () {
-        loadConversations()
+        loadConversations(true)
         if (activeConv) loadMessages(activeConv)
       })
       .subscribe()
@@ -146,7 +154,23 @@ function Inbox({ profile, inAdmin }) {
     if (!inAdmin && !activeConv) pushBack(function () { setActiveConv(null) })
     setActiveConv(conv); setComposerText(''); setTemplatePickerOpen(false); setPendingTemplate(null); setError('')
     loadMessages(conv)
-    supabase.rpc('rpc_wa_mark_read', { p_conversation_id: conv.id }).then(function () { loadConversations() })
+    supabase.rpc('rpc_wa_mark_read', { p_conversation_id: conv.id }).then(function () { loadConversations(true) })
+  }
+
+  async function optOutContact() {
+    if (optingOut || !activeConv) return
+    if (!(await appConfirm('Opt this contact out of all future campaign messages? They can still reply to you, and you can still reply back, but no campaign will ever target them again.'))) return
+    setOptingOut(true)
+    var res = await supabase.rpc('rpc_wa_contact_opt_out', {
+      p_phone: activeConv.wa_contacts.phone_e164, p_reason: 'manual', p_source: 'manual',
+    })
+    setOptingOut(false)
+    if (res.error) { setError(res.error.message); return }
+    setActiveConv(function (prev) {
+      if (!prev) return prev
+      return Object.assign({}, prev, { wa_contacts: Object.assign({}, prev.wa_contacts, { opt_status: 'opted_out' }) })
+    })
+    loadConversations(true)
   }
 
   function matchesMode(c, mode) {
@@ -300,7 +324,19 @@ function Inbox({ profile, inAdmin }) {
                   <p className="text-[11px] text-slate-500 font-mono truncate" data-notranslate>{activeConv.wa_contacts.phone_e164}</p>
                 </div>
               </div>
-              <Chip tone={isOpen ? CHIP_GOOD : CHIP_NEUTRAL}>{isOpen ? 'Session open' : 'Session closed'}</Chip>
+              <div className="flex items-center gap-2 shrink-0">
+                {activeConv.wa_contacts.opt_status === 'opted_out' ? (
+                  <Chip tone={CHIP_BAD}>Opted out</Chip>
+                ) : (
+                  <button type="button" onClick={optOutContact} disabled={optingOut}
+                    title="Opt this contact out of all future campaign messages"
+                    className={BTN_DANGER + ' h-8 px-2.5 text-[12px]'}>
+                    <Icon name="close" size={13} strokeWidth={2.2} />
+                    {optingOut ? 'Opting out…' : 'Opt out'}
+                  </button>
+                )}
+                <Chip tone={isOpen ? CHIP_GOOD : CHIP_NEUTRAL}>{isOpen ? 'Session open' : 'Session closed'}</Chip>
+              </div>
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto ambria-thin-scroll p-3 space-y-1.5 bg-slate-50/60">
