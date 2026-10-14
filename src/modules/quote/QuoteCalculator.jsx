@@ -48,8 +48,15 @@ function classifyDate(val, seasonDates) {
   var d = new Date(val + 'T00:00:00')
   if (isNaN(d)) return -1
   var mm = d.getMonth(), dd = d.getDate()
-  var key = (mm + 1 < 10 ? '0' : '') + (mm + 1) + '-' + (dd < 10 ? '0' : '') + dd
-  if (seasonDates && seasonDates[key] != null) return seasonDates[key]
+  var mmdd = (mm + 1 < 10 ? '0' : '') + (mm + 1) + '-' + (dd < 10 ? '0' : '') + dd
+  // season_dates is now keyed per real date ("YYYY-MM-DD"), scoped to the
+  // year it was painted in — a bare "MM-DD" key is legacy data that still
+  // applies to any year without its own explicit entry.
+  if (seasonDates) {
+    var fullKey = d.getFullYear() + '-' + mmdd
+    if (seasonDates[fullKey] != null) return seasonDates[fullKey]
+    if (seasonDates[mmdd] != null) return seasonDates[mmdd]
+  }
   return 2
 }
 // Parses the month threshold a TTD tier's label encodes ("Full rate" -> no

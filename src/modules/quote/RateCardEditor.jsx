@@ -1363,9 +1363,26 @@ function SeasonCalendar({ config, onSave, saving }) {
     })
   }
 
+  // season_dates used to be keyed purely by "MM-DD" with no year at all —
+  // the year-nav arrows implied each year was independently paintable, but
+  // every year actually read and wrote the exact same key, so repainting a
+  // date in 2027 silently repainted it in 2026 (and every other year) too.
+  // Now a cell is written as a full "YYYY-MM-DD" key, scoped to the year
+  // being viewed — but a bare legacy "MM-DD" key, if present, is still read
+  // as the fallback for any year that hasn't been explicitly repainted, so
+  // existing data keeps applying everywhere until someone overrides a
+  // specific year.
+  function effectiveCat(mm, dd) {
+    var full = viewYear + '-' + pad2(mm + 1) + '-' + pad2(dd)
+    if (draftRef.current[full] != null) return draftRef.current[full]
+    var legacy = pad2(mm + 1) + '-' + pad2(dd)
+    if (draftRef.current[legacy] != null) return draftRef.current[legacy]
+    return -1
+  }
+
   function toggleDate(mm, dd) {
-    var key = pad2(mm + 1) + '-' + pad2(dd)
-    if (draftRef.current[key] === brush) { delete draftRef.current[key] } else { draftRef.current[key] = brush }
+    var full = viewYear + '-' + pad2(mm + 1) + '-' + pad2(dd)
+    if (effectiveCat(mm, dd) === brush) { delete draftRef.current[full] } else { draftRef.current[full] = brush }
     flushDraft()
   }
 
@@ -1376,8 +1393,8 @@ function SeasonCalendar({ config, onSave, saving }) {
     var cur = new Date(start)
     while (cur <= end) {
       var mm = cur.getMonth(), dd = cur.getDate()
-      var key = pad2(mm + 1) + '-' + pad2(dd)
-      if (paintMode.current === 'erase') { delete draftRef.current[key] } else { draftRef.current[key] = brush }
+      var full = viewYear + '-' + pad2(mm + 1) + '-' + pad2(dd)
+      if (paintMode.current === 'erase') { delete draftRef.current[full] } else { draftRef.current[full] = brush }
       cur.setDate(cur.getDate() + 1)
     }
     flushDraft()
@@ -1422,7 +1439,7 @@ function SeasonCalendar({ config, onSave, saving }) {
         if (mm < 1 || mm > 12 || dd < 1 || dd > 31) { skipped++; continue }
         var catIdx = catMap[catName.toLowerCase()]
         if (catIdx == null) { skipped++; continue }
-        imported[mmdd] = catIdx
+        imported[viewYear + '-' + mmdd] = catIdx
         count++
       }
       draftRef.current = imported
@@ -1435,11 +1452,17 @@ function SeasonCalendar({ config, onSave, saving }) {
   }
 
   function handleExport() {
+    // Exports what this year actually shows (explicit overrides merged with
+    // any legacy fallback), as real dates — not just the raw keys on file,
+    // which may be year-less legacy entries or another year's overrides.
     var lines = ['date,category']
-    var keys = Object.keys(draftRef.current).sort()
-    for (var i = 0; i < keys.length; i++) {
-      var cat = cats[draftRef.current[keys[i]]]
-      if (cat) lines.push(keys[i] + ',' + cat.label)
+    for (var mi = 0; mi < 12; mi++) {
+      var daysInM = new Date(viewYear, mi + 1, 0).getDate()
+      for (var di = 1; di <= daysInM; di++) {
+        var c = effectiveCat(mi, di)
+        var cat = cats[c]
+        if (cat) lines.push(viewYear + '-' + pad2(mi + 1) + '-' + pad2(di) + ',' + cat.label)
+      }
     }
     var blob = new Blob([lines.join('\n')], { type: 'text/csv' })
     var url = URL.createObjectURL(blob)
@@ -1450,15 +1473,13 @@ function SeasonCalendar({ config, onSave, saving }) {
   }
 
   function getCat(mm, dd) {
-    var key = pad2(mm + 1) + '-' + pad2(dd)
-    var val = draftRef.current[key]
-    return val != null ? val : -1
+    return effectiveCat(mm, dd)
   }
 
   function onGridDown(e) {
     var c = cellFromEvent(e); if (!c) return
     e.preventDefault()
-    paintMode.current = draftRef.current[pad2(c.m + 1) + '-' + pad2(c.d)] === brush ? 'erase' : 'paint'
+    paintMode.current = effectiveCat(c.m, c.d) === brush ? 'erase' : 'paint'
     pointerRef.current = true; lastPainted.current = { m: c.m, d: c.d }
     toggleDate(c.m, c.d)
   }
@@ -1489,10 +1510,19 @@ function SeasonCalendar({ config, onSave, saving }) {
     return cells
   }
 
-  // Stats per category
+  // Stats per category — the effective day-by-day picture for the viewed
+  // year (explicit overrides merged with any legacy fallback), not a raw
+  // key count, since keys may now span other years or be year-less legacy
+  // entries that don't apply to every day of this one.
   var counts = {}
   cats.forEach(function (c, i) { counts[i] = 0 })
-  Object.keys(draft).forEach(function (k) { if (counts[draft[k]] != null) counts[draft[k]]++ })
+  for (var cmi = 0; cmi < 12; cmi++) {
+    var cDays = new Date(viewYear, cmi + 1, 0).getDate()
+    for (var cdi = 1; cdi <= cDays; cdi++) {
+      var cc = effectiveCat(cmi, cdi)
+      if (counts[cc] != null) counts[cc]++
+    }
+  }
 
   return (
     <Card title="Season Dates">
