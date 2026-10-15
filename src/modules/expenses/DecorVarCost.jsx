@@ -279,13 +279,13 @@ function DecorVarCost({ profile, inAdmin }) {
   // Writes the group's detail on every sheet in it; the group's key follows.
   async function saveGroupDetail(g) {
     var d = groupDetail.trim()
-    if (!d) { setGroupDetailErr('Write the detail first'); return }
+    if (!d) { setGroupDetailErr('Write the detail first'); return false }
     setGroupDetailSaving(true); setGroupDetailErr('')
     var { error } = await supabase.rpc('fn_dvc_set_event_detail', {
       p_cost_ids: g.records.map(function (r) { return r.id }), p_detail: d,
     })
     setGroupDetailSaving(false)
-    if (error) { setGroupDetailErr(error.message); return }
+    if (error) { setGroupDetailErr(error.message); return false }
     // Renamed in place first, so the open group never blinks empty.
     var ids = g.records.map(function (r) { return r.id })
     setRecords(function (rs) { return (rs || []).map(function (r) { return ids.indexOf(r.id) !== -1 ? Object.assign({}, r, { event_detail: d }) : r }) })
@@ -294,6 +294,21 @@ function DecorVarCost({ profile, inAdmin }) {
     setGroupKey(nk)
     setFlash('Detail saved')
     loadList()
+    return true
+  }
+
+  // + Add department in a group view. A group with no name yet: whatever is
+  // typed in its detail box is saved first; either way the new sheet is set
+  // up as this group's, so it joins this card.
+  async function addDepartment(g, named) {
+    if (named) { startNewIn(g); return }
+    var d = groupDetail.trim()
+    if (d) {
+      if (!(await saveGroupDetail(g))) return
+      startNewIn(Object.assign({}, g, { kind: g.kind === 'd' ? 'e' : g.kind, first: Object.assign({}, g.first, { event_detail: d }) }))
+      return
+    }
+    startNewIn(g)
   }
 
   async function backButton() {
@@ -383,7 +398,15 @@ function DecorVarCost({ profile, inAdmin }) {
     // The function (or event detail) is the group's: setup shows it as a
     // summary and only asks for the department.
     var info = groupInfo(g)
-    h.locked = { kind: g.kind, title: info.title, sub: h.is_function ? 'Function · ' + formatDate(h.function_date) : 'Not for a function' }
+    h.locked = {
+      kind: g.kind, title: info.title, sub: h.is_function ? 'Function · ' + formatDate(h.function_date) : 'Not for a function',
+      // Departments this group already has: one sheet each; more dates go
+      // on that sheet, not a second one.
+      used: groupDepts(g),
+      // An older not-for-a-function group is keyed on its first date: the new
+      // sheet's first date is that one, so it lands in the same card.
+      date: g.kind === 'd' ? g.value : '',
+    }
     setCur(null)
     setHdr(h)
     setSetupErr('')
@@ -436,9 +459,10 @@ function DecorVarCost({ profile, inAdmin }) {
     if (h.is_function && !h.function_date) return 'Pick the function date'
     // A function sheet belongs to one of the day's bookings, so the list can
     // put each function's departments together. Only when that day has any.
-    if (h.is_function && !h.event_id && !(h.event_detail || '').trim() && events.length > 0) return 'Pick the function this sheet is for, or write its detail'
+    if (h.is_function && !h.locked && !h.event_id && !(h.event_detail || '').trim() && events.length > 0) return 'Pick the function this sheet is for, or write its detail'
     if (!h.is_function && !(h.event_detail || '').trim()) return 'Write the event detail'
     if (!h.sheet_code) return 'Pick the department'
+    if (h.locked && !(cur && cur.id) && (h.locked.used || []).indexOf(h.sheet_code) !== -1) return 'This department is already in this group — add dates on its sheet'
     return ''
   }
 
@@ -501,6 +525,7 @@ function DecorVarCost({ profile, inAdmin }) {
         if (used.indexOf(d) === -1) return d
       }
     }
+    if (c.locked && c.locked.date && used.indexOf(c.locked.date) === -1) return c.locked.date
     var t = todayIso()
     return used.indexOf(t) === -1 ? t : ''
   }
@@ -794,9 +819,10 @@ function DecorVarCost({ profile, inAdmin }) {
             <div className={CARD + ' p-3.5 space-y-3'}>
               <div>
                 <label className="block text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Department</label>
-                <div className="flex gap-1.5 flex-wrap">
+                {/* An even grid on the phone; wraps on the wider admin screen. */}
+                <div className={wide ? 'flex gap-1.5 flex-wrap' : 'grid grid-cols-3 gap-1.5'}>
                   <button type="button" onClick={function () { setDeptFilter('') }} aria-pressed={deptFilter === ''}
-                    className={'px-3 py-1.5 rounded-full border text-[11.5px] font-bold transition-colors ' +
+                    className={'min-w-0 truncate text-center whitespace-nowrap px-3 py-1.5 rounded-full border text-[11.5px] font-bold transition-colors ' +
                       (deptFilter === '' ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')}>
                     All
                   </button>
@@ -804,7 +830,7 @@ function DecorVarCost({ profile, inAdmin }) {
                     var on = deptFilter === s.code
                     return (
                       <button key={s.code} type="button" onClick={function () { setDeptFilter(on ? '' : s.code) }} aria-pressed={on}
-                        className={'px-3 py-1.5 rounded-full border text-[11.5px] font-bold transition-colors ' +
+                        className={'min-w-0 truncate text-center whitespace-nowrap px-3 py-1.5 rounded-full border text-[11.5px] font-bold transition-colors ' +
                           (on ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')}>
                         {s.name}
                       </button>
@@ -912,6 +938,12 @@ function DecorVarCost({ profile, inAdmin }) {
     }
   }
 
+  function groupDepts(g) {
+    var out = []
+    g.records.forEach(function (r) { if (out.indexOf(r.sheet_code) === -1) out.push(r.sheet_code) })
+    return out
+  }
+
   function groupIcon(g) {
     return (
       <span className={'shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center ' +
@@ -979,6 +1011,11 @@ function DecorVarCost({ profile, inAdmin }) {
       )
     }
     var info = groupInfo(g)
+    var named = g.kind === 'f' || g.kind === 'e' || (g.kind === 'u' && !!(g.first.event_detail || '').trim())
+    var usedDepts = groupDepts(g)
+    var canAddDept = g.kind === 'e' || g.kind === 'd'
+      ? SHEETS.some(function (sh) { return usedDepts.indexOf(sh.code) === -1 })
+      : !g.records.some(function (r) { return r.status === 'submitted' })
     return (
       <div className="space-y-3">
         {header(info.title, info.sub + ' · ' + formatPoints(info.total) + (info.anyDraft ? ' so far' : ''))}
@@ -1035,11 +1072,18 @@ function DecorVarCost({ profile, inAdmin }) {
             )
           })}
         </div>
-        {(g.kind === 'f' || g.kind === 'e' || (g.kind === 'u' && g.first.event_detail)) && (
-          <button type="button" onClick={function () { startNewIn(g) }}
-            className="w-full h-11 inline-flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/40 text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 transition-colors">
-            <Icon name="plus" size={15} strokeWidth={2.4} />Add department
-          </button>
+        {/* Not for a function: open for any department it doesn't have yet
+            (a department it has takes more dates on its own sheet). A
+            function: open only while every sheet is a draft — once any is
+            submitted the function counts as final. */}
+        {canAddDept && (
+          <div>
+            <button type="button" onClick={function () { addDepartment(g, named) }} disabled={groupDetailSaving}
+              className="w-full h-11 inline-flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/40 text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 disabled:opacity-60 transition-colors">
+              <Icon name="plus" size={15} strokeWidth={2.4} />Add department
+            </button>
+            {!named && <p className="mt-1.5 text-center text-[11.5px] font-semibold text-slate-500">Tip: write the {g.kind === 'u' ? 'function' : 'event'} detail above so new sheets join this card</p>}
+          </div>
         )}
       </div>
     )
@@ -1201,7 +1245,8 @@ function DecorVarCost({ profile, inAdmin }) {
           <div className={'grid gap-2 grid-cols-3' + (wide ? ' lg:grid-cols-5' : '')}>
             {SHEETS.map(function (s) {
               var on = hdr.sheet_code === s.code
-              var locked = editing && !on
+              var taken = !editing && !!hdr.locked && (hdr.locked.used || []).indexOf(s.code) !== -1
+              var locked = (editing && !on) || taken
               return (
                 <button key={s.code} type="button" disabled={locked}
                   onClick={function () { setSetupErr(''); setH({ sheet_code: s.code }) }} aria-pressed={on}
@@ -1209,7 +1254,7 @@ function DecorVarCost({ profile, inAdmin }) {
                     (on ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500'
                       : locked ? 'border-slate-200 bg-slate-50 opacity-50'
                         : 'border-slate-200 bg-white hover:border-indigo-300 active:scale-[0.98]')}>
-                  <span className={'block font-mono text-[10.5px] font-bold tracking-[0.04em] ' + (on ? 'text-indigo-600' : 'text-slate-400')}>{s.code === 'COMMISSION' ? 'COM' : s.code}</span>
+                  <span className={'block font-mono text-[10.5px] font-bold tracking-[0.04em] ' + (on ? 'text-indigo-600' : 'text-slate-400')}>{taken ? 'Added' : s.code === 'COMMISSION' ? 'COM' : s.code}</span>
                   <span className={'block text-[13.5px] font-bold leading-tight truncate ' + (on ? 'text-indigo-900' : 'text-slate-800')}>{s.name}</span>
                 </button>
               )
