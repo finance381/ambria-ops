@@ -152,6 +152,8 @@ var adminItemsCache = null
 
 function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
   var canViewCosts = hasPerm(profile?.permsNew, 'finance.view_costs')
+  // + Add Item beside Tools: the phone's Add Item form, in a popup.
+  var canAdd = hasPerm(profile?.permsNew, 'inventory.add')
   var [items, setItems] = useState([])
   var [loading, setLoading] = useState(true)
   var [search, setSearch] = useState('')
@@ -255,6 +257,7 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
     closePreview(false)
   }
   var [editItem, setEditItem] = useState(null)
+  var [addOpen, setAddOpen] = useState(false)
   // The item a delete is being confirmed for (the whole row, so the dialog
   // can show what it is), and whether the delete is running.
   var [deleteConfirm, setDeleteConfirm] = useState(null)
@@ -1348,6 +1351,12 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
           className="inline-flex items-center gap-2 h-12 px-4 text-[14px] font-semibold bg-white border border-[#ECE4DC] rounded-2xl text-slate-800 hover:bg-[#FAF6F2] hover:border-[#E0D4C8] transition-colors">
           <Icon name="wrench" size={16} />Tools
         </button>
+        {canAdd && (
+          <button type="button" onClick={function () { setAddOpen(true) }}
+            className="inline-flex items-center gap-2 h-12 px-4 text-[14px] font-semibold text-white bg-[#3B4668] border border-[#3B4668] rounded-2xl hover:bg-[#2F3854] transition-colors">
+            <Icon name="plus" size={16} strokeWidth={2.4} />Add Item
+          </button>
+        )}
       </div>
 
       {/* The finer filters, in three groups — Category, Location, Details —
@@ -1741,6 +1750,17 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
             </div>
           )
         })()}
+      </Modal>
+      {/* Add modal — the same form as the phone's Add Item */}
+      <Modal open={addOpen} onClose={function () { setAddOpen(false) }} title="Add Item">
+        {addOpen && (
+          <InventoryForm
+            item={null}
+            profile={profile}
+            onClose={function () { setAddOpen(false) }}
+            onSaved={function () { setAddOpen(false); loadData() }}
+          />
+        )}
       </Modal>
       {/* Edit modal */}
       <Modal open={!!editItem} onClose={function () { setEditItem(null) }} title="Edit Item" wide>

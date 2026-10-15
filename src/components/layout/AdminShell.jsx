@@ -188,7 +188,7 @@ var SUB_TAB_CONFIG = {
   expenses: [
     { key: 'wallet',         label: 'Wallet',         icon: 'wallet',     component: Wallet,         perm: 'finance.wallet' },
     { key: 'expenses',       label: 'Expenses',       icon: 'receipt',    component: Expenses,       perm: 'finance.expenses' },
-    { key: 'decor_var_cost', label: 'Decor Var Cost', icon: 'calculator', component: DecorVarCost,   perm: 'finance.expenses' },
+    { key: 'decor_var_cost', label: 'Decor Var Cost', icon: 'calculator', component: DecorVarCost,   perm: 'finance.decor_var_cost' },
     { key: 'payments',       label: 'Payments',       icon: 'transfer',   component: Payments,       perm: 'finance.payments' },
     { key: 'salary_payouts', label: 'Salary Payouts', icon: 'banknote',   component: SalaryPayouts,  perm: 'finance.salary_payouts' },
     { key: 'ledgers',        label: 'Ledgers',        icon: 'list',       component: LedgersHub,
@@ -298,7 +298,7 @@ var ADMIN_TABS = [
     anyPerm: ['review.inventory','review.item_receipts','review.expenses','review.requisitions','review.vendor_payments'] },
   { key: 'expenses',    label: 'Finance',     icon: 'creditCard',
     blurb: 'Track and manage all your financial activities in one place.',
-    anyPerm: ['finance.wallet','finance.expenses','finance.payments','finance.salary_payouts','finance.cost_transfers','finance.ledgers.expense','finance.ledgers.event','finance.ledgers.vendor','finance.ledgers.salary','finance.ledgers.inventory','finance.ledgers.cost_transfer','finance.ledgers.gv'] },
+    anyPerm: ['finance.wallet','finance.expenses','finance.decor_var_cost','finance.payments','finance.salary_payouts','finance.cost_transfers','finance.ledgers.expense','finance.ledgers.event','finance.ledgers.vendor','finance.ledgers.salary','finance.ledgers.inventory','finance.ledgers.cost_transfer','finance.ledgers.gv'] },
   { key: 'procurement', label: 'Procurement', icon: 'cart',
     blurb: 'Requisitions, purchase orders and vendors.',
     anyPerm: ['procurement.requisitions','procurement.purchase_orders','procurement.vendors'] },

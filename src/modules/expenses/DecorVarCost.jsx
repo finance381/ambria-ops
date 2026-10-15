@@ -77,7 +77,9 @@ function groupFunctions(rows) {
 }
 
 function emptyHeader() {
-  return { is_function: false, function_date: '', event_id: '', venue_id: '', sub_venue_id: '', event_detail: '', sheet_code: '' }
+  // Every new sheet starts on a date: then a booking from that day, or a
+  // written detail when it isn't one.
+  return { is_function: true, function_date: '', event_id: '', venue_id: '', sub_venue_id: '', event_detail: '', sheet_code: '' }
 }
 
 // The list's groups (kind is the key's first letter):
@@ -138,7 +140,7 @@ function DecorVarCost({ profile, inAdmin }) {
   var wide = !!inAdmin
   var BAR = BAR_GLASS + (wide ? 'sticky bottom-0 -mx-4' : 'fixed bottom-0 inset-x-0 mx-auto w-full max-w-[540px]')
   var permsNew = profile?.permsNew || []
-  var canApprove = hasPerm(permsNew, 'finance.expenses.approve')
+  var canApprove = hasPerm(permsNew, 'finance.decor_var_cost.approve')
   var refData = useReferenceData()
   var venues = refData.venues.filter(function (v) { return v.active }).slice().sort(byName)
 
@@ -459,7 +461,7 @@ function DecorVarCost({ profile, inAdmin }) {
     if (h.is_function && !h.function_date) return 'Pick the function date'
     // A function sheet belongs to one of the day's bookings, so the list can
     // put each function's departments together. Only when that day has any.
-    if (h.is_function && !h.locked && !h.event_id && !(h.event_detail || '').trim() && events.length > 0) return 'Pick the function this sheet is for, or write its detail'
+    if (h.is_function && !h.locked && !h.event_id && !(h.event_detail || '').trim()) return 'Pick a function, or write what it is for'
     if (!h.is_function && !(h.event_detail || '').trim()) return 'Write the event detail'
     if (!h.sheet_code) return 'Pick the department'
     if (h.locked && !(cur && cur.id) && (h.locked.used || []).indexOf(h.sheet_code) !== -1) return 'This department is already in this group — add dates on its sheet'
@@ -633,7 +635,7 @@ function DecorVarCost({ profile, inAdmin }) {
   function submitProblem(c) {
     var sheet = getSheet(c.sheet_code)
     var p = setupProblem({
-      is_function: c.is_function, function_date: c.function_date || '', venue_id: c.venue_id ? String(c.venue_id) : '',
+      is_function: c.is_function, function_date: c.function_date || '', event_id: c.event_id ? String(c.event_id) : '', venue_id: c.venue_id ? String(c.venue_id) : '',
       sub_venue_id: c.sub_venue_id ? String(c.sub_venue_id) : '', event_detail: c.event_detail || '', sheet_code: c.sheet_code,
     })
     if (p) return { message: p + ' — tap Edit details' }
@@ -739,17 +741,6 @@ function DecorVarCost({ profile, inAdmin }) {
       <div role="alert" className="flex items-start gap-2 rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-[12.5px] font-semibold text-red-700">
         <Icon name="alert" size={15} className="shrink-0 mt-px" /><span className="min-w-0">{msg}</span>
       </div>
-    )
-  }
-
-  function toggle(on, onChange, label) {
-    return (
-      <button type="button" onClick={function () { onChange(!on) }} aria-pressed={on} aria-label={label}
-        className="shrink-0 flex items-center">
-        <span className={'relative block w-11 h-6 rounded-full transition-colors ' + (on ? 'bg-indigo-600' : 'bg-slate-300')}>
-          <span className={'absolute block top-0.5 w-5 h-5 bg-white rounded-full shadow transition-[left] duration-200 ' + (on ? 'left-[22px]' : 'left-0.5')} />
-        </span>
-      </button>
     )
   }
 
@@ -922,7 +913,7 @@ function DecorVarCost({ profile, inAdmin }) {
     } else if (g.kind === 'u') {
       var ud = (g.first.event_detail || '').trim()
       title = ud || 'Not linked to a function'
-      sub = 'Function · ' + formatDate(g.value) + ' · ' + sheets + (ud ? '' : ' · open to write the function detail')
+      sub = (ud ? formatDate(g.value) : 'Function · ' + formatDate(g.value)) + ' · ' + sheets + (ud ? '' : ' · open to write what it is for')
     } else if (g.kind === 'e') {
       title = (g.first.event_detail || '').trim()
       sub = 'Not for a function · ' + sheets
@@ -947,8 +938,8 @@ function DecorVarCost({ profile, inAdmin }) {
   function groupIcon(g) {
     return (
       <span className={'shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center ' +
-        (g.kind === 'f' || (g.kind === 'u' && g.first.event_detail) ? 'bg-indigo-50 text-indigo-600' : g.kind === 'u' ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-600')}>
-        <Icon name={g.kind === 'f' || g.kind === 'u' ? 'calendar' : 'tag'} size={17} />
+        (g.kind === 'f' ? 'bg-indigo-50 text-indigo-600' : g.kind === 'u' && !g.first.event_detail ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-600')}>
+        <Icon name={g.kind === 'f' || (g.kind === 'u' && !g.first.event_detail) ? 'calendar' : 'tag'} size={17} />
       </span>
     )
   }
@@ -1116,25 +1107,20 @@ function DecorVarCost({ profile, inAdmin }) {
           </div>
         )}
 
-        {/* For a function? — the same switch the Expense form opens with. */}
+        {/* The date, then that day's function — or a written detail when it
+            isn't one. No switch: every new sheet has a date. An older sheet
+            saved as not for a function keeps just its event detail. */}
         {!hdr.locked && (
         <div className={CARD + ' p-3.5 space-y-3'}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className={'shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center transition-colors ' +
-                (hdr.is_function ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400')}>
-                <Icon name="calendar" size={17} />
-              </span>
-              <span className="min-w-0">
-                <span className="block font-display text-[15px] font-bold tracking-[-0.01em] text-slate-900">For a function?</span>
-                <span className="block text-[11.5px] text-slate-500 leading-snug">{hdr.is_function ? 'Date, venue and sub venue, then the department' : 'The event detail, then the department'}</span>
-              </span>
-            </div>
-            {toggle(hdr.is_function, function (v) {
-              setSetupErr('')
-              if (v) setH({ is_function: true })
-              else { setH({ is_function: false, function_date: '', event_id: '', venue_id: '', sub_venue_id: '' }); setEvents([]) }
-            }, 'For a function?')}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className={'shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center ' +
+              (hdr.is_function ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-600')}>
+              <Icon name={hdr.is_function ? 'calendar' : 'tag'} size={17} />
+            </span>
+            <span className="min-w-0">
+              <span className="block font-display text-[15px] font-bold tracking-[-0.01em] text-slate-900">{hdr.is_function ? 'Date & function' : 'Not for a function'}</span>
+              <span className="block text-[11.5px] text-slate-500 leading-snug">{hdr.is_function ? 'Pick the date, then its function — or write what it is for' : 'The event detail, then the department'}</span>
+            </span>
           </div>
 
           {/* Not for a function: what it was for. Sheets with the same detail
@@ -1156,8 +1142,8 @@ function DecorVarCost({ profile, inAdmin }) {
           {hdr.is_function && (
             <div className="pt-3 border-t border-slate-100 space-y-4">
               <div>
-                {stepLabel(1, 'Function date', !!hdr.function_date)}
-                <EventDatePicker value={hdr.function_date} collapsible includePast placeholder="Pick the function date"
+                {stepLabel(1, 'Date', !!hdr.function_date)}
+                <EventDatePicker value={hdr.function_date} collapsible includePast placeholder="Pick the date"
                   onChange={function (d) { setH({ function_date: d, event_id: '' }); loadEventsByDate(d) }} />
                 {eventsLoading && <p className="mt-2 text-[12.5px] text-slate-500">Loading functions…</p>}
                 {hdr.function_date && !eventsLoading && events.length > 0 && (
@@ -1192,7 +1178,7 @@ function DecorVarCost({ profile, inAdmin }) {
                 )}
                 {hdr.function_date && !eventsLoading && !hdr.event_id && (
                   <div className="mt-2.5">
-                    <p className="text-[11.5px] font-semibold text-slate-500 mb-1.5">{events.length > 0 ? 'Not in the list? Write the function detail' : 'Function detail'}</p>
+                    <p className="text-[11.5px] font-semibold text-slate-500 mb-1.5">{events.length > 0 ? 'No function from the list? Write what it is for' : 'No functions on this date — write what it is for'}</p>
                     <input type="text" value={hdr.event_detail} maxLength={200} list="dvc-event-details"
                       onChange={function (e) { setSetupErr(''); setH({ event_detail: e.target.value }) }}
                       placeholder="e.g. Sharma wedding, AP lawn"
