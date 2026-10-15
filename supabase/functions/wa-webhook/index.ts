@@ -338,6 +338,7 @@ serve(async function (req) {
   var SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
   var WA_ACCESS_TOKEN = Deno.env.get("WA_ACCESS_TOKEN")
   var WA_API_VERSION = Deno.env.get("WA_API_VERSION") || "v21.0"
+  var WA_PHONE_NUMBER_ID = Deno.env.get("WA_PHONE_NUMBER_ID")
 
   if (req.method === "GET") {
     if (!WA_WEBHOOK_VERIFY_TOKEN) return new Response("Forbidden", { status: 403 })
@@ -382,6 +383,19 @@ serve(async function (req) {
 
         if (field === "message_template_status_update") {
           await handleTemplateStatusUpdate(supa, value)
+          continue
+        }
+
+        // Signature verification only proves this request came from *a*
+        // subscription on our Meta App ("API Marketing") — not that it's
+        // for OUR number. If another project's WhatsApp number ever gets
+        // subscribed to the same app (easy to do by accident when several
+        // numbers share one Business Manager — confirmed happening with
+        // the Valet project's number), Meta delivers its events here too.
+        // metadata.phone_number_id is the one field that says which number
+        // an event is actually for.
+        if (WA_PHONE_NUMBER_ID && value.metadata && value.metadata.phone_number_id && value.metadata.phone_number_id !== WA_PHONE_NUMBER_ID) {
+          console.warn("wa-webhook: ignoring event for foreign phone_number_id " + value.metadata.phone_number_id)
           continue
         }
 
