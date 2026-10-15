@@ -489,6 +489,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [showActualCash, setShowActualCash] = useState(false)
   var [collectAmount, setCollectAmount] = useState('')
   var [collectDesc, setCollectDesc] = useState('')
+  // When the cash/bank actually changed hands — not when it's being
+  // entered into the app, which could be days later. Defaults to today.
+  var [collectTxnDate, setCollectTxnDate] = useState('')
   var [collectImage, setCollectImage] = useState(null)
   var [collectSaving, setCollectSaving] = useState(false)
   var collectVoice = useVoice()
@@ -1272,6 +1275,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setCollectBalance(null)
     setCollectAmount('')
     setCollectDesc('')
+    setCollectTxnDate(toYMD(new Date()))
     setCollectImage(null)
   }
 
@@ -1880,6 +1884,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!collectEventId) { alert('Select a function'); return }
     if (!collectMode) { alert('Select Cash or Bank'); return }
     if (!collectAmount || Number(collectAmount) <= 0) { alert('Enter amount'); return }
+    if (!collectTxnDate) { alert('Select the collection date'); return }
     if (collectMode === 'bank' && !collectImage) { alert('Receipt photo is required for bank collections'); return }
     if (collectMode === 'bank' && !collectBankPaymentType) { alert('Select a payment type'); return }
     setCollectSaving(true)
@@ -1901,7 +1906,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       p_amount_paise: amountRupees,
       p_description: desc,
       p_receipt_path: imagePath,
-      p_bank_payment_type: collectMode === 'bank' ? collectBankPaymentType : null
+      p_bank_payment_type: collectMode === 'bank' ? collectBankPaymentType : null,
+      p_collection_date: collectTxnDate || null,
     })
     if (error) { alert('Collection failed: ' + error.message); setCollectSaving(false); return }
     if (data && data.over_agreed) {
@@ -1916,7 +1922,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         payment_mode: collectMode,
         amount_paise: amountRupees,
         description: desc,
-        created_at: new Date().toISOString(),
+        created_at: collectTxnDate ? collectTxnDate + 'T00:00:00' : new Date().toISOString(),
         reference_id: collectEventId,
       })
     } catch (_) {}
@@ -2404,7 +2410,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var colCashP = collectBalance ? Number(collectBalance.collected_cash_paise || 0) : 0
     var colBankP = collectBalance ? Number(collectBalance.collected_bank_paise || 0) : 0
     var taxP = collectBalance ? Number(collectBalance.tax_amount_paise || 0) : 0
-    var canSubmit = collectEventId && collectMode && collectAmount && Number(collectAmount) > 0 && (collectMode === 'cash' || collectImage) && (collectMode === 'cash' || collectBankPaymentType) && !collectSaving
+    var canSubmit = collectEventId && collectMode && collectAmount && Number(collectAmount) > 0 && collectTxnDate && (collectMode === 'cash' || collectImage) && (collectMode === 'cash' || collectBankPaymentType) && !collectSaving
     return (
       <BottomSheet open={true} onClose={function () { setCollectModal(false) }} title="Collect Payment">
         <div className="space-y-4">
@@ -2639,9 +2645,29 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </div>
           )}
 
+          {collectEventId && collectMode && (function () {
+            var today = toYMD(new Date())
+            var minDate = toYMD(new Date(Date.now() - 3 * 86400000))
+            return (
+              <div>
+                <label htmlFor="collect-txn-date" className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">4. Collection Date</label>
+                <input id="collect-txn-date" type="date" value={collectTxnDate} min={minDate} max={today}
+                  onChange={function (e) {
+                    var v = e.target.value
+                    if (v && v < minDate) { setCollectTxnDate(minDate); return }
+                    if (v && v > today) { setCollectTxnDate(today); return }
+                    setCollectTxnDate(v)
+                  }}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style={{ fontSize: '16px' }} />
+                <p className="text-[10px] text-slate-500 mt-1">When the cash or bank transfer actually happened — today or up to 3 days back.</p>
+              </div>
+            )
+          })()}
+
           {collectEventId && collectMode === 'bank' && (
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">4. Payment Type</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">5. Payment Type</label>
               <select value={collectBankPaymentType} onChange={function (e) { setCollectBankPaymentType(e.target.value) }}
                 className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 style={{ fontSize: '16px' }}>
@@ -2653,7 +2679,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
           {collectEventId && (
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">{collectMode === 'bank' ? '5' : '4'}. Amount Received</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">{collectMode === 'bank' ? '6' : '5'}. Amount Received</label>
               <input type="number" min="1" step="any" inputMode="decimal" value={collectAmount}
                 onChange={function (e) { setCollectAmount(e.target.value) }}
                 placeholder="0" className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -2663,7 +2689,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
           {collectEventId && (
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">{collectMode === 'bank' ? '6' : '5'}. Description</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.08em] mb-2">{collectMode === 'bank' ? '7' : '6'}. Description</label>
               <VoiceInput type="text" value={collectDesc} onChange={function (e) { setCollectDesc(e.target.value) }}
                 placeholder="e.g. Advance payment, Final settlement..."
                 maxLength="300" className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -2672,7 +2698,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
           {collectEventId && (
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{collectMode === 'bank' ? '7' : '6'}. Receipt Photo {collectMode === 'bank' && <span className="text-red-500">*</span>}{collectMode === 'cash' && <span className="text-gray-400 normal-case">(optional)</span>}</label>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{collectMode === 'bank' ? '8' : '7'}. Receipt Photo {collectMode === 'bank' && <span className="text-red-500">*</span>}{collectMode === 'cash' && <span className="text-gray-400 normal-case">(optional)</span>}</label>
               {collectImage ? (
                 <div className="flex items-center gap-2 px-3 py-2.5 border border-green-300 bg-green-50 rounded-lg">
                   <Icon name="checkCircle" size={16} className="shrink-0 text-emerald-600" />
