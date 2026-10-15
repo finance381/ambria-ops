@@ -90,7 +90,7 @@ export async function buildDecorVarCostXlsx(rec, venue, subVenue) {
     var p = rec.function_date.split('-')
     put('B2', new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])), { numFmt: 'dd-mmm-yyyy', alignment: { horizontal: 'left' } })
   } else {
-    put('B2', 'Not for a function')
+    put('B2', rec.event_detail ? 'Not for a function — ' + rec.event_detail : 'Not for a function')
   }
   put('A3', 'Venue Name :', { font: bold })
   ws.mergeCells('B3:D3')
