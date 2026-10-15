@@ -22,9 +22,12 @@ import {
 // migration 00087 for the tables).
 //
 // The flow, one screen at a time:
-//   list    → your sheets, newest first; + New
-//   setup   → For a function? (date → function → venue → sub venue), then
-//             the department, which picks the sheet
+//   list    → your sheets grouped: function sheets by function date, the
+//             rest by their event detail — one small card each, its
+//             departments as chips; + New
+//   group   → one card opened: its sheets, + Add department
+//   setup   → For a function? (date → function → venue → sub venue) or an
+//             event detail, then the department, which picks the sheet
 //   entry   → one date's sheet, Excel-like: the rows, a quantity per row,
 //             Rate and Amount worked out as the sheet does. Save keeps it.
 //   record  → the saved dates, + Add date, the whole sheet, Final Submit
@@ -74,7 +77,37 @@ function groupFunctions(rows) {
 }
 
 function emptyHeader() {
-  return { is_function: false, function_date: '', event_id: '', venue_id: '', sub_venue_id: '', sheet_code: '' }
+  return { is_function: false, function_date: '', event_id: '', venue_id: '', sub_venue_id: '', event_detail: '', sheet_code: '' }
+}
+
+// The list's groups (kind is the key's first letter):
+//   f  a function — its date plus the booking picked (client, venue, session,
+//      name, as funcKeyOf groups a function's per-department contracts), so
+//      two functions on one day are two cards
+//   u  function sheets with no booking picked: by date and their written
+//      function detail (none yet = one card per date, to be named)
+//   e  not for a function, by event detail (case-insensitive)
+//   d  older not-for-a-function sheets without an event detail, by first date
+// Groups keep the records' order (newest first).
+function listGroupKey(r) {
+  if (r.is_function) {
+    if (!r.event) return 'u|' + (r.function_date || '') + '|' + (r.event_detail || '').trim().toLowerCase()
+    return 'f|' + (r.function_date || '') + '|' + funcKeyOf(r.event)
+  }
+  var d = (r.event_detail || '').trim().toLowerCase()
+  if (d) return 'e|' + d
+  var dates = (r.decor_var_cost_entries || []).map(function (e) { return e.entry_date }).sort()
+  return 'd|' + (dates[0] || String(r.created_at || '').slice(0, 10))
+}
+function groupRecords(rows) {
+  var byKey = {}
+  var order = []
+  rows.forEach(function (r) {
+    var k = listGroupKey(r)
+    if (!byKey[k]) { byKey[k] = { key: k, kind: k.charAt(0), value: k.slice(2).split('|')[0], first: r, records: [] }; order.push(k) }
+    byKey[k].records.push(r)
+  })
+  return order.map(function (k) { return byKey[k] })
 }
 
 var STATUS_CHIP = {
@@ -111,6 +144,13 @@ function DecorVarCost({ profile, inAdmin }) {
 
   var [view, setView] = useState('list')
   var viewRef = useRef('list')
+  // The list group open in the 'group' view (its listGroupKey).
+  var [groupKey, setGroupKey] = useState(null)
+  var groupKeyRef = useRef(null)
+  // The group view's written detail (function / event detail) being edited.
+  var [groupDetail, setGroupDetail] = useState('')
+  var [groupDetailSaving, setGroupDetailSaving] = useState(false)
+  var [groupDetailErr, setGroupDetailErr] = useState('')
   useEffect(function () { viewRef.current = view }, [view])
 
   // ── list ──
@@ -173,7 +213,7 @@ function DecorVarCost({ profile, inAdmin }) {
     })
   }, [])
 
-  useEffect(function () { if (view === 'list') loadList() }, [view, scope])
+  useEffect(function () { if (view === 'list' || view === 'group') loadList() }, [view, scope])
 
   useEffect(function () {
     if (!flash) return
@@ -188,8 +228,10 @@ function DecorVarCost({ profile, inAdmin }) {
   // list. The on-screen back buttons do the same through parentOf.
   function parentOf(v) {
     var c = curRef.current
+    var up = groupKeyRef.current ? 'group' : 'list'
     if (v === 'entry') return c && c.id ? 'record' : 'setup'
-    if (v === 'setup') return c && c.id ? 'record' : 'list'
+    if (v === 'setup') return c && c.id ? 'record' : up
+    if (v === 'record') return up
     return 'list'
   }
 
@@ -207,7 +249,8 @@ function DecorVarCost({ profile, inAdmin }) {
 
   function moveTo(target) {
     if (target !== 'entry') { dirtyRef.current = false; setEd(null) }
-    if (target === 'list') { setCur(null) }
+    if (target === 'list') { setCur(null); groupKeyRef.current = null; setGroupKey(null) }
+    if (target === 'group') { setCur(null) }
     setView(target)
     window.scrollTo(0, 0)
   }
@@ -217,6 +260,55 @@ function DecorVarCost({ profile, inAdmin }) {
     pushBack(onHardwareBack)
     setView(target)
     window.scrollTo(0, 0)
+  }
+
+  // Into the area from the list, or a step within it from a group.
+  function goTo(target) {
+    if (viewRef.current === 'list') enterArea(target)
+    else moveTo(target)
+  }
+
+  function openGroup(g) {
+    groupKeyRef.current = g.key
+    setGroupKey(g.key)
+    setGroupDetail((g.first.event_detail || '').trim())
+    setGroupDetailErr('')
+    enterArea('group')
+  }
+
+  // Writes the group's detail on every sheet in it; the group's key follows.
+  async function saveGroupDetail(g) {
+    var d = groupDetail.trim()
+    if (!d) { setGroupDetailErr('Write the detail first'); return false }
+    setGroupDetailSaving(true); setGroupDetailErr('')
+    var { error } = await supabase.rpc('fn_dvc_set_event_detail', {
+      p_cost_ids: g.records.map(function (r) { return r.id }), p_detail: d,
+    })
+    setGroupDetailSaving(false)
+    if (error) { setGroupDetailErr(error.message); return false }
+    // Renamed in place first, so the open group never blinks empty.
+    var ids = g.records.map(function (r) { return r.id })
+    setRecords(function (rs) { return (rs || []).map(function (r) { return ids.indexOf(r.id) !== -1 ? Object.assign({}, r, { event_detail: d }) : r }) })
+    var nk = g.kind === 'u' ? 'u|' + g.value + '|' + d.toLowerCase() : 'e|' + d.toLowerCase()
+    groupKeyRef.current = nk
+    setGroupKey(nk)
+    setFlash('Detail saved')
+    loadList()
+    return true
+  }
+
+  // + Add department in a group view. A group with no name yet: whatever is
+  // typed in its detail box is saved first; either way the new sheet is set
+  // up as this group's, so it joins this card.
+  async function addDepartment(g, named) {
+    if (named) { startNewIn(g); return }
+    var d = groupDetail.trim()
+    if (d) {
+      if (!(await saveGroupDetail(g))) return
+      startNewIn(Object.assign({}, g, { kind: g.kind === 'd' ? 'e' : g.kind, first: Object.assign({}, g.first, { event_detail: d }) }))
+      return
+    }
+    startNewIn(g)
   }
 
   async function backButton() {
@@ -230,7 +322,7 @@ function DecorVarCost({ profile, inAdmin }) {
   async function loadList() {
     setListErr('')
     var q = supabase.from('decor_var_costs')
-      .select('id, serial_no, sheet_code, is_function, function_date, venue_id, sub_venue_id, status, total_paise, created_at, submitted_at, created_by, profiles:created_by(name), decor_var_cost_entries(entry_date, amount_paise)')
+      .select('id, serial_no, sheet_code, is_function, function_date, venue_id, sub_venue_id, event_detail, event_id, status, total_paise, created_at, submitted_at, created_by, profiles:created_by(name), event:event_id(event_name, client_name, session, venue_name), decor_var_cost_entries(entry_date, amount_paise)')
       .order('created_at', { ascending: false })
       .limit(300)
     if (scope === 'mine' || !canApprove) q = q.eq('created_by', profile.id)
@@ -264,7 +356,7 @@ function DecorVarCost({ profile, inAdmin }) {
 
   async function openRecord(id) {
     setRecordErr('')
-    enterArea('record')
+    goTo('record')
     await loadRecord(id)
   }
 
@@ -288,6 +380,40 @@ function DecorVarCost({ profile, inAdmin }) {
     enterArea('setup')
   }
 
+  // + Add department inside a list group: a new sheet with the group's
+  // function date or event detail already filled in.
+  function startNewIn(g) {
+    var h = emptyHeader()
+    if (g.kind === 'f' || g.kind === 'u') {
+      // Same function: its date, booking (or written detail), venue and sub venue.
+      var f = g.first
+      h.is_function = true
+      h.function_date = f.function_date || ''
+      h.event_id = f.event_id ? String(f.event_id) : ''
+      h.venue_id = f.venue_id ? String(f.venue_id) : ''
+      h.sub_venue_id = f.sub_venue_id ? String(f.sub_venue_id) : ''
+      if (g.kind === 'u') h.event_detail = (f.event_detail || '').trim()
+    }
+    else h.event_detail = (g.first.event_detail || '').trim()
+    // The function (or event detail) is the group's: setup shows it as a
+    // summary and only asks for the department.
+    var info = groupInfo(g)
+    h.locked = {
+      kind: g.kind, title: info.title, sub: h.is_function ? 'Function · ' + formatDate(h.function_date) : 'Not for a function',
+      // Departments this group already has: one sheet each; more dates go
+      // on that sheet, not a second one.
+      used: groupDepts(g),
+      // An older not-for-a-function group is keyed on its first date: the new
+      // sheet's first date is that one, so it lands in the same card.
+      date: g.kind === 'd' ? g.value : '',
+    }
+    setCur(null)
+    setHdr(h)
+    setSetupErr('')
+    setEvents([])
+    goTo('setup')
+  }
+
   function editDetails() {
     var c = cur
     setHdr({
@@ -296,6 +422,7 @@ function DecorVarCost({ profile, inAdmin }) {
       event_id: c.event_id ? String(c.event_id) : '',
       venue_id: c.venue_id ? String(c.venue_id) : '',
       sub_venue_id: c.sub_venue_id ? String(c.sub_venue_id) : '',
+      event_detail: c.event_detail || '',
       sheet_code: c.sheet_code,
     })
     setSetupErr('')
@@ -330,7 +457,12 @@ function DecorVarCost({ profile, inAdmin }) {
     // sheet is actually keyed on (suggestDate, the functions-on-this-date
     // picker, etc. all assume it's there).
     if (h.is_function && !h.function_date) return 'Pick the function date'
+    // A function sheet belongs to one of the day's bookings, so the list can
+    // put each function's departments together. Only when that day has any.
+    if (h.is_function && !h.locked && !h.event_id && !(h.event_detail || '').trim() && events.length > 0) return 'Pick the function this sheet is for, or write its detail'
+    if (!h.is_function && !(h.event_detail || '').trim()) return 'Write the event detail'
     if (!h.sheet_code) return 'Pick the department'
+    if (h.locked && !(cur && cur.id) && (h.locked.used || []).indexOf(h.sheet_code) !== -1) return 'This department is already in this group — add dates on its sheet'
     return ''
   }
 
@@ -353,6 +485,8 @@ function DecorVarCost({ profile, inAdmin }) {
       event_id: h.is_function && h.event_id ? Number(h.event_id) : null,
       venue_id: h.is_function && h.venue_id ? Number(h.venue_id) : null,
       sub_venue_id: h.is_function && h.sub_venue_id ? Number(h.sub_venue_id) : null,
+      // Not for a function, or a function that is not among the bookings.
+      event_detail: h.is_function && h.event_id ? null : ((h.event_detail || '').trim() || null),
       sheet: sheetData,
     }
   }
@@ -391,6 +525,7 @@ function DecorVarCost({ profile, inAdmin }) {
         if (used.indexOf(d) === -1) return d
       }
     }
+    if (c.locked && c.locked.date && used.indexOf(c.locked.date) === -1) return c.locked.date
     var t = todayIso()
     return used.indexOf(t) === -1 ? t : ''
   }
@@ -410,8 +545,7 @@ function DecorVarCost({ profile, inAdmin }) {
     })
     dirtyRef.current = false
     setEdErrors({}); setEdErr(''); setQuery(''); setFilledOnly(false); setOpenRemarks({}); setRateFor(null)
-    if (viewRef.current === 'list') enterArea('entry')
-    else moveTo('entry')
+    goTo('entry')
   }
 
   function setLine(key, v) {
@@ -500,7 +634,7 @@ function DecorVarCost({ profile, inAdmin }) {
     var sheet = getSheet(c.sheet_code)
     var p = setupProblem({
       is_function: c.is_function, function_date: c.function_date || '', venue_id: c.venue_id ? String(c.venue_id) : '',
-      sub_venue_id: c.sub_venue_id ? String(c.sub_venue_id) : '', sheet_code: c.sheet_code,
+      sub_venue_id: c.sub_venue_id ? String(c.sub_venue_id) : '', event_detail: c.event_detail || '', sheet_code: c.sheet_code,
     })
     if (p) return { message: p + ' — tap Edit details' }
     if (!c.entries || c.entries.length === 0) return { message: 'Save at least one date before submitting' }
@@ -550,6 +684,17 @@ function DecorVarCost({ profile, inAdmin }) {
     var s = subVenues.find(function (x) { return String(x.id) === String(subId) })
     if (!v) return ''
     return v.name + (s ? ' · ' + s.name : '')
+  }
+
+  // Event details already used on the list, for the setup field's suggestions.
+  function eventDetailOptions() {
+    var seen = {}
+    var out = []
+    ;(records || []).forEach(function (r) {
+      var d = (r.event_detail || '').trim()
+      if (d && !seen[d.toLowerCase()]) { seen[d.toLowerCase()] = true; out.push(d) }
+    })
+    return out
   }
 
   // No event picked for this sheet (optional) — show what events exist on
@@ -622,6 +767,7 @@ function DecorVarCost({ profile, inAdmin }) {
 
   // ═══ views ════════════════════════════════════════════════════════════
   if (view === 'list') return renderList()
+  if (view === 'group') return renderGroupView()
   if (view === 'setup') return renderSetup()
   if (view === 'entry' && ed && cur) return renderEntry()
   return renderRecord()
@@ -630,19 +776,7 @@ function DecorVarCost({ profile, inAdmin }) {
   function renderList() {
     var filterCount = (deptFilter ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0)
     function resetFilters() { setDeptFilter(''); setDateFrom(''); setDateTo('') }
-    var filteredRecords = (records || []).filter(function (r) {
-      if (deptFilter && r.sheet_code !== deptFilter) return false
-      if (dateFrom || dateTo) {
-        var dates = (r.decor_var_cost_entries || []).map(function (e) { return e.entry_date })
-        var matches = dates.some(function (d) {
-          if (dateFrom && d < dateFrom) return false
-          if (dateTo && d > dateTo) return false
-          return true
-        })
-        if (!matches) return false
-      }
-      return true
-    })
+    var filteredRecords = filterRecords()
 
     return (
       <div className="space-y-3">
@@ -685,9 +819,10 @@ function DecorVarCost({ profile, inAdmin }) {
             <div className={CARD + ' p-3.5 space-y-3'}>
               <div>
                 <label className="block text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-slate-500 mb-1.5">Department</label>
-                <div className="flex gap-1.5 flex-wrap">
+                {/* An even grid on the phone; wraps on the wider admin screen. */}
+                <div className={wide ? 'flex gap-1.5 flex-wrap' : 'grid grid-cols-3 gap-1.5'}>
                   <button type="button" onClick={function () { setDeptFilter('') }} aria-pressed={deptFilter === ''}
-                    className={'px-3 py-1.5 rounded-full border text-[11.5px] font-bold transition-colors ' +
+                    className={'min-w-0 truncate text-center whitespace-nowrap px-3 py-1.5 rounded-full border text-[11.5px] font-bold transition-colors ' +
                       (deptFilter === '' ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')}>
                     All
                   </button>
@@ -695,7 +830,7 @@ function DecorVarCost({ profile, inAdmin }) {
                     var on = deptFilter === s.code
                     return (
                       <button key={s.code} type="button" onClick={function () { setDeptFilter(on ? '' : s.code) }} aria-pressed={on}
-                        className={'px-3 py-1.5 rounded-full border text-[11.5px] font-bold transition-colors ' +
+                        className={'min-w-0 truncate text-center whitespace-nowrap px-3 py-1.5 rounded-full border text-[11.5px] font-bold transition-colors ' +
                           (on ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50')}>
                         {s.name}
                       </button>
@@ -742,40 +877,212 @@ function DecorVarCost({ profile, inAdmin }) {
           </div>
         )}
         {filteredRecords.length > 0 && (
-          <div className={'grid gap-2.5 grid-cols-1' + (wide ? ' lg:grid-cols-2 xl:grid-cols-3' : '')}>
-            {filteredRecords.map(function (r) {
-              var sh = getSheet(r.sheet_code)
-              var ents = r.decor_var_cost_entries || []
-              var soFar = ents.reduce(function (s, e) { return s + (e.amount_paise || 0) }, 0)
-              var dates = ents.map(function (e) { return e.entry_date }).sort()
-              return (
-                <button key={r.id} type="button" onClick={function () { openRecord(r.id) }}
-                  className={CARD + ' text-left p-3.5 hover:border-indigo-300 active:bg-indigo-50/40 transition-colors'}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex flex-wrap items-center gap-1.5">
-                      <span data-notranslate className="font-mono text-[12.5px] font-bold tracking-[0.02em] text-slate-900 bg-slate-100 border border-slate-200 rounded-md px-1.5 py-0.5">{r.serial_no}</span>
-                      <span className={CHIP + 'border-transparent ' + deptCls('Decor')}>{sh ? sh.name : r.sheet_code}</span>
-                      <span className={CHIP + STATUS_CHIP[r.status]}>{r.status === 'draft' ? 'Draft' : 'Submitted'}</span>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p data-notranslate className="font-display text-[16px] font-extrabold tabular-nums tracking-[-0.02em] text-slate-900">{formatPoints(r.status === 'submitted' ? r.total_paise : soFar)}</p>
-                      {r.status === 'draft' && ents.length > 0 && <p className="text-[10.5px] font-semibold text-slate-500">so far</p>}
-                    </div>
-                  </div>
-                  <p className="mt-2 text-[13.5px] font-semibold text-slate-800 leading-snug break-words">
-                    {r.is_function
-                      ? <>Function {formatDate(r.function_date)}{venueLabel(r.venue_id, r.sub_venue_id) ? ' · ' + venueLabel(r.venue_id, r.sub_venue_id) : ''}</>
-                      : 'Not for a function'}
-                  </p>
-                  <p className="mt-1 text-[12.5px] font-medium text-slate-500 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+          <div className={'grid gap-2.5 grid-cols-1' + (wide ? ' lg:grid-cols-2 xl:grid-cols-3 lg:auto-rows-fr' : '')}>
+            {groupRecords(filteredRecords).map(renderGroupCard)}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  function filterRecords() {
+    return (records || []).filter(function (r) {
+      if (deptFilter && r.sheet_code !== deptFilter) return false
+      if (dateFrom || dateTo) {
+        var dates = (r.decor_var_cost_entries || []).map(function (e) { return e.entry_date })
+        var matches = dates.some(function (d) {
+          if (dateFrom && d < dateFrom) return false
+          if (dateTo && d > dateTo) return false
+          return true
+        })
+        if (!matches) return false
+      }
+      return true
+    })
+  }
+
+  // What a sheet adds up to so far: its total once submitted, else its dates.
+  function shownPaise(r) {
+    if (r.status === 'submitted') return r.total_paise || 0
+    return (r.decor_var_cost_entries || []).reduce(function (s, e) { return s + (e.amount_paise || 0) }, 0)
+  }
+
+  function groupInfo(g) {
+    var n = g.records.length
+    var sheets = n + (n === 1 ? ' sheet' : ' sheets')
+    var title, sub
+    if (g.kind === 'f') {
+      // The function's name (booking, else venue), its date underneath.
+      var f = g.first
+      var ev = f.event
+      var venue = venueLabel(f.venue_id, f.sub_venue_id) || (ev && ev.venue_name) || ''
+      var name = ev ? [ev.event_name || ev.client_name, ev.session].filter(Boolean).join(' · ') : ''
+      title = [name, venue].filter(Boolean).join(' · ') || 'Function'
+      sub = 'Function · ' + formatDate(f.function_date) + ' · ' + sheets
+    } else if (g.kind === 'u') {
+      var ud = (g.first.event_detail || '').trim()
+      title = ud || 'Not linked to a function'
+      sub = 'Function · ' + formatDate(g.value) + ' · ' + sheets + (ud ? '' : ' · open to write the function detail')
+    } else if (g.kind === 'e') {
+      title = (g.first.event_detail || '').trim()
+      sub = 'Not for a function · ' + sheets
+    } else {
+      title = 'Not for a function · ' + formatDate(g.value)
+      sub = 'Not for a function · ' + sheets + ' · open to write the event detail'
+    }
+    return {
+      total: g.records.reduce(function (s, r) { return s + shownPaise(r) }, 0),
+      anyDraft: g.records.some(function (r) { return r.status === 'draft' }),
+      title: title,
+      sub: sub,
+    }
+  }
+
+  function groupDepts(g) {
+    var out = []
+    g.records.forEach(function (r) { if (out.indexOf(r.sheet_code) === -1) out.push(r.sheet_code) })
+    return out
+  }
+
+  function groupIcon(g) {
+    return (
+      <span className={'shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center ' +
+        (g.kind === 'f' || (g.kind === 'u' && g.first.event_detail) ? 'bg-indigo-50 text-indigo-600' : g.kind === 'u' ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-600')}>
+        <Icon name={g.kind === 'f' || g.kind === 'u' ? 'calendar' : 'tag'} size={17} />
+      </span>
+    )
+  }
+
+  // The list's card for a group: its departments as chips; tap to open.
+  function renderGroupCard(g) {
+    var info = groupInfo(g)
+    var depts = []
+    var count = {}
+    g.records.forEach(function (r) {
+      if (!count[r.sheet_code]) { count[r.sheet_code] = 0; depts.push(r.sheet_code) }
+      count[r.sheet_code]++
+    })
+    var drafts = g.records.filter(function (r) { return r.status === 'draft' }).length
+    var done = g.records.length - drafts
+    return (
+      <button key={g.key} type="button" onClick={function () { openGroup(g) }}
+        className={CARD + ' h-full flex flex-col text-left p-3.5 hover:border-indigo-300 active:bg-indigo-50/40 transition-colors'}>
+        <div className="w-full flex items-start gap-2.5">
+          {groupIcon(g)}
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-[15px] font-extrabold tracking-[-0.015em] text-slate-900 leading-snug break-words">{info.title}</p>
+            <p className="text-[11.5px] font-semibold text-slate-500">{info.sub}</p>
+          </div>
+          <div className="shrink-0 text-right">
+            <p data-notranslate className="font-display text-[16px] font-extrabold tabular-nums tracking-[-0.02em] text-slate-900">{formatPoints(info.total)}</p>
+            {info.anyDraft && <p className="text-[10.5px] font-semibold text-slate-500">so far</p>}
+          </div>
+        </div>
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          {depts.map(function (code) {
+            var sh = getSheet(code)
+            return (
+              <span key={code} className={CHIP + 'border-transparent ' + deptCls('Decor')}>
+                {sh ? sh.name : code}{count[code] > 1 ? ' ×' + count[code] : ''}
+              </span>
+            )
+          })}
+        </div>
+        <p className="w-full mt-auto pt-2.5 text-[11.5px] font-semibold text-slate-500 flex items-center gap-2.5">
+          {done > 0 && <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />{done} submitted</span>}
+          {drafts > 0 && <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" />{drafts} draft</span>}
+          <span className="ml-auto inline-flex items-center gap-0.5 text-indigo-600">Open<Icon name="chevronRight" size={13} /></span>
+        </p>
+      </button>
+    )
+  }
+
+  // ── group: one card opened ─────────────────────────────────────────────
+  function renderGroupView() {
+    var g = groupRecords(filterRecords()).find(function (x) { return x.key === groupKey })
+    if (!g) {
+      return (
+        <div className="space-y-3">
+          {header('Decor Var Cost', '')}
+          {records === null
+            ? <p className="text-[13.5px] text-slate-500 text-center py-10">Loading…</p>
+            : <div className={CARD + ' px-6 py-10 text-center'}><p className="text-[13.5px] text-slate-500">Nothing left in this group.</p></div>}
+        </div>
+      )
+    }
+    var info = groupInfo(g)
+    var named = g.kind === 'f' || g.kind === 'e' || (g.kind === 'u' && !!(g.first.event_detail || '').trim())
+    var usedDepts = groupDepts(g)
+    var canAddDept = g.kind === 'e' || g.kind === 'd'
+      ? SHEETS.some(function (sh) { return usedDepts.indexOf(sh.code) === -1 })
+      : !g.records.some(function (r) { return r.status === 'submitted' })
+    return (
+      <div className="space-y-3">
+        {header(info.title, info.sub + ' · ' + formatPoints(info.total) + (info.anyDraft ? ' so far' : ''))}
+        {flashBar()}
+        {g.kind !== 'f' && (
+          <div className={CARD + ' p-3.5'}>
+            <label htmlFor="dvc-group-detail" className="block text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
+              {g.kind === 'u' ? 'Function detail' : 'Event detail'}
+            </label>
+            <div className="flex gap-2">
+              <input id="dvc-group-detail" type="text" value={groupDetail} maxLength={200} list="dvc-group-details"
+                onChange={function (e) { setGroupDetail(e.target.value); setGroupDetailErr('') }}
+                placeholder={g.kind === 'u' ? 'e.g. Sharma wedding, AP lawn' : 'e.g. Office Diwali decor, Lobby makeover'}
+                className={INPUT + INPUT_OK + ' flex-1 min-w-0'} />
+              <datalist id="dvc-group-details">
+                {eventDetailOptions().map(function (d) { return <option key={d} value={d} /> })}
+              </datalist>
+              <button type="button" onClick={function () { saveGroupDetail(g) }}
+                disabled={groupDetailSaving || !groupDetail.trim() || groupDetail.trim() === (g.first.event_detail || '').trim()}
+                className="shrink-0 h-10 px-4 rounded-xl text-[13px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 transition-colors">
+                {groupDetailSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+            <p className="mt-1.5 text-[11.5px] text-slate-500">Saved on all {g.records.length} {g.records.length === 1 ? 'sheet' : 'sheets'} here, submitted ones too. The same detail on other sheets puts them in one card.</p>
+            {groupDetailErr && <div className="mt-2">{errorBar(groupDetailErr)}</div>}
+          </div>
+        )}
+        <div className={CARD + ' overflow-hidden divide-y divide-slate-100'}>
+          {g.records.map(function (r) {
+            var sh = getSheet(r.sheet_code)
+            var ents = r.decor_var_cost_entries || []
+            var dates = ents.map(function (e) { return e.entry_date }).sort()
+            var venue = r.is_function ? venueLabel(r.venue_id, r.sub_venue_id) : ''
+            return (
+              <button key={r.id} type="button" onClick={function () { openRecord(r.id) }}
+                className="w-full text-left px-3.5 py-3 flex items-center gap-2.5 hover:bg-indigo-50/40 active:bg-indigo-50 transition-colors">
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <span data-notranslate className="font-mono text-[12px] font-bold tracking-[0.02em] text-slate-900 bg-slate-100 border border-slate-200 rounded-md px-1.5 py-0.5">{r.serial_no}</span>
+                    <span className={CHIP + 'border-transparent ' + deptCls('Decor')}>{sh ? sh.name : r.sheet_code}</span>
+                    <span className={CHIP + STATUS_CHIP[r.status]}>{r.status === 'draft' ? 'Draft' : 'Submitted'}</span>
+                  </span>
+                  <span className="mt-1 text-[12px] font-medium text-slate-500 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
                     <span className="inline-flex items-center gap-1"><Icon name="calendar" size={12} className="text-slate-400" />
                       {dates.length === 0 ? 'No dates yet' : dates.length === 1 ? formatDate(dates[0]) : dates.length + ' dates · ' + formatDate(dates[0]) + ' – ' + formatDate(dates[dates.length - 1])}
                     </span>
-                    {scope === 'all' && r.profiles && <span className="inline-flex items-center gap-1"><Icon name="user" size={12} className="text-slate-400" />{r.profiles.name}</span>}
-                  </p>
-                </button>
-              )
-            })}
+                    {venue && <span className="inline-flex items-center gap-1"><Icon name="mapPin" size={12} className="text-slate-400" />{venue}</span>}
+                    {r.profiles && <span className="inline-flex items-center gap-1"><Icon name="user" size={12} className="text-slate-400" />{r.profiles.name}</span>}
+                  </span>
+                </span>
+                <span data-notranslate className="shrink-0 text-[13.5px] font-extrabold tabular-nums text-slate-800">{formatPoints(shownPaise(r))}</span>
+                <Icon name="chevronRight" size={14} className="shrink-0 text-slate-300" />
+              </button>
+            )
+          })}
+        </div>
+        {/* Not for a function: open for any department it doesn't have yet
+            (a department it has takes more dates on its own sheet). A
+            function: open only while every sheet is a draft — once any is
+            submitted the function counts as final. */}
+        {canAddDept && (
+          <div>
+            <button type="button" onClick={function () { addDepartment(g, named) }} disabled={groupDetailSaving}
+              className="w-full h-11 inline-flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/40 text-[13px] font-bold text-indigo-600 hover:bg-indigo-50 disabled:opacity-60 transition-colors">
+              <Icon name="plus" size={15} strokeWidth={2.4} />Add department
+            </button>
+            {!named && <p className="mt-1.5 text-center text-[11.5px] font-semibold text-slate-500">Tip: write the {g.kind === 'u' ? 'function' : 'event'} detail above so new sheets join this card</p>}
           </div>
         )}
       </div>
@@ -795,7 +1102,22 @@ function DecorVarCost({ profile, inAdmin }) {
       <div className="space-y-3">
         {header(editing ? 'Edit details' : 'New cost sheet', editing ? cur.serial_no : 'Decor Var Cost')}
 
+        {/* Opened from a list group: its function / event detail, fixed. */}
+        {hdr.locked && (
+          <div className={CARD + ' p-3.5 flex items-center gap-2.5'}>
+            <span className={'shrink-0 w-9 h-9 rounded-xl inline-flex items-center justify-center ' +
+              (hdr.is_function ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-600')}>
+              <Icon name={hdr.is_function ? 'calendar' : 'tag'} size={17} />
+            </span>
+            <span className="min-w-0">
+              <span className="block font-display text-[15px] font-bold tracking-[-0.01em] text-slate-900 break-words">{hdr.locked.title}</span>
+              <span className="block text-[11.5px] text-slate-500">{hdr.locked.sub} · pick the department below</span>
+            </span>
+          </div>
+        )}
+
         {/* For a function? — the same switch the Expense form opens with. */}
+        {!hdr.locked && (
         <div className={CARD + ' p-3.5 space-y-3'}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
@@ -805,7 +1127,7 @@ function DecorVarCost({ profile, inAdmin }) {
               </span>
               <span className="min-w-0">
                 <span className="block font-display text-[15px] font-bold tracking-[-0.01em] text-slate-900">For a function?</span>
-                <span className="block text-[11.5px] text-slate-500 leading-snug">{hdr.is_function ? 'Date, venue and sub venue, then the department' : 'Straight to the department'}</span>
+                <span className="block text-[11.5px] text-slate-500 leading-snug">{hdr.is_function ? 'Date, venue and sub venue, then the department' : 'The event detail, then the department'}</span>
               </span>
             </div>
             {toggle(hdr.is_function, function (v) {
@@ -814,6 +1136,22 @@ function DecorVarCost({ profile, inAdmin }) {
               else { setH({ is_function: false, function_date: '', event_id: '', venue_id: '', sub_venue_id: '' }); setEvents([]) }
             }, 'For a function?')}
           </div>
+
+          {/* Not for a function: what it was for. Sheets with the same detail
+              sit together in one card on the list. */}
+          {!hdr.is_function && (
+            <div className="pt-3 border-t border-slate-100">
+              {stepLabel(1, 'Event detail', !!(hdr.event_detail || '').trim())}
+              <input type="text" value={hdr.event_detail} maxLength={200} list="dvc-event-details"
+                onChange={function (e) { setSetupErr(''); setH({ event_detail: e.target.value }) }}
+                placeholder="e.g. Office Diwali decor, Lobby makeover"
+                className={INPUT + INPUT_OK} />
+              <datalist id="dvc-event-details">
+                {eventDetailOptions().map(function (d) { return <option key={d} value={d} /> })}
+              </datalist>
+              <p className="mt-1.5 text-[11.5px] text-slate-500">Use the same detail for every department of this event — they show together on the list.</p>
+            </div>
+          )}
 
           {hdr.is_function && (
             <div className="pt-3 border-t border-slate-100 space-y-4">
@@ -824,7 +1162,7 @@ function DecorVarCost({ profile, inAdmin }) {
                 {eventsLoading && <p className="mt-2 text-[12.5px] text-slate-500">Loading functions…</p>}
                 {hdr.function_date && !eventsLoading && events.length > 0 && (
                   <div className="mt-2.5">
-                    <p className="text-[11.5px] font-semibold text-slate-500 mb-1.5">Functions on this date — tap one to fill its venue (optional)</p>
+                    <p className="text-[11.5px] font-semibold text-slate-500 mb-1.5">Pick the function this sheet is for</p>
                     <div className={'grid gap-2 grid-cols-1 sm:grid-cols-2' + (wide ? ' lg:grid-cols-3' : '')}>
                       {shown.map(function (g) {
                         var head = g.contracts[0]
@@ -850,6 +1188,18 @@ function DecorVarCost({ profile, inAdmin }) {
                     {shown !== groups && groups.length > 1 && (
                       <button type="button" onClick={function () { setH({ event_id: '' }) }} className="mt-1.5 text-[11.5px] font-bold text-indigo-600 px-1">Change function</button>
                     )}
+                  </div>
+                )}
+                {hdr.function_date && !eventsLoading && !hdr.event_id && (
+                  <div className="mt-2.5">
+                    <p className="text-[11.5px] font-semibold text-slate-500 mb-1.5">{events.length > 0 ? 'Not in the list? Write the function detail' : 'Function detail'}</p>
+                    <input type="text" value={hdr.event_detail} maxLength={200} list="dvc-event-details"
+                      onChange={function (e) { setSetupErr(''); setH({ event_detail: e.target.value }) }}
+                      placeholder="e.g. Sharma wedding, AP lawn"
+                      className={INPUT + INPUT_OK} />
+                    <datalist id="dvc-event-details">
+                      {eventDetailOptions().map(function (d) { return <option key={d} value={d} /> })}
+                    </datalist>
                   </div>
                 )}
               </div>
@@ -886,15 +1236,17 @@ function DecorVarCost({ profile, inAdmin }) {
             </div>
           )}
         </div>
+        )}
 
         {/* Department — which of the workbook's sheets this is. */}
         <div className={CARD + ' p-3.5 ' + (hdr.is_function && !fnDone ? 'opacity-60' : '')}>
-          {stepLabel(hdr.is_function ? 4 : 1, 'Department', !!hdr.sheet_code)}
+          {stepLabel(hdr.locked ? 1 : hdr.is_function ? 4 : 2, 'Department', !!hdr.sheet_code)}
           {editing && <p className="-mt-1 mb-2 text-[11.5px] text-slate-500">The department of a saved sheet stays as it is.</p>}
           <div className={'grid gap-2 grid-cols-3' + (wide ? ' lg:grid-cols-5' : '')}>
             {SHEETS.map(function (s) {
               var on = hdr.sheet_code === s.code
-              var locked = editing && !on
+              var taken = !editing && !!hdr.locked && (hdr.locked.used || []).indexOf(s.code) !== -1
+              var locked = (editing && !on) || taken
               return (
                 <button key={s.code} type="button" disabled={locked}
                   onClick={function () { setSetupErr(''); setH({ sheet_code: s.code }) }} aria-pressed={on}
@@ -902,7 +1254,7 @@ function DecorVarCost({ profile, inAdmin }) {
                     (on ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500'
                       : locked ? 'border-slate-200 bg-slate-50 opacity-50'
                         : 'border-slate-200 bg-white hover:border-indigo-300 active:scale-[0.98]')}>
-                  <span className={'block font-mono text-[10.5px] font-bold tracking-[0.04em] ' + (on ? 'text-indigo-600' : 'text-slate-400')}>{s.code === 'COMMISSION' ? 'COM' : s.code}</span>
+                  <span className={'block font-mono text-[10.5px] font-bold tracking-[0.04em] ' + (on ? 'text-indigo-600' : 'text-slate-400')}>{taken ? 'Added' : s.code === 'COMMISSION' ? 'COM' : s.code}</span>
                   <span className={'block text-[13.5px] font-bold leading-tight truncate ' + (on ? 'text-indigo-900' : 'text-slate-800')}>{s.name}</span>
                 </button>
               )
@@ -985,7 +1337,7 @@ function DecorVarCost({ profile, inAdmin }) {
                   })}
                 </>
               ) : (
-                <p className="text-[11.5px] font-semibold text-slate-500">Not for a function</p>
+                <p className="text-[11.5px] font-semibold text-slate-500 break-words">{cur.event_detail || 'Not for a function'}</p>
               )}
             </div>
             {canEditEntry && (
@@ -1426,7 +1778,8 @@ function DecorVarCost({ profile, inAdmin }) {
                 </>
               ) : (
                 <p className="flex items-center gap-2 text-[13.5px] font-semibold text-slate-500">
-                  <Icon name="calendar" size={14} className="shrink-0 text-slate-400" />Not for a function
+                  <Icon name="calendar" size={14} className="shrink-0 text-slate-400" />
+                  <span className="min-w-0 break-words">{cur.event_detail ? cur.event_detail + ' · not for a function' : 'Not for a function'}</span>
                 </p>
               )}
               <p className="flex items-center gap-2 text-[12.5px] font-medium text-slate-500">
