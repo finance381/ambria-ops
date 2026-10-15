@@ -140,7 +140,7 @@ function DecorVarCost({ profile, inAdmin }) {
   var wide = !!inAdmin
   var BAR = BAR_GLASS + (wide ? 'sticky bottom-0 -mx-4' : 'fixed bottom-0 inset-x-0 mx-auto w-full max-w-[540px]')
   var permsNew = profile?.permsNew || []
-  var canApprove = hasPerm(permsNew, 'finance.expenses.approve')
+  var canApprove = hasPerm(permsNew, 'finance.decor_var_cost.approve')
   var refData = useReferenceData()
   var venues = refData.venues.filter(function (v) { return v.active }).slice().sort(byName)
 

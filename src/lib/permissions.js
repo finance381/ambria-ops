@@ -120,6 +120,11 @@ export var PERM_GROUPS = [
         { key: 'finance.expenses.approve', label: 'Approve/reject expenses' },
         { key: 'finance.gv',               label: 'Raise/reverse JVs (General Vouchers)' },
       ]},
+    { key: 'finance.decor_var_cost', label: 'Decor Var Cost', scope: 'both',
+      note: "The decor team's per-function cost sheets",
+      optional: [
+        { key: 'finance.decor_var_cost.approve', label: "See everyone's sheets, change any draft, delete submitted ones" },
+      ]},
     { key: 'finance.payments',       label: 'Payments',       scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },
     { key: 'finance.salary_payouts', label: 'Salary Payouts', scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS,
       note: 'Also grant "See salaries" in HR → Employees' },

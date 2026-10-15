@@ -129,9 +129,9 @@ var GROUPS = [
     key: 'expenses', label: 'Finance', icon: 'wallet', items: [
       { key: 'finance.wallet', label: 'Wallet', icon: 'wallet', tab: 'wallet' },
       { key: 'finance.expenses', label: 'Expenses', icon: 'banknote', tab: 'expenses' },
-      // Whoever records expenses fills in the decor cost sheets too. Same
-      // permission, its own tile; the Expenses badge stays on Expenses.
-      { key: 'finance.expenses', id: 'finance.decor_var_cost', label: 'Decor Var Cost', icon: 'calculator', tab: 'decor_var_cost', noBadge: true },
+      // Its own permission (finance.decor_var_cost, migration 00105); the
+      // Expenses badge stays on Expenses.
+      { key: 'finance.decor_var_cost', id: 'finance.decor_var_cost', label: 'Decor Var Cost', icon: 'calculator', tab: 'decor_var_cost', noBadge: true },
       { key: 'finance.cost_transfers', label: 'Cost Transfers', icon: 'transfer', tab: 'cost_transfers' },
       { key: 'finance.ledgers.expense', label: 'Expense Ledger', icon: 'fileText', tab: 'ledgers' },
       { key: 'finance.ledgers.event', label: 'Event Ledger', icon: 'calendar', tab: 'event_ledger' },
