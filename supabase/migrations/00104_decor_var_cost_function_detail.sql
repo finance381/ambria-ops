@@ -2,14 +2,14 @@
 --   * A function sheet with no booking picked (the function is not among the
 --     day's bookings) may carry a written function detail in event_detail, so
 --     the list can still put its departments together. Picking a booking
---     clears it. fn_dvc_apply_header is 00102's body with that change, and
+--     clears it. fn_dvc_apply_header is 00103's body with that change, and
 --     a header that carries no event_detail key at all (the app before
 --     these changes) keeps the stored detail instead of clearing it.
 --   * fn_dvc_set_event_detail writes the detail on several sheets at once —
 --     the list's "Not linked" / "Not for a function" groups — drafts and
 --     submitted sheets alike: it is a label only, no amount changes. Same
 --     who-may rule as fn_dvc_lock_draft (the maker, or an approver).
--- Run after 00102_decor_var_cost_event_detail.sql.
+-- Run after 00103_decor_var_cost_event_detail.sql.
 
 BEGIN;
 
