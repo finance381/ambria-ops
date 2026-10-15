@@ -3213,8 +3213,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   enrichLine = <p className="text-[11px] text-emerald-600 truncate">🍽 Extra Plates · {epcHit.epc.extras_charged}{epcHit.epc.payment_mode ? ' · ' + epcHit.epc.payment_mode : ''}</p>
                 } else if (isEpcCancel) {
                   enrichLine = <p className="text-[11px] text-rose-600 truncate">🔁 Extra Plate cancel</p>
-                } else if (tr && cpName) {
-                  enrichLine = <p className="text-[11px] text-blue-600 truncate">{t.type === 'debit' ? '→ ' : '← '}{cpName}</p>
+                } else if (tr && cpName && t.type !== 'debit') {
+                  // The sender's own debit description already ends in
+                  // "→ <recipient>" (baked in by initiate_transfer), so this
+                  // line only ever repeated it — "...→ Umakant" followed by
+                  // another "→ Umakant" right underneath. The receiver's
+                  // credit side still gets a genuinely new fact here (the
+                  // resolved sender name, distinct from whatever free text
+                  // they typed), so that direction keeps the line.
+                  enrichLine = <p className="text-[11px] text-blue-600 truncate">← {cpName}</p>
                 } else if (t.reference_type === 'issued') {
                   enrichLine = <p className="text-[11px] text-purple-600 truncate">Issued by admin</p>
                 } else if (t.reference_type === 'deducted') {
@@ -4007,12 +4014,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               )}
               <p className={"text-[14px] font-bold text-slate-900 leading-snug " + (isCancelled ? "line-through" : "")}>
                 {t.description || '—'}
-                {t.reference_type === 'transfer' && t.reference_id && transferParties[t.reference_id] && (function () {
+                {t.reference_type === 'transfer' && t.type !== 'debit' && t.reference_id && transferParties[t.reference_id] && (function () {
+                  // Debit's own description already ends in "→ <recipient>" —
+                  // see the matching comment on the other transaction list.
                   var tr = transferParties[t.reference_id]
-                  var cpId = t.type === 'debit' ? tr.to_user_id : tr.from_user_id
+                  var cpId = tr.from_user_id
                   var cpName = walletProfiles[cpId]?.name
                   if (!cpName) return null
-                  return ' ' + (t.type === 'debit' ? '→' : '←') + ' ' + cpName
+                  return ' ← ' + cpName
                 })()}
                 {isEpc && ' · ' + epcHit.epc.extras_charged + ' extras'}
               </p>
