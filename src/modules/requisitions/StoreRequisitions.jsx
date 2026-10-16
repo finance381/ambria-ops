@@ -43,6 +43,9 @@ function StoreRequisitions({ profile }) {
   var [dateFrom, setDateFrom] = useState('')
   var [dateTo, setDateTo] = useState('')
   var [filtersOpen, setFiltersOpen] = useState(false)
+  // requisition_no is free text (often several physical slip numbers
+  // comma-separated in one field) — substring match, not an exact lookup.
+  var [searchNo, setSearchNo] = useState('')
 
   async function load() {
     setLoading(true)
@@ -96,6 +99,7 @@ function StoreRequisitions({ profile }) {
   useRealtime(['store_requisitions'], function () { loadRef.current() })
 
   var visibleReqs = reqs.filter(function (r) {
+    if (searchNo.trim() && (r.requisition_no || '').toLowerCase().indexOf(searchNo.trim().toLowerCase()) === -1) return false
     if (!linkFilter) return true
     var isLinked = !!(r.event_ids && r.event_ids.length > 0)
     return linkFilter === 'linked' ? isLinked : !isLinked
@@ -152,6 +156,20 @@ function StoreRequisitions({ profile }) {
           className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
           + New Store Requisition
         </button>
+      </div>
+
+      <div className="relative">
+        <Icon name="search" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <input type="text" value={searchNo} onChange={function (e) { setSearchNo(e.target.value) }}
+          placeholder="Search by requisition / slip number…"
+          className="w-full pl-9 pr-8 py-2 border border-gray-300 rounded-lg text-sm placeholder:text-gray-400"
+          style={{ fontSize: '16px' }} />
+        {searchNo && (
+          <button onClick={function () { setSearchNo('') }} aria-label="Clear search"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+            <Icon name="close" size={14} />
+          </button>
+        )}
       </div>
 
       {(function () {
