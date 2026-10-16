@@ -156,7 +156,9 @@ function DecorVarCost({ profile, inAdmin }) {
   useEffect(function () { viewRef.current = view }, [view])
 
   // ── list ──
-  var [scope, setScope] = useState('mine')
+  // Everyone's sheets by default, so a function's departments show together
+  // whoever made them; Mine narrows to your own.
+  var [scope, setScope] = useState('all')
   var [records, setRecords] = useState(null)
   var [listErr, setListErr] = useState('')
   var [deptFilter, setDeptFilter] = useState('')
@@ -327,7 +329,7 @@ function DecorVarCost({ profile, inAdmin }) {
       .select('id, serial_no, sheet_code, is_function, function_date, venue_id, sub_venue_id, event_detail, event_id, status, total_paise, created_at, submitted_at, created_by, profiles:created_by(name), event:event_id(event_name, client_name, session, venue_name), decor_var_cost_entries(entry_date, amount_paise)')
       .order('created_at', { ascending: false })
       .limit(300)
-    if (scope === 'mine' || !canApprove) q = q.eq('created_by', profile.id)
+    if (scope === 'mine') q = q.eq('created_by', profile.id)
     var { data, error } = await q
     if (error) { setListErr(error.message); setRecords([]); return }
     setRecords(data || [])
@@ -777,7 +779,7 @@ function DecorVarCost({ profile, inAdmin }) {
             <Icon name="plus" size={15} strokeWidth={2.4} />New
           </button>
         ))}
-        {canApprove && (
+        {(
           <div className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200">
             {[['mine', 'Mine'], ['all', 'Everyone']].map(function (o) {
               var on = scope === o[0]
@@ -1011,7 +1013,7 @@ function DecorVarCost({ profile, inAdmin }) {
       <div className="space-y-3">
         {header(info.title, info.sub + ' · ' + formatPoints(info.total) + (info.anyDraft ? ' so far' : ''))}
         {flashBar()}
-        {g.kind !== 'f' && (
+        {g.kind !== 'f' && (canApprove || g.records.every(function (r) { return r.created_by === profile.id })) && (
           <div className={CARD + ' p-3.5'}>
             <label htmlFor="dvc-group-detail" className="block text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-slate-500 mb-1.5">
               {g.kind === 'u' ? 'Function detail' : 'Event detail'}
