@@ -10,6 +10,11 @@ var KITCHEN_SECTIONS = ['Indian', 'Chinese', 'Chaat', 'Tandoor', 'Conti', 'Halwa
 function emptyDeptRow(id) {
   return {
     id: id, departmentId: '', subDepartmentId: '', section: '', remarks: '',
+    // reqNo/reqImagePath: the physical slip this row's items/casuals came off
+    // — a requisition commonly carries one slip per department, not one for
+    // the whole thing. reqImageFile is the picked-but-not-yet-uploaded photo;
+    // reqImagePreview is its (or the existing reqImagePath's) display URL.
+    reqNo: '', reqImageFile: null, reqImagePath: null, reqImagePreview: '',
     showInventory: false, showCasual: false,
     invSearch: '', invResults: [], invSearching: false,
     inventoryRows: [], casualRows: [],
@@ -30,6 +35,13 @@ function matchRank(name, term) {
 
 function rupees(paise) { return '₹' + Math.round((paise || 0) / 100).toLocaleString('en-IN') }
 
+// Same 'receipts' bucket ExpenseForm already uploads to — these images are
+// just another kind of supporting photo, no reason for a second bucket.
+function imagePublicUrl(path) {
+  if (!path) return ''
+  return supabase.storage.from('receipts').getPublicUrl(path).data?.publicUrl || ''
+}
+
 // ── Auto-save draft (new-requisition only) — same pattern as ExpenseForm's:
 // debounced localStorage save, a restore banner on mount, a safety save on
 // tab close, and a discard that only fires once the user actually submits.
@@ -40,14 +52,19 @@ var DRAFT_KEY_PREFIX = 'ambria_storereq_draft_'
 var DRAFT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000
 var DRAFT_DEBOUNCE_MS = 800
 
+// A picked-but-unuploaded File/blob: URL can't survive localStorage or a
+// reload, so a draft only remembers the slip number, not a pending photo —
+// same reasoning as ExpenseForm's audio/receipt drafts.
 function serializeDraftRow(r) {
-  return Object.assign({}, r, { invSearch: '', invResults: [], invSearching: false })
+  return Object.assign({}, r, { invSearch: '', invResults: [], invSearching: false, reqImageFile: null, reqImagePreview: r.reqImagePath ? r.reqImagePreview : '' })
 }
 
 function isEmptyDraftRow(r) {
   if (!r) return true
   if (r.departmentId || r.subDepartmentId || r.section) return false
   if (r.remarks && r.remarks.trim()) return false
+  if (r.reqNo && r.reqNo.trim()) return false
+  if (r.reqImageFile || r.reqImagePath) return false
   if ((r.inventoryRows || []).length > 0) return false
   if ((r.casualRows || []).length > 0) return false
   return true
@@ -57,8 +74,16 @@ function isEmptyDraftState(s) {
   if (s.dateFrom || s.dateTo) return false
   if (s.requisitionNo && s.requisitionNo.trim()) return false
   if ((s.selectedEventIds || []).length > 0) return false
+  if ((s.casualSlips || []).length > 0) return false
   if (!s.deptRows || s.deptRows.length === 0) return true
   return s.deptRows.every(isEmptyDraftRow)
+}
+
+// Only a path (already uploaded) survives into a draft — a picked-but-
+// unuploaded file's blob: URL dies with the page, so there'd be nothing to
+// restore it from anyway.
+function serializeDraftCasualSlips(list) {
+  return (list || []).filter(function (cs) { return cs.path }).map(function (cs) { return { id: cs.id, path: cs.path } })
 }
 
 function formatDraftAge(ts) {
@@ -90,6 +115,16 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   var [nextLineId, setNextLineId] = useState(1)
   var [loadingExisting, setLoadingExisting] = useState(!!editId)
 
+  // Casual labour attendance slips — photos for the whole requisition
+  // period, not per department. { id, file: File|null (pending upload),
+  // path: string|null (already uploaded), previewUrl }.
+  var [casualSlips, setCasualSlips] = useState([])
+  var [nextCasualSlipId, setNextCasualSlipId] = useState(1)
+  // Paths removed during this edit (an existing image taken off a dept row
+  // or the casual slips) — deleted from storage only after the save that
+  // drops them actually succeeds, so a failed save doesn't orphan nothing.
+  var removedPathsRef = useRef([])
+
   var [saving, setSaving] = useState(false)
   var [error, setError] = useState('')
 
@@ -118,33 +153,33 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   useEffect(function () {
     if (editId || !draftKey || saving || loadingExisting) return
     if (draftRestorable) return  // don't clobber a pending restore with the blank default
-    var state = { dateFrom: dateFrom, dateTo: dateTo, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId }
+    var state = { dateFrom: dateFrom, dateTo: dateTo, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId, casualSlips: casualSlips, nextCasualSlipId: nextCasualSlipId }
     if (isEmptyDraftState(state)) return
     if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current)
     draftSaveTimer.current = setTimeout(function () {
       try {
-        var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow) })
+        var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow), casualSlips: serializeDraftCasualSlips(casualSlips) })
         localStorage.setItem(draftKey, JSON.stringify(payload))
         setDraftSavedAt(payload.savedAt)
       } catch (_) {}
     }, DRAFT_DEBOUNCE_MS)
     return function () { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current) }
-  }, [dateFrom, dateTo, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, editId, saving, draftRestorable, loadingExisting])
+  }, [dateFrom, dateTo, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, casualSlips, nextCasualSlipId, editId, saving, draftRestorable, loadingExisting])
 
   // ─── Draft: safety-save on tab close / navigate away ───
   useEffect(function () {
     if (editId || !draftKey) return
     function handler() {
       try {
-        var state = { dateFrom: dateFrom, dateTo: dateTo, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId }
+        var state = { dateFrom: dateFrom, dateTo: dateTo, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId, casualSlips: casualSlips, nextCasualSlipId: nextCasualSlipId }
         if (isEmptyDraftState(state)) return
-        var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow) })
+        var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow), casualSlips: serializeDraftCasualSlips(casualSlips) })
         localStorage.setItem(draftKey, JSON.stringify(payload))
       } catch (_) {}
     }
     window.addEventListener('beforeunload', handler)
     return function () { window.removeEventListener('beforeunload', handler) }
-  }, [dateFrom, dateTo, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, editId])
+  }, [dateFrom, dateTo, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, casualSlips, nextCasualSlipId, editId])
 
   // ─── Draft: tick "Xs ago" indicator every 15s ───
   useEffect(function () {
@@ -160,9 +195,19 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       setDateTo(draftRestorable.dateTo || '')
       setRequisitionNo(draftRestorable.requisitionNo || '')
       setSelectedEventIds(draftRestorable.selectedEventIds || [])
-      setDeptRows((draftRestorable.deptRows && draftRestorable.deptRows.length > 0) ? draftRestorable.deptRows : [emptyDeptRow(1)])
+      var rows = (draftRestorable.deptRows && draftRestorable.deptRows.length > 0) ? draftRestorable.deptRows : [emptyDeptRow(1)]
+      // A restored path's preview is just its public URL, recomputed fresh —
+      // only the picked-but-unuploaded file (already dropped before saving)
+      // couldn't survive the reload.
+      setDeptRows(rows.map(function (r) {
+        return Object.assign({}, r, { reqImagePreview: r.reqImagePath ? imagePublicUrl(r.reqImagePath) : '' })
+      }))
       setNextRowId(draftRestorable.nextRowId || 2)
       setNextLineId(draftRestorable.nextLineId || 1)
+      setCasualSlips((draftRestorable.casualSlips || []).map(function (cs) {
+        return { id: cs.id, file: null, path: cs.path, previewUrl: imagePublicUrl(cs.path) }
+      }))
+      setNextCasualSlipId(draftRestorable.nextCasualSlipId || 1)
       setDraftSavedAt(draftRestorable.savedAt)
     } catch (_) {}
     setDraftRestorable(null)
@@ -203,12 +248,18 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     if (!editId) return
     setLoadingExisting(true)
     Promise.all([
-      supabase.from('store_requisitions').select('date_from, date_to, event_ids, requisition_no').eq('id', editId).single(),
-      supabase.from('store_requisition_dept_rows').select('id, department_id, sub_department_id, section, remarks, sort_order').eq('store_requisition_id', editId).order('sort_order'),
+      supabase.from('store_requisitions').select('date_from, date_to, event_ids, requisition_no, casual_slip_paths').eq('id', editId).single(),
+      supabase.from('store_requisition_dept_rows').select('id, department_id, sub_department_id, section, remarks, req_no, req_image_path, sort_order').eq('store_requisition_id', editId).order('sort_order'),
     ]).then(function (res) {
       var reqRow = res[0].data
       var drRows = res[1].data || []
-      if (reqRow) { setDateFrom(reqRow.date_from); setDateTo(reqRow.date_to); setRequisitionNo(reqRow.requisition_no || ''); setSelectedEventIds(reqRow.event_ids || []) }
+      if (reqRow) {
+        setDateFrom(reqRow.date_from); setDateTo(reqRow.date_to); setRequisitionNo(reqRow.requisition_no || ''); setSelectedEventIds(reqRow.event_ids || [])
+        setCasualSlips((reqRow.casual_slip_paths || []).map(function (p, i) {
+          return { id: i + 1, file: null, path: p, previewUrl: imagePublicUrl(p) }
+        }))
+        setNextCasualSlipId((reqRow.casual_slip_paths || []).length + 1)
+      }
       var drIds = drRows.map(function (r) { return r.id })
       if (drIds.length === 0) {
         setDeptRows([emptyDeptRow(1)]); setNextRowId(2); setLoadingExisting(false); return
@@ -231,6 +282,8 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           return {
             id: rowId++,
             departmentId: String(dr.department_id), subDepartmentId: String(dr.sub_department_id), section: dr.section || '', remarks: dr.remarks || '',
+            reqNo: dr.req_no || '', reqImageFile: null, reqImagePath: dr.req_image_path || null,
+            reqImagePreview: dr.req_image_path ? imagePublicUrl(dr.req_image_path) : '',
             showInventory: rowItems.length > 0, showCasual: rowCasuals.length > 0,
             invSearch: '', invResults: [], invSearching: false,
             inventoryRows: rowItems, casualRows: rowCasuals,
@@ -328,6 +381,53 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   }
   function onChangeRemarks(rowId, e) {
     patchRow(rowId, { remarks: e.target.value })
+  }
+  function onChangeReqNo(rowId, e) {
+    patchRow(rowId, { reqNo: e.target.value })
+  }
+
+  // Uploaded right away (not deferred to submit) so a bad network shows the
+  // problem on the row that caused it, not as a generic failure at the very
+  // end — and the path it returns is self-contained, so it doesn't matter
+  // that the requisition itself may not be saved yet.
+  async function uploadImage(file, prefix) {
+    var ext = (file.name && file.name.indexOf('.') !== -1) ? file.name.split('.').pop() : 'jpg'
+    var path = profile.id + '/' + prefix + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext
+    var { error } = await supabase.storage.from('receipts').upload(path, file, { upsert: true })
+    if (error) throw new Error(error.message)
+    return path
+  }
+
+  function onPickReqImage(row, e) {
+    var file = e.target.files && e.target.files[0]
+    e.target.value = ''
+    if (!file) return
+    var previewUrl = URL.createObjectURL(file)
+    if (row.reqImagePath) removedPathsRef.current.push(row.reqImagePath)
+    patchRow(row.id, { reqImageFile: file, reqImagePath: null, reqImagePreview: previewUrl })
+  }
+  function removeReqImage(row) {
+    if (row.reqImagePath) removedPathsRef.current.push(row.reqImagePath)
+    patchRow(row.id, { reqImageFile: null, reqImagePath: null, reqImagePreview: '' })
+  }
+
+  function onPickCasualSlips(e) {
+    var files = Array.prototype.slice.call(e.target.files || [])
+    e.target.value = ''
+    if (files.length === 0) return
+    var startId = nextCasualSlipId
+    var added = files.map(function (f, i) {
+      return { id: startId + i, file: f, path: null, previewUrl: URL.createObjectURL(f) }
+    })
+    setNextCasualSlipId(startId + files.length)
+    setCasualSlips(function (prev) { return prev.concat(added) })
+  }
+  function removeCasualSlip(id) {
+    setCasualSlips(function (prev) {
+      var hit = prev.find(function (cs) { return cs.id === id })
+      if (hit && hit.path) removedPathsRef.current.push(hit.path)
+      return prev.filter(function (cs) { return cs.id !== id })
+    })
   }
 
   function toggleEvent(eventId) {
@@ -436,29 +536,55 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   async function handleSubmit() {
     if (!canSubmit || saving) return
     setSaving(true); setError('')
-    var payload = deptRows.map(function (r) {
-      return {
-        department_id: Number(r.departmentId),
-        sub_department_id: Number(r.subDepartmentId),
-        section: isKitchenRow(r) ? r.section : null,
-        remarks: r.remarks ? r.remarks.trim() : null,
-        items: r.inventoryRows.map(function (l) {
-          return { item_source: l.itemSource, item_id: l.itemId, item_name: l.name, unit: l.unit, qty: Number(l.qty) || 0, rate_paise: Number(l.ratePaise) || 0 }
-        }),
-        casuals: r.casualRows.map(function (l) {
-          var c = casualRoster.find(function (x) { return String(x.id) === String(l.casualRosterId) })
-          return { casual_roster_id: l.casualRosterId || null, casual_type: c ? c.casual_type : '', qty: Number(l.qty) || 0, rate_paise: c ? c.rate_paise : 0 }
-        }),
+    try {
+      // Any image picked but not yet uploaded goes up first — fail here,
+      // before anything is written, rather than after the requisition's
+      // already saved with some of its photos missing.
+      var deptRowImagePaths = {}
+      for (var i = 0; i < deptRows.length; i++) {
+        var r = deptRows[i]
+        if (r.reqImageFile) deptRowImagePaths[r.id] = await uploadImage(r.reqImageFile, 'storereq_dept')
       }
-    })
-    var res = editId
-      ? await supabase.rpc('rpc_update_store_requisition', { p_id: editId, p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload, p_event_ids: selectedEventIds, p_requisition_no: requisitionNo })
-      : await supabase.rpc('rpc_submit_store_requisition', { p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload, p_event_ids: selectedEventIds, p_requisition_no: requisitionNo })
-    setSaving(false)
-    if (res.error) { setError(res.error.message); return }
-    try { await logActivity(editId ? 'STORE_REQUISITION_EDIT' : 'STORE_REQUISITION_SUBMIT', dateFrom + ' to ' + dateTo + ' · ' + rupees(grandTotal)) } catch (_) {}
-    clearDraftAfterSubmit()
-    if (onDone) onDone(res.data)
+      var finalCasualSlipPaths = []
+      for (var j = 0; j < casualSlips.length; j++) {
+        var cs = casualSlips[j]
+        if (cs.file) finalCasualSlipPaths.push(await uploadImage(cs.file, 'storereq_casual'))
+        else if (cs.path) finalCasualSlipPaths.push(cs.path)
+      }
+
+      var payload = deptRows.map(function (r) {
+        return {
+          department_id: Number(r.departmentId),
+          sub_department_id: Number(r.subDepartmentId),
+          section: isKitchenRow(r) ? r.section : null,
+          remarks: r.remarks ? r.remarks.trim() : null,
+          req_no: r.reqNo ? r.reqNo.trim() : null,
+          req_image_path: Object.prototype.hasOwnProperty.call(deptRowImagePaths, r.id) ? deptRowImagePaths[r.id] : r.reqImagePath,
+          items: r.inventoryRows.map(function (l) {
+            return { item_source: l.itemSource, item_id: l.itemId, item_name: l.name, unit: l.unit, qty: Number(l.qty) || 0, rate_paise: Number(l.ratePaise) || 0 }
+          }),
+          casuals: r.casualRows.map(function (l) {
+            var c = casualRoster.find(function (x) { return String(x.id) === String(l.casualRosterId) })
+            return { casual_roster_id: l.casualRosterId || null, casual_type: c ? c.casual_type : '', qty: Number(l.qty) || 0, rate_paise: c ? c.rate_paise : 0 }
+          }),
+        }
+      })
+      var res = editId
+        ? await supabase.rpc('rpc_update_store_requisition', { p_id: editId, p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload, p_event_ids: selectedEventIds, p_requisition_no: requisitionNo, p_casual_slip_paths: finalCasualSlipPaths })
+        : await supabase.rpc('rpc_submit_store_requisition', { p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload, p_event_ids: selectedEventIds, p_requisition_no: requisitionNo, p_casual_slip_paths: finalCasualSlipPaths })
+      if (res.error) { setSaving(false); setError(res.error.message); return }
+      if (removedPathsRef.current.length > 0) {
+        try { await supabase.storage.from('receipts').remove(removedPathsRef.current) } catch (_) {}
+        removedPathsRef.current = []
+      }
+      try { await logActivity(editId ? 'STORE_REQUISITION_EDIT' : 'STORE_REQUISITION_SUBMIT', dateFrom + ' to ' + dateTo + ' · ' + rupees(grandTotal)) } catch (_) {}
+      clearDraftAfterSubmit()
+      setSaving(false)
+      if (onDone) onDone(res.data)
+    } catch (err) {
+      setSaving(false)
+      setError('Image upload failed: ' + (err && err.message ? err.message : err))
+    }
   }
 
   var CARD = 'bg-white border border-gray-200 rounded-2xl p-4 space-y-3'
@@ -540,6 +666,29 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           <input type="text" value={requisitionNo} onChange={function (e) { setRequisitionNo(e.target.value) }}
             placeholder="e.g. the slip number from the physical requisition"
             className={CTRL} />
+        </div>
+        <div>
+          <label className={LABEL}>Casual Slips (optional)</label>
+          <div className="flex flex-wrap gap-2">
+            {casualSlips.map(function (cs) {
+              return (
+                <div key={cs.id} className="relative w-16 h-16 shrink-0">
+                  <a href={cs.previewUrl} target="_blank" rel="noreferrer">
+                    <img src={cs.previewUrl} alt="Casual slip" className="w-16 h-16 object-cover rounded-lg border border-gray-300" />
+                  </a>
+                  <button type="button" onClick={function () { removeCasualSlip(cs.id) }} aria-label="Remove image"
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
+                    <Icon name="close" size={10} />
+                  </button>
+                </div>
+              )
+            })}
+            <label className="w-16 h-16 shrink-0 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-0.5 text-gray-400 cursor-pointer hover:bg-gray-50">
+              <Icon name="camera" size={16} />
+              <span className="text-[9px] font-bold">Add</span>
+              <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={onPickCasualSlips} />
+            </label>
+          </div>
         </div>
       </div>
 
@@ -630,6 +779,33 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
               <label className={LABEL}>Remarks</label>
               <input type="text" value={row.remarks} onChange={function (e) { onChangeRemarks(row.id, e) }}
                 placeholder="Optional note for this row…" className={CTRL} style={{ fontSize: '16px' }} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <div>
+                <label className={LABEL}>Req No (optional)</label>
+                <input type="text" value={row.reqNo} onChange={function (e) { onChangeReqNo(row.id, e) }}
+                  placeholder="Slip number" className={CTRL} style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className={LABEL}>Req Image (optional)</label>
+                {row.reqImagePreview ? (
+                  <div className="relative">
+                    <a href={row.reqImagePreview} target="_blank" rel="noreferrer">
+                      <img src={row.reqImagePreview} alt="Requisition slip" className="w-full h-9 object-cover rounded-lg border border-gray-300" />
+                    </a>
+                    <button type="button" onClick={function () { removeReqImage(row) }} aria-label="Remove image"
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
+                      <Icon name="close" size={10} />
+                    </button>
+                  </div>
+                ) : (
+                  <label className={CTRL + ' flex items-center justify-center gap-1.5 text-gray-500 cursor-pointer'}>
+                    <Icon name="camera" size={14} /> Add photo
+                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={function (e) { onPickReqImage(row, e) }} />
+                  </label>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-2">
