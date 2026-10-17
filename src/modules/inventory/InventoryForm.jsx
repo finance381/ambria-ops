@@ -112,6 +112,8 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   var nameManual = useRef(!!(seed?.name && String(seed.name).trim()))
   var [qty, setQty] = useState(seed?.qty ?? '')
   var [unit, setUnit] = useState(seed?.unit || 'Pieces')
+  // Pieces in one set, asked under the stock quantity when its unit is Sets.
+  var [piecesPerSet, setPiecesPerSet] = useState(seed?.pieces_per_set != null ? String(seed.pieces_per_set) : '')
   var [minOrderQty, setMinOrderQty] = useState(seed?.min_order_qty ?? seed?.season_reorder_qty ?? '')
   var [reorderQty, setReorderQty] = useState(seed?.reorder_qty ?? seed?.off_season_reorder_qty ?? '')
   var [ratePaise, setRatePaise] = useState(seed?.rate_paise ? (seed.rate_paise / 100) : '')
@@ -293,10 +295,10 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
     return byName
   }, [usedDimRows, categoryId, categories])
 
-  // "8 sets × 6 = 48 pieces" under a property counted in Sets, once both
-  // numbers are in.
-  function setsTotalNote(dim) {
-    var q = Number(dim.qty), p = Number(dim.per_set)
+  // "8 sets × 6 = 48 pieces" under the stock quantity counted in Sets, once
+  // both numbers are in.
+  function setsTotalNote() {
+    var q = Number(qty), p = Number(piecesPerSet)
     if (!(q > 0) || !(p > 0)) return null
     var total = Math.round(q * p * 100) / 100
     return q + (q === 1 ? ' set' : ' sets') + ' × ' + p + ' = ' + total + (total === 1 ? ' piece' : ' pieces')
@@ -557,7 +559,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   }
 
   function resetForm() {
-    setCategoryId(''); setSubCategoryId(''); setName(''); setDescription(''); setNameHindi(''); setQty(''); setUnit('Pieces'); nameManual.current = false
+    setCategoryId(''); setSubCategoryId(''); setName(''); setDescription(''); setNameHindi(''); setQty(''); setUnit('Pieces'); setPiecesPerSet(''); nameManual.current = false
     setMinOrderQty(''); setReorderQty(''); setRatePaise(''); setIsAsset('unknown'); setType('Indoor')
     setImageFile(null); setImagePreview(''); setErrors({}); setAllocations([{ department: '', sub_department_id: '', venue_id: '', sub_venue_id: '', qty: '' }])
     setCropSrc(null); setHiEdited(false); setDimensionValues([]); setCategoryDimFields([])
@@ -639,19 +641,18 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
       if (!q) return null
       var u = (d.unit || '').toString().trim()
       if (u.toLowerCase() === 'pieces') u = ''
-      var out = { name: d.name, type: 'number', qty: q, unit: u }
-      // Counted in Sets: how many pieces make one set, when given.
-      var ps = (d.per_set == null ? '' : String(d.per_set)).trim()
-      if (u === 'Sets' && ps && Number(ps) > 0) out.per_set = ps
-      return out
+      return { name: d.name, type: 'number', qty: q, unit: u }
     }).filter(function (x) { return x !== null }) : []
     if (cleanDims.length === 0) cleanDims = null
     var payload
     if (isCatStore) {
-      payload = { name: effectiveName, category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: totalQty, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, brand: packSizeBrand.trim() || null, pack_size_qty: packSizeQty ? Number(packSizeQty) : null, pack_size_unit: packSizeUnit, season_reorder_qty: minOrderQty ? Number(minOrderQty) : null, off_season_reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: savedRatePaise, is_asset: isAsset, department: allocations[0]?.department || null, dimensions: cleanDims }
+      payload = { name: effectiveName, category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: totalQty, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, brand: packSizeBrand.trim() || null, pack_size_qty: packSizeQty ? Number(packSizeQty) : null, pack_size_unit: packSizeUnit, season_reorder_qty: minOrderQty ? Number(minOrderQty) : null, off_season_reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: savedRatePaise, is_asset: isAsset, department: allocations[0]?.department || null, dimensions: cleanDims, pieces_per_set: unit === 'Sets' && Number(piecesPerSet) > 0 ? Number(piecesPerSet) : null }
     } else {
-      payload = { name: effectiveName, category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: totalQty, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, min_order_qty: minOrderQty ? Number(minOrderQty) : null, reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: savedRatePaise, is_asset: isAsset, department: allocations[0]?.department || null, dimensions: cleanDims }
+      payload = { name: effectiveName, category_id: Number(categoryId), sub_category_id: subCategoryId ? Number(subCategoryId) : null, type: type, qty: totalQty, unit: unit, description: description.trim() || null, name_hindi: hindiName || null, min_order_qty: minOrderQty ? Number(minOrderQty) : null, reorder_qty: reorderQty ? Number(reorderQty) : null, rate_paise: savedRatePaise, is_asset: isAsset, department: allocations[0]?.department || null, dimensions: cleanDims, pieces_per_set: unit === 'Sets' && Number(piecesPerSet) > 0 ? Number(piecesPerSet) : null }
     }
+    // An edit opened from a screen that never loaded pieces_per_set (a review
+    // list) leaves it as stored unless something was typed here.
+    if (isEdit && piecesPerSet === '' && !(seed && Object.prototype.hasOwnProperty.call(seed, 'pieces_per_set'))) delete payload.pieces_per_set
     if (!isEdit && profile?.id) { payload.submitted_by = profile.id }
     if (!isEdit) {
       var isAdminRole = hasPerm(profile?.permsNew, 'review.pending.approve')
@@ -950,6 +951,15 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
             </select>
           </div>
           {errors.qty && <p className="text-xs text-red-500 mt-1">{errors.qty}</p>}
+          {unit === 'Sets' && (
+            <div className="mt-2.5">
+              <label className={F_LBL}>Pieces in 1 set</label>
+              <input type="number" min="1" step="1" inputMode="numeric" value={piecesPerSet}
+                onChange={function (e) { setPiecesPerSet(e.target.value) }} placeholder="e.g. 6"
+                aria-label="Pieces in one set" style={{ fontSize: '16px' }} className={F_INP} />
+              {setsTotalNote() && <p className="mt-1.5 text-[12.5px] font-semibold text-slate-700">Total: {setsTotalNote()}</p>}
+            </div>
+          )}
         </div>
         <div className="min-w-0">
           <label className={F_LBL}>Total (₹)</label>
@@ -1508,15 +1518,6 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
                       {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
                     </select>
                   </div>
-                  {dim.unit === 'Sets' && (
-                    <div className="mt-2">
-                      <label className={F_LBL}>Pieces in 1 set</label>
-                      <input type="number" min="1" step="1" inputMode="numeric" value={dim.per_set || ''}
-                        onChange={function (e) { setDim({ per_set: e.target.value }) }} placeholder="e.g. 6"
-                        aria-label={dim.name + ' pieces in one set'} className={F_INP} />
-                      {setsTotalNote(dim) && <p className="mt-1.5 text-[12.5px] font-semibold text-slate-700">Total: {setsTotalNote(dim)}</p>}
-                    </div>
-                  )}
                 </div>
               )
             })}
@@ -1735,15 +1736,6 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
                     {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
                   </select>
                 </div>
-                {dim.unit === 'Sets' && (
-                  <div className="mt-2">
-                    <label className={F_LBLS + " truncate"}>Pieces in 1 set</label>
-                    <input type="number" min="1" step="1" inputMode="numeric" value={dim.per_set || ''}
-                      onChange={function (e) { setDim({ per_set: e.target.value }) }} placeholder="e.g. 6"
-                      aria-label={dim.name + ' pieces in one set'} style={{ fontSize: '16px' }} className={F_INPS} />
-                    {setsTotalNote(dim) && <p className="mt-1.5 text-[12px] font-semibold text-slate-700">Total: {setsTotalNote(dim)}</p>}
-                  </div>
-                )}
               </div>
             )
           })}
