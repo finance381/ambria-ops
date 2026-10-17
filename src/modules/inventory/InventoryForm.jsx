@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase, getImageUrl } from '../../lib/supabase'
 import { prepUpload } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
@@ -138,6 +138,10 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   var resolvedNameRef = useRef('')
   var [dimensionValues, setDimensionValues] = useState(seed?.dimensions || [])
   var [categoryDimFields, setCategoryDimFields] = useState([])
+  // Every item's saved properties with its category ([{ category_id,
+  // dimensions }]), loaded once: the dropdown properties offer values already
+  // used in the same department, so a name typed once is a suggestion after.
+  var [usedDimRows, setUsedDimRows] = useState(null)
   var [cateringStoreSubDeptId, setCateringStoreSubDeptId] = useState(null)
   var [packSizeQty, setPackSizeQty] = useState(seed?.pack_size_qty ?? '')
   var [packSizeUnit, setPackSizeUnit] = useState(seed?.pack_size_unit || 'Grams')
@@ -251,6 +255,67 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
       })
     }, 300)
   }
+  useEffect(function () {
+    if (usedDimRows) return
+    if (!categoryDimFields.some(function (f) { return f.type === 'select' })) return
+    var cancelled = false
+    Promise.all([
+      supabase.from('inventory_items').select('category_id, dimensions').not('dimensions', 'is', null).limit(10000),
+      supabase.from('catering_store_items').select('category_id, dimensions').not('dimensions', 'is', null).limit(10000),
+    ]).then(function (res) {
+      if (cancelled) return
+      setUsedDimRows((res[0].data || []).concat(res[1].data || []))
+    })
+    return function () { cancelled = true }
+  }, [categoryDimFields, usedDimRows])
+
+  // Values used per property name ({ Vendor: ['Craft Creations', …] }) on
+  // items of the chosen category's department (its sub-department), or of
+  // that category alone when it has none — Crockery's suggestions come from
+  // crockery items only.
+  var usedDimValues = useMemo(function () {
+    if (!usedDimRows || !categoryId) return null
+    var cat = categories.find(function (c) { return String(c.id) === String(categoryId) })
+    if (!cat) return null
+    var scope = cat.sub_department_id
+      ? categories.filter(function (c) { return c.sub_department_id === cat.sub_department_id }).map(function (c) { return String(c.id) })
+      : [String(cat.id)]
+    var byName = {}
+    usedDimRows.forEach(function (row) {
+      if (scope.indexOf(String(row.category_id)) === -1) return
+      ;(Array.isArray(row.dimensions) ? row.dimensions : []).forEach(function (d) {
+        var v = d && d.value != null ? String(d.value).trim() : ''
+        if (!d || !d.name || !v || v.toLowerCase() === 'pieces') return
+        var list = byName[d.name] || (byName[d.name] = [])
+        if (!list.some(function (x) { return x.toLowerCase() === v.toLowerCase() })) list.push(v)
+      })
+    })
+    return byName
+  }, [usedDimRows, categoryId, categories])
+
+  // "8 sets × 6 = 48 pieces" under a property counted in Sets, once both
+  // numbers are in.
+  function setsTotalNote(dim) {
+    var q = Number(dim.qty), p = Number(dim.per_set)
+    if (!(q > 0) || !(p > 0)) return null
+    var total = Math.round(q * p * 100) / 100
+    return q + (q === 1 ? ' set' : ' sets') + ' × ' + p + ' = ' + total + (total === 1 ? ' piece' : ' pieces')
+  }
+
+  // A dropdown property's choices: the category's options, then names already
+  // used on other items, then whatever this item holds (a new name just added).
+  function dimChoices(dim) {
+    var out = []
+    function add(v) {
+      v = v == null ? '' : String(v).trim()
+      if (v && !out.some(function (x) { return x.toLowerCase() === v.toLowerCase() })) out.push(v)
+    }
+    ;(dim.options || []).forEach(add)
+    ;((usedDimValues && usedDimValues[dim.name]) || []).slice().sort(function (a, b) { return a.localeCompare(b) }).forEach(add)
+    add(dim.value)
+    return out.map(function (v) { return { label: v, value: v } })
+  }
+
   useEffect(function () {
     if (categoryId) {
       if (categories.length === 0) return // categories still loading — don't wipe dimensions yet
@@ -574,7 +639,11 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
       if (!q) return null
       var u = (d.unit || '').toString().trim()
       if (u.toLowerCase() === 'pieces') u = ''
-      return { name: d.name, type: 'number', qty: q, unit: u }
+      var out = { name: d.name, type: 'number', qty: q, unit: u }
+      // Counted in Sets: how many pieces make one set, when given.
+      var ps = (d.per_set == null ? '' : String(d.per_set)).trim()
+      if (u === 'Sets' && ps && Number(ps) > 0) out.per_set = ps
+      return out
     }).filter(function (x) { return x !== null }) : []
     if (cleanDims.length === 0) cleanDims = null
     var payload
@@ -1418,12 +1487,14 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
                 )
               }
               if (dimType === 'select') {
-                var dimOptItems = (dim.options || []).map(function (opt) { return { label: opt, value: opt } })
+                var dimOptItems = dimChoices(dim)
                 return (
                   <div key={dim.name}>
                     <label className={F_LBL}>{dim.name}</label>
                     <SearchDropdown items={dimOptItems} value={dim.value || ''}
                       onChange={function (val) { setDim({ value: val }) }}
+                      allowAdd onAdd={function (val) { setDim({ value: val }); return Promise.resolve() }}
+                      onInputChange={function (val) { setDim({ value: val }) }}
                       placeholder={'Search ' + dim.name + '...'} />
                   </div>
                 )
@@ -1437,6 +1508,15 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
                       {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
                     </select>
                   </div>
+                  {dim.unit === 'Sets' && (
+                    <div className="mt-2">
+                      <label className={F_LBL}>Pieces in 1 set</label>
+                      <input type="number" min="1" step="1" inputMode="numeric" value={dim.per_set || ''}
+                        onChange={function (e) { setDim({ per_set: e.target.value }) }} placeholder="e.g. 6"
+                        aria-label={dim.name + ' pieces in one set'} className={F_INP} />
+                      {setsTotalNote(dim) && <p className="mt-1.5 text-[12.5px] font-semibold text-slate-700">Total: {setsTotalNote(dim)}</p>}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -1630,12 +1710,14 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
               )
             }
             if (dimType === 'select') {
-              var dimOptItems = (dim.options || []).map(function (opt) { return { label: opt, value: opt } })
+              var dimOptItems = dimChoices(dim)
               return (
                 <div key={dim.name} className="min-w-0">
                   <label className={F_LBLS + " truncate"}>{dim.name}</label>
                   <SearchDropdown items={dimOptItems} inlineVoice value={dim.value || ''}
                     onChange={function (val) { setDim({ value: val }) }}
+                    allowAdd onAdd={function (val) { setDim({ value: val }); return Promise.resolve() }}
+                    onInputChange={function (val) { setDim({ value: val }) }}
                     placeholder={dim.name + '...'} />
                 </div>
               )
@@ -1653,6 +1735,15 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
                     {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
                   </select>
                 </div>
+                {dim.unit === 'Sets' && (
+                  <div className="mt-2">
+                    <label className={F_LBLS + " truncate"}>Pieces in 1 set</label>
+                    <input type="number" min="1" step="1" inputMode="numeric" value={dim.per_set || ''}
+                      onChange={function (e) { setDim({ per_set: e.target.value }) }} placeholder="e.g. 6"
+                      aria-label={dim.name + ' pieces in one set'} style={{ fontSize: '16px' }} className={F_INPS} />
+                    {setsTotalNote(dim) && <p className="mt-1.5 text-[12px] font-semibold text-slate-700">Total: {setsTotalNote(dim)}</p>}
+                  </div>
+                )}
               </div>
             )
           })}
