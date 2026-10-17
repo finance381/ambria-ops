@@ -10,6 +10,18 @@ import { deptCls, deptOrder } from '../../lib/ui'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
+// Ranks a name match by how early/exact the hit is, so "Water Glass" beats
+// "Golgappa Water Dispenser Glass" for a search of "water" (same helper as
+// StoreRequisitionForm.jsx's item search).
+function matchRank(name, term) {
+  var n = name.toLowerCase()
+  if (n === term) return 0
+  if (n.indexOf(term) === 0) return 1
+  var wordStart = n.indexOf(' ' + term)
+  if (wordStart !== -1) return 2
+  return 3
+}
+
 var ITEM_UNITS = ['Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens', 'Kg', 'Grams', 'Liters', 'ML', 'Meters', 'Feet', 'Rolls', 'Packets', 'Bags', 'Boxes', 'Cartons', 'Bottles', 'Sheets', 'Reams']
 
 // Same shape ExpenseForm.jsx's makeItem()/isItemComplete() use — a JV's item
@@ -169,13 +181,19 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
     if (!term || term.trim().length < 2) { setItemMatches([]); return }
     itemSearchTimer.current = setTimeout(function () {
       var q = term.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')
+      var termLower = term.trim().toLowerCase()
       Promise.all([
-        supabase.from('inventory_items').select('id, name, unit, category_id').ilike('name', '%' + q + '%').eq('status', 'approved').order('name').limit(6),
-        supabase.from('catering_store_items').select('id, name, unit, category_id').ilike('name', '%' + q + '%').eq('status', 'approved').order('name').limit(6),
+        supabase.from('inventory_items').select('id, name, unit, category_id').ilike('name', '%' + q + '%').eq('status', 'approved').order('name').limit(20),
+        supabase.from('catering_store_items').select('id, name, unit, category_id').ilike('name', '%' + q + '%').eq('status', 'approved').order('name').limit(20),
       ]).then(function (results) {
         var inv = (results[0].data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
         var cs = (results[1].data || []).map(function (i) { return Object.assign({}, i, { _source: 'catering_store' }) })
-        setItemMatches(inv.concat(cs).slice(0, 8))
+        var combined = inv.concat(cs).sort(function (a, b) {
+          var ra = matchRank(a.name, termLower), rb = matchRank(b.name, termLower)
+          if (ra !== rb) return ra - rb
+          return a.name.length - b.name.length
+        }).slice(0, 12)
+        setItemMatches(combined)
       })
     }, 300)
   }
