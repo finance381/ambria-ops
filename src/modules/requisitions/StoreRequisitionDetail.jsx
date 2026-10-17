@@ -212,8 +212,8 @@ function StoreRequisitionDetail({ id, onBack }) {
                 <tr className="border-t-2 border-gray-200 bg-gray-50">
                   <td className="px-3.5 py-2.5 text-sm font-bold text-gray-800">Total</td>
                   <td className="px-3.5 py-2.5 text-right text-sm font-bold text-gray-900 tabular-nums">{formatPointsPlain(header.total_paise || 0)}</td>
-                  <td className="px-3.5 py-2.5"></td>
-                  <td className="px-3.5 py-2.5"></td>
+                  <td className="px-3.5 py-2.5 text-right text-sm font-bold text-gray-700 tabular-nums">{plateSummary ? rateOrDash(header.total_paise || 0, plateSummary.actual) : '—'}</td>
+                  <td className="px-3.5 py-2.5 text-right text-sm font-bold text-gray-700 tabular-nums">{plateSummary ? rateOrDash(header.total_paise || 0, plateSummary.booking) : '—'}</td>
                   <td className="px-3.5 py-2.5 text-right text-sm font-bold text-gray-700 tabular-nums">
                     {enriched.reduce(function (s, d) { return s + d.items.length }, 0)}
                   </td>
