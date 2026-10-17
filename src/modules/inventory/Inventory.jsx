@@ -75,6 +75,13 @@ function dimOf(item, re) {
   return ''
 }
 
+// " · 48 pcs" after a stock counted in Sets, when pieces per set is known.
+function piecesNote(item) {
+  var p = Number(item.pieces_per_set)
+  if (item.unit !== 'Sets' || !(p > 0)) return ''
+  return ' · ' + (Math.round((Number(item.qty) || 0) * p * 100) / 100) + ' pcs'
+}
+
 function Inventory({ profile }) {
 
   var [items, setItems] = useState([])
@@ -408,7 +415,7 @@ function Inventory({ profile }) {
         var onHand = Number(item.qty) || 0
         var placed = venueAllocs.reduce(function (sum, va) { return sum + (Number(va.qty) || 0) }, 0)
         var rest = Math.round((onHand - placed) * 1000) / 1000
-        var facts = [{ label: 'Stock', value: onHand + ' ' + (item.unit || ''), icon: 'box' }]
+        var facts = [{ label: 'Stock', value: onHand + ' ' + (item.unit || '') + piecesNote(item), icon: 'box' }]
         var mat = dimOf(item, /materi/i); if (mat) facts.push({ label: 'Material', value: mat, icon: 'tag' })
         var zone = dimOf(item, /menu\s*zone/i); if (zone) facts.push({ label: 'Menu zone', value: zone, icon: 'utensils' })
         var vendor = dimOf(item, /^\s*vendors?\s*$/i) || dimOf(item, /vendor\s*name/i); if (vendor) facts.push({ label: 'Vendor', value: vendor, icon: 'truck' })
@@ -542,7 +549,7 @@ function Inventory({ profile }) {
                   <Icon name="box" size={18} />
                 </span>
                 <span className="flex-1 min-w-0 flex flex-col leading-tight">
-                  <span className="text-[15.5px] font-extrabold text-slate-900 tabular-nums">{onHand} <span className="text-[13px] font-semibold text-slate-700">{item.unit || ''}</span></span>
+                  <span className="text-[15.5px] font-extrabold text-slate-900 tabular-nums">{onHand} <span className="text-[13px] font-semibold text-slate-700">{item.unit || ''}{piecesNote(item)}</span></span>
                   {rest > 0
                     ? <span className="text-[12px] font-bold text-amber-800 tabular-nums">{rest} not allocated</span>
                     : <span className="text-[12.5px] text-slate-500">View breakdown</span>}

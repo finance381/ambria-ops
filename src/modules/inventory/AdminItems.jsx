@@ -344,8 +344,8 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
 
   async function loadData() {
     try {
-      var INV_COLS = 'id, name, name_hindi, inventory_id, qty, blocked, unit, type, status, department, category_id, sub_category_id, rate_paise, min_order_qty, reorder_qty, is_asset, image_path, submitted_by, entry_date, description, dimensions, categories(name, sub_department_id), sub_categories(name), venue_allocations(qty, venues(code, name), sub_venue_id, sub_department_id)'
-      var CS_COLS = 'id, name, name_hindi, inventory_id, qty, unit, type, status, department, category_id, sub_category_id, rate_paise, is_asset, image_path, submitted_by, entry_date, description, dimensions, brand, pack_size_qty, pack_size_unit, season_reorder_qty, off_season_reorder_qty, categories(name, sub_department_id), sub_categories(name), cs_venue_allocations(qty, venues(code, name), sub_venue_id, sub_department_id)'
+      var INV_COLS = 'id, name, name_hindi, inventory_id, qty, blocked, unit, type, status, department, category_id, sub_category_id, rate_paise, min_order_qty, reorder_qty, is_asset, image_path, submitted_by, entry_date, description, dimensions, pieces_per_set, categories(name, sub_department_id), sub_categories(name), venue_allocations(qty, venues(code, name), sub_venue_id, sub_department_id)'
+      var CS_COLS = 'id, name, name_hindi, inventory_id, qty, unit, type, status, department, category_id, sub_category_id, rate_paise, is_asset, image_path, submitted_by, entry_date, description, dimensions, pieces_per_set, brand, pack_size_qty, pack_size_unit, season_reorder_qty, off_season_reorder_qty, categories(name, sub_department_id), sub_categories(name), cs_venue_allocations(qty, venues(code, name), sub_venue_id, sub_department_id)'
       // Ordered by id as well as created_at, so rows sharing a timestamp
       // cannot shift between pages fetched side by side.
       var [invAll, csAll, deptRes, profilesRes, catRes, subCatRes, subDeptRes, subVenueRes] = await Promise.all([
@@ -1216,6 +1216,12 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
   // red on hover and still asks Yes / No before it does anything.
   // Total stock, left of Edit: how much is on hand and how much of it no
   // venue holds; opens the batch breakdown.
+  // " · 48 pcs" after a stock counted in Sets, when pieces per set is known.
+  function piecesNote(item) {
+    var p = Number(item.pieces_per_set)
+    if (item.unit !== 'Sets' || !(p > 0)) return ''
+    return ' · ' + (Math.round((Number(item.qty) || 0) * p * 100) / 100) + ' pcs'
+  }
   function stockPillOf(item) {
     var onHand = Number(item.qty) || 0
     var placed = (item.venue_allocations || []).reduce(function (sum, va) { return sum + (Number(va.qty) || 0) }, 0)
@@ -1228,7 +1234,7 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
           <Icon name="box" size={16} />
         </span>
         <span className="flex flex-col leading-tight">
-          <span className="text-[15.5px] font-extrabold text-slate-900 tabular-nums">{onHand} <span className="text-[12px] font-semibold text-slate-600">{item.unit || ''}</span></span>
+          <span className="text-[15.5px] font-extrabold text-slate-900 tabular-nums">{onHand} <span className="text-[12px] font-semibold text-slate-600">{item.unit || ''}{piecesNote(item)}</span></span>
           {rest > 0
             ? <span className="text-[11.5px] font-bold text-amber-800 tabular-nums">{rest} not allocated</span>
             : <span className="text-[11.5px] font-semibold text-slate-600">View breakdown</span>}
