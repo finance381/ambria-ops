@@ -45,13 +45,20 @@ function FilterField({ label, note, noteTone, children }) {
 //
 // Cells hidden at a breakpoint leave the flow entirely, so the template has as
 // many columns as there are visible cells at that width.
-// Nine columns, declared once and used by the heading row and by every item
+// Seven columns, declared once and used by the heading row and by every item
 // row, so a column and the figures under it cannot drift apart. The picture
 // and the name are two columns rather than one so the names start in the same
-// place whether or not a photograph loaded.
-// Nine columns: the code went, and the 6.5rem it held goes to the item's own
-// name, which is what a reader scans this table by.
-var GRID = 'grid items-center gap-x-3 grid-cols-[2.5rem_minmax(11rem,1fr)_9rem_8.5rem_10rem_4.5rem_5.5rem_6.5rem_11rem]'
+// place whether or not a photograph loaded. Category and Sub-category used
+// to be columns here too — still filterable above, just no longer printed on
+// every row, since Last 3 rates is the column this ledger is actually read
+// for and two columns of mostly-empty sub-category cells were competing with
+// it for width.
+// The item name used to hold the 1fr — the one column that eats whatever
+// width is left over — which on a wide screen meant a short name like
+// "Anar" left a dead gap before Recent vendor while Last 3 rates, the
+// column this ledger is actually read for, stayed pinned at 13rem and
+// wrapped onto a second line. The leftover space belongs there instead.
+var GRID = 'grid items-center gap-x-3 grid-cols-[2.5rem_minmax(11rem,22rem)_10rem_4.5rem_5.5rem_6.5rem_minmax(17rem,1fr)]'
 
 var COL_HEAD = 'text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500'
 
@@ -69,6 +76,10 @@ function InventoryLedger({ profile }) {
   var [subCatFilters, setSubCatFilters] = useState([])
   var [sourceFilters, setSourceFilters] = useState([])
   var [vendorFilters, setVendorFilters] = useState([])
+  // 'up' | 'down' — whether the item's most recent purchase cost more or
+  // less than the previous one from that same vendor (the same comparison
+  // the row's own trend arrow already shows).
+  var [trendFilters, setTrendFilters] = useState([])
   var [sortBy, setSortBy] = useState('name')  // name | value_desc | value_asc | rate_desc | rate_asc
   var [showNoHistory, setShowNoHistory] = useState(false)
   var [page, setPage] = useState(0)
@@ -106,7 +117,7 @@ function InventoryLedger({ profile }) {
     if (canView) loadAll()
   })
 
-  useEffect(function () { setPage(0) }, [search, catFilters, subCatFilters, sourceFilters, vendorFilters, sortBy, showNoHistory, pageSize])
+  useEffect(function () { setPage(0) }, [search, catFilters, subCatFilters, sourceFilters, vendorFilters, trendFilters, sortBy, showNoHistory, pageSize])
 
   async function loadAll() {
     setLoading(true)
@@ -353,13 +364,18 @@ function InventoryLedger({ profile }) {
         for (var k = 0; k < rows.length; k++) { if (vendorFilters.indexOf(rows[k].vendor_name) !== -1) { has = true; break } }
         if (!has) return false
       }
+      if (trendFilters.length > 0) {
+        var lastRows = vendorFilters.length > 0 ? rows.filter(function (r) { return vendorFilters.indexOf(r.vendor_name) !== -1 }) : rows
+        var lastTrend = lastRows.length > 0 ? computeTrend(lastRows.slice(0, 3))[0]._trend : null
+        if (!lastTrend || trendFilters.indexOf(lastTrend) === -1) return false
+      }
       if (q) {
         var hay = (i.name + ' ' + (i.code || '') + ' ' + (i.cat || '') + ' ' + (i.subcat || '')).toLowerCase()
         if (hay.indexOf(q) === -1) return false
       }
       return true
     })
-  }, [items, search, catFilters, subCatFilters, sourceFilters, vendorFilters, historyByItem])
+  }, [items, search, catFilters, subCatFilters, sourceFilters, vendorFilters, trendFilters, historyByItem])
 
   var filteredItems = useMemo(function () {
     if (showNoHistory) return matchesFilters
@@ -411,7 +427,7 @@ function InventoryLedger({ profile }) {
   }
 
   var activeFilterCount = (sourceFilters.length > 0 ? 1 : 0) + (catFilters.length > 0 ? 1 : 0) +
-    (subCatFilters.length > 0 ? 1 : 0) + (vendorFilters.length > 0 ? 1 : 0)
+    (subCatFilters.length > 0 ? 1 : 0) + (vendorFilters.length > 0 ? 1 : 0) + (trendFilters.length > 0 ? 1 : 0)
 
   var totalValue = useMemo(function () {
     var sum = 0
@@ -762,13 +778,13 @@ function InventoryLedger({ profile }) {
             <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Narrow the list</p>
             {activeFilterCount > 0 && (
               <button type="button"
-                onClick={function () { setSourceFilters([]); setCatFilters([]); setSubCatFilters([]); setVendorFilters([]) }}
+                onClick={function () { setSourceFilters([]); setCatFilters([]); setSubCatFilters([]); setVendorFilters([]); setTrendFilters([]) }}
                 className="text-[11.5px] font-bold text-rose-600 hover:text-rose-700 transition-colors">
                 Clear all
               </button>
             )}
           </div>
-          <div className="grid grid-cols-1 @2xl:grid-cols-2 @4xl:grid-cols-4 gap-x-2 gap-y-3">
+          <div className="grid grid-cols-1 @2xl:grid-cols-2 @4xl:grid-cols-5 gap-x-2 gap-y-3">
           <FilterField label="Source" note={sourceFilters.length > 0 ? sourceFilters.length + ' chosen' : null}>
             <MultiSearchDropdown
               items={[{ value: 'inventory', label: 'Inventory' }, { value: 'catering_store', label: 'Catering Store' }]}
@@ -802,6 +818,16 @@ function InventoryLedger({ profile }) {
               values={vendorFilters}
               onChange={setVendorFilters}
               placeholder="All vendors" />
+          </FilterField>
+          {/* Against the previous purchase from that same vendor — the exact
+              comparison the row's own trend arrow already shows, just turned
+              into something you can narrow the list by. */}
+          <FilterField label="Price trend" note={trendFilters.length > 0 ? trendFilters.length + ' chosen' : null}>
+            <MultiSearchDropdown
+              items={[{ value: 'up', label: '↑ Increased' }, { value: 'down', label: '↓ Decreased' }]}
+              values={trendFilters}
+              onChange={setTrendFilters}
+              placeholder="Any trend" />
           </FilterField>
           </div>
         </div>
@@ -890,24 +916,20 @@ function InventoryLedger({ profile }) {
           make all nine unreadable. */}
       <div ref={listRef} className={CARD + ' overflow-hidden scroll-mt-4'}>
         <div className="overflow-x-auto ambria-thin-scroll">
-          <div className="min-w-[1224px]">
+          <div className="min-w-[1050px]">
             <div className={GRID + ' px-4 py-2.5 bg-slate-50 border-b border-slate-200 ' + COL_HEAD}>
               <span className="col-span-2">Item</span>
-              <span>Category</span>
-              <span>Sub-category</span>
               <span>Recent vendor</span>
               <span className="text-center">Qty</span>
               <span className="text-center">Rate</span>
               <span className="text-center">Value</span>
-              <span className="border-l border-slate-200 pl-3.5 -my-2.5 py-2.5">Last purchase</span>
+              <span className="border-l border-slate-200 pl-3.5 -my-2.5 py-2.5">Last 3 rates</span>
             </div>
 
             <div className="divide-y divide-slate-100">
               {pagedItems.map(function (item) {
                 var a = aggregateItem(item)
                 var value = (item.live_qty || 0) * (item.rate_paise || 0)
-                var last = a.last3 && a.last3[0]
-                var filed = item.subcat || (item._source === 'catering_store' ? 'Catering' : 'Inventory')
                 return (
                   <div key={item._key} role="button" tabIndex={0}
                     onClick={function () { setSelectedItem(item) }}
@@ -933,19 +955,6 @@ function InventoryLedger({ profile }) {
                       {item.name}
                     </span>
 
-                    {/* Plain text, not chips. A chip per category, per
-                        sub-category and per vendor put three coloured pills on
-                        every row, and a colour hashed from a name means the
-                        colours carry no meaning — three rows in, the table was
-                        a fruit salad. Weight and shade separate the three
-                        columns instead: the category leads, the filing steps
-                        back, the vendor is a name and reads as one. */}
-                    <span className="min-w-0 text-[12px] font-semibold text-slate-700 truncate">{item.cat || '—'}</span>
-                    {/* Sub-category when the item has one; where it has none,
-                        which is most of them, the store it belongs to — so the
-                        column is never a row of blanks. */}
-                    <span className="min-w-0 text-[12px] text-slate-500 truncate">{filed}</span>
-
                     <span className="min-w-0 flex items-baseline gap-1.5">
                       {a.vendors.length === 0
                         ? <span className="text-[12px] text-slate-300">{'—'}</span>
@@ -970,33 +979,30 @@ function InventoryLedger({ profile }) {
                       {value > 0 ? formatPaise(value) : '—'}
                     </span>
 
-                    {/* What it cost the last time somebody bought it, which is
-                        the question this ledger exists to answer. A rule down
-                        its left, and the padding to go with it: the last three
-                        columns are all figures, and without it the price of a
-                        purchase sat against the value of the stock as though
-                        they were the same kind of number. */}
-                    <span className="min-w-0 space-y-1 self-stretch border-l border-slate-100 pl-3.5 -my-2.5 py-2.5">
-                      {last ? (
-                        <>
-                          {/* No vendor here: the column to the left already
-                              names it, and this one is about when and for how
-                              much. */}
-                          <span className="flex items-center gap-1.5 h-[17px] min-w-0">
-                            <Icon name="calendar" size={11} className="shrink-0 text-slate-400" />
-                            <span data-notranslate className="text-[11.5px] font-semibold text-slate-600 tabular-nums truncate">
-                              {last.txn_date ? formatDate(last.txn_date) : '—'}
-                            </span>
-                          </span>
-                          <span className="flex items-center gap-2 h-[17px] min-w-0">
-                            <span data-notranslate className="shrink-0 min-w-[68px] text-[13px] font-bold text-slate-900 tabular-nums">
-                              {formatPaise(last.rate_paise || 0)}
-                            </span>
-                            <TrendIcon trend={last._trend} prev={last._prev_rate} />
-                          </span>
-                        </>
+                    {/* Three points instead of one — a single "last price"
+                        can't say whether it's been climbing or just blipped
+                        once. Oldest to newest, left to right, so the reading
+                        direction matches the direction of time; the newest
+                        (right-most) is the one that matches the Rate column
+                        a few cells over, so it's the one left bold. */}
+                    <span className="min-w-0 flex flex-nowrap items-center gap-1.5 whitespace-nowrap self-stretch border-l border-slate-100 pl-3.5 -my-2.5 py-2.5">
+                      {a.last3.length === 0 ? (
+                        <span className="text-[11.5px] font-semibold text-slate-400">No purchase history</span>
                       ) : (
-                        <span className="flex items-center h-[17px] text-[11.5px] font-semibold text-slate-400">No purchase history</span>
+                        a.last3.slice().reverse().map(function (h, idx, arr) {
+                          var isNewest = idx === arr.length - 1
+                          return (
+                            <span key={idx} className="inline-flex items-center gap-1">
+                              {idx > 0 && <span aria-hidden="true" className="text-slate-300">→</span>}
+                              <span data-notranslate
+                                title={(h.txn_date ? formatDate(h.txn_date) : '') + (h.vendor_name ? ' · ' + h.vendor_name : '')}
+                                className={'text-[12.5px] tabular-nums ' + (isNewest ? 'font-bold text-slate-900' : 'font-semibold text-slate-500')}>
+                                {formatPaise(h.rate_paise || 0)}
+                              </span>
+                              <TrendIcon trend={h._trend} prev={h._prev_rate} />
+                            </span>
+                          )
+                        })
                       )}
                     </span>
                   </div>
