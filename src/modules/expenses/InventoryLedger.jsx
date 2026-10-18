@@ -53,7 +53,12 @@ function FilterField({ label, note, noteTone, children }) {
 // every row, since Last 3 rates is the column this ledger is actually read
 // for and two columns of mostly-empty sub-category cells were competing with
 // it for width.
-var GRID = 'grid items-center gap-x-3 grid-cols-[2.5rem_minmax(11rem,1fr)_10rem_4.5rem_5.5rem_6.5rem_13rem]'
+// The item name used to hold the 1fr — the one column that eats whatever
+// width is left over — which on a wide screen meant a short name like
+// "Anar" left a dead gap before Recent vendor while Last 3 rates, the
+// column this ledger is actually read for, stayed pinned at 13rem and
+// wrapped onto a second line. The leftover space belongs there instead.
+var GRID = 'grid items-center gap-x-3 grid-cols-[2.5rem_minmax(11rem,22rem)_10rem_4.5rem_5.5rem_6.5rem_minmax(13rem,1fr)]'
 
 var COL_HEAD = 'text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500'
 
