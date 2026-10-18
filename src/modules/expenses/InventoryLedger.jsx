@@ -58,7 +58,7 @@ function FilterField({ label, note, noteTone, children }) {
 // "Anar" left a dead gap before Recent vendor while Last 3 rates, the
 // column this ledger is actually read for, stayed pinned at 13rem and
 // wrapped onto a second line. The leftover space belongs there instead.
-var GRID = 'grid items-center gap-x-3 grid-cols-[2.5rem_minmax(11rem,22rem)_10rem_4.5rem_5.5rem_6.5rem_minmax(13rem,1fr)]'
+var GRID = 'grid items-center gap-x-3 grid-cols-[2.5rem_minmax(11rem,22rem)_10rem_4.5rem_5.5rem_6.5rem_minmax(17rem,1fr)]'
 
 var COL_HEAD = 'text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500'
 
@@ -916,7 +916,7 @@ function InventoryLedger({ profile }) {
           make all nine unreadable. */}
       <div ref={listRef} className={CARD + ' overflow-hidden scroll-mt-4'}>
         <div className="overflow-x-auto ambria-thin-scroll">
-          <div className="min-w-[980px]">
+          <div className="min-w-[1050px]">
             <div className={GRID + ' px-4 py-2.5 bg-slate-50 border-b border-slate-200 ' + COL_HEAD}>
               <span className="col-span-2">Item</span>
               <span>Recent vendor</span>
@@ -985,7 +985,7 @@ function InventoryLedger({ profile }) {
                         direction matches the direction of time; the newest
                         (right-most) is the one that matches the Rate column
                         a few cells over, so it's the one left bold. */}
-                    <span className="min-w-0 flex flex-wrap items-center gap-x-1.5 gap-y-1 self-stretch border-l border-slate-100 pl-3.5 -my-2.5 py-2.5">
+                    <span className="min-w-0 flex flex-nowrap items-center gap-1.5 whitespace-nowrap self-stretch border-l border-slate-100 pl-3.5 -my-2.5 py-2.5">
                       {a.last3.length === 0 ? (
                         <span className="text-[11.5px] font-semibold text-slate-400">No purchase history</span>
                       ) : (
