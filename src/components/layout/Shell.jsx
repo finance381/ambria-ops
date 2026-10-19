@@ -44,6 +44,7 @@ var MyProfile = lazy(function () { return import('../../modules/employees/MyProf
 var Projects = lazy(function () { return import('../../modules/projects/Projects') })
 var Reviews = lazy(function () { return import('../../modules/reviews/Reviews') })
 var BroadcastHub = lazy(function () { return import('../../modules/broadcast/BroadcastHub.jsx') })
+var SalesQuickSend = lazy(function () { return import('../../modules/broadcast/SalesQuickSend.jsx') })
 
 // The chip behind a menu glyph. One class, no colour.
 //
@@ -153,13 +154,15 @@ var GROUPS = [
     // All 4 view perms point at the same 'broadcast' tab — BroadcastHub.jsx
     // owns the sub-nav, same pattern as the Review group above. `sub` is which
     // of its pages the tile means; without it every tile landed on Templates.
-    // broadcast.quicksend is deliberately NOT listed here — sales-only users
-    // shouldn't see this tile; they reach QuickSend from inline contexts only.
+    // broadcast.quicksend points at its own standalone tab instead — a sales
+    // rep who holds only this permission (not the other four) still sees
+    // exactly one tile here, never Templates/Contacts/Campaigns/Inbox.
     key: 'broadcast', label: 'API Marketing', icon: 'send', items: [
       { key: 'broadcast.templates.view', label: 'Templates', icon: 'fileText', tab: 'broadcast', sub: 'templates' },
       { key: 'broadcast.contacts.view',  label: 'Contacts',  icon: 'users', tab: 'broadcast', sub: 'contacts' },
       { key: 'broadcast.campaigns.view', label: 'Campaigns', icon: 'send', tab: 'broadcast', sub: 'campaigns' },
       { key: 'broadcast.inbox.view',     label: 'Inbox',     icon: 'inbox', tab: 'broadcast', sub: 'inbox' },
+      { key: 'broadcast.quicksend', label: 'Quick Send', icon: 'zap', tab: 'quicksend', noBadge: true },
     ]
   },
   {
@@ -882,6 +885,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'broadcast' && (
           <BroadcastHub profile={profile} activeSubTab={subTab} />
+        )}
+        {tab === 'quicksend' && (
+          <SalesQuickSend profile={profile} />
         )}
         {tab === 'requisitions' && (
           <Requisitions profile={profile} onBack={goBack} />

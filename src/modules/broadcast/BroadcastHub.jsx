@@ -17,6 +17,7 @@ var Lists = lazy(function () { return import('./Lists') })
 var Campaigns = lazy(function () { return import('./Campaigns') })
 var Inbox = lazy(function () { return import('./Inbox') })
 var AutoReplies = lazy(function () { return import('./AutoReplies') })
+var QuickSendSequences = lazy(function () { return import('./QuickSendSequences') })
 var Settings = lazy(function () { return import('./Settings') })
 
 var SUB_TABS = [
@@ -26,6 +27,7 @@ var SUB_TABS = [
   { key: 'campaigns', label: 'Campaigns', icon: 'send', component: Campaigns, perm: 'broadcast.campaigns.view' },
   { key: 'inbox', label: 'Inbox', icon: 'inbox', component: Inbox, perm: 'broadcast.inbox.view' },
   { key: 'autoreplies', label: 'Auto-Replies', icon: 'send', component: AutoReplies, perm: 'broadcast.settings' },
+  { key: 'quicksend_sequences', label: 'Quick Send', icon: 'zap', component: QuickSendSequences, perm: 'broadcast.settings' },
   { key: 'settings', label: 'Settings', icon: 'settings', component: Settings, perm: 'broadcast.settings' },
 ]
 
