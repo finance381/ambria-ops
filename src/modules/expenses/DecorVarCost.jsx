@@ -1006,9 +1006,13 @@ function DecorVarCost({ profile, inAdmin }) {
     var info = groupInfo(g)
     var named = g.kind === 'f' || g.kind === 'e' || (g.kind === 'u' && !!(g.first.event_detail || '').trim())
     var usedDepts = groupDepts(g)
-    var canAddDept = g.kind === 'e' || g.kind === 'd'
-      ? SHEETS.some(function (sh) { return usedDepts.indexOf(sh.code) === -1 })
-      : !g.records.some(function (r) { return r.status === 'submitted' })
+    // Open for any department this group doesn't have a sheet for yet,
+    // function or not — Light and Flower being submitted already has
+    // nothing to do with whether Transport has ever been added. A
+    // department it already has takes more dates on its own sheet instead
+    // (that's what "add date" on an open sheet is for); submitting one
+    // department's sheet locks only that sheet.
+    var canAddDept = SHEETS.some(function (sh) { return usedDepts.indexOf(sh.code) === -1 })
     return (
       <div className="space-y-3">
         {header(info.title, info.sub + ' · ' + formatPoints(info.total) + (info.anyDraft ? ' so far' : ''))}
@@ -1065,10 +1069,6 @@ function DecorVarCost({ profile, inAdmin }) {
             )
           })}
         </div>
-        {/* Not for a function: open for any department it doesn't have yet
-            (a department it has takes more dates on its own sheet). A
-            function: open only while every sheet is a draft — once any is
-            submitted the function counts as final. */}
         {canAddDept && (
           <div>
             <button type="button" onClick={function () { addDepartment(g, named) }} disabled={groupDetailSaving}
