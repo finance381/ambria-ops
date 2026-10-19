@@ -58,12 +58,16 @@ function ItemReceipts({ profile, onCountChange }) {
     })
   }, [])
 
-  useRealtime(['expenses'], function () { loadReceipts(false) })
+  // Any expense anywhere in the company touches this table (new submissions,
+  // edits, other people's receiving), so this fires constantly — reload
+  // silently (no loading flash) so the list doesn't look like it's randomly
+  // refreshing while someone's just reading it.
+  useRealtime(['expenses'], function () { loadReceipts(false, true) })
   useEffect(function () { loadReceipts(false) }, [searchDebounced, submitterFilter, dateFrom, dateTo, matchState])
 
-  async function loadReceipts(append) {
+  async function loadReceipts(append, silent) {
     var offset = append ? receipts.length : 0
-    if (append) setLoadingMore(true); else setLoading(true)
+    if (append) setLoadingMore(true); else if (!silent) setLoading(true)
     var params = { p_limit: PAGE_SIZE + 1, p_offset: offset }
     if (searchDebounced) params.p_search = searchDebounced
     if (submitterFilter)  params.p_submitter_id = submitterFilter
