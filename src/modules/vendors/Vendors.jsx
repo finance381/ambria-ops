@@ -6,6 +6,11 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import VoiceInput from '../../components/ui/VoiceInput'
 
+function imagePublicUrl(path) {
+  if (!path) return ''
+  return supabase.storage.from('receipts').getPublicUrl(path).data?.publicUrl || ''
+}
+
 function Vendors({ profile }) {
   var [vendors, setVendors] = useState([])
   var [categories, setCategories] = useState([])
@@ -25,10 +30,17 @@ function Vendors({ profile }) {
   var [estFilter, setEstFilter] = useState('')
   var [showInactive, setShowInactive] = useState(false)
   var [editing, setEditing] = useState(null)
-  var [form, setForm] = useState({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', opening_balance_direction: 'credit', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
+  var [form, setForm] = useState({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', opening_balance_direction: 'credit', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '', quotation_period: '' })
   var [importReview, setImportReview] = useState(null)
   var [importSummary, setImportSummary] = useState(null)
   var importFileRef = useRef(null)
+
+  // Quotation images — replaced/removed wholesale as a vendor sends updated
+  // quotes, not kept as history. { id, file: File|null (pending upload),
+  // path: string|null (already uploaded), previewUrl, isPdf }.
+  var [quotationImages, setQuotationImages] = useState([])
+  var [nextQuotationImageId, setNextQuotationImageId] = useState(1)
+  var removedQuotationPathsRef = useRef([])
 
   useEffect(function () { loadAll() }, [])
 
@@ -52,7 +64,10 @@ function Vendors({ profile }) {
     setExpandedExpDepts({})
     setExpandedExpTypes({})
     setEditing('new')
-    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
+    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '', quotation_period: '' })
+    setQuotationImages([])
+    setNextQuotationImageId(1)
+    removedQuotationPathsRef.current = []
   }
 
   function startEdit(v) {
@@ -80,7 +95,14 @@ function Vendors({ profile }) {
       vendor_type: v.vendor_type || 'Supplier',
       lead_time_days: v.lead_time_days ? String(v.lead_time_days) : '',
       referred_by: v.referred_by || '',
+      quotation_period: v.quotation_period || '',
     })
+    var existingPaths = v.quotation_image_paths || []
+    setQuotationImages(existingPaths.map(function (p, i) {
+      return { id: i + 1, file: null, path: p, previewUrl: imagePublicUrl(p), isPdf: /\.pdf$/i.test(p) }
+    }))
+    setNextQuotationImageId(existingPaths.length + 1)
+    removedQuotationPathsRef.current = []
   }
 
   function cancelEdit() {
@@ -88,7 +110,38 @@ function Vendors({ profile }) {
     setExpandedExpDepts({})
     setExpandedExpTypes({})
     setEditing(null)
-    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', opening_balance_direction: 'credit', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '' })
+    setForm({ name: '', contact: '', phone: '', phone2: '', email: '', address: '', category_ids: [], expense_type_ids: [], expense_sub_type_ids: [], notes: '', opening_balance: '', opening_balance_direction: 'credit', gst_number: '', pan_number: '', bank_account: '', bank_ifsc: '', vendor_type: 'Supplier', lead_time_days: '', referred_by: '', quotation_period: '' })
+    setQuotationImages([])
+    setNextQuotationImageId(1)
+    removedQuotationPathsRef.current = []
+  }
+
+  async function uploadQuotationImage(file) {
+    var ext = (file.name && file.name.indexOf('.') !== -1) ? file.name.split('.').pop() : 'jpg'
+    var path = (profile?.id || 'vendor') + '/vendor_quote_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext
+    var { error } = await supabase.storage.from('receipts').upload(path, file, { upsert: true })
+    if (error) throw new Error(error.message)
+    return path
+  }
+
+  function onPickQuotationImages(e) {
+    var files = Array.prototype.slice.call(e.target.files || [])
+    e.target.value = ''
+    if (files.length === 0) return
+    var startId = nextQuotationImageId
+    var added = files.map(function (f, i) {
+      return { id: startId + i, file: f, path: null, previewUrl: URL.createObjectURL(f), isPdf: f.type === 'application/pdf' }
+    })
+    setNextQuotationImageId(startId + files.length)
+    setQuotationImages(function (prev) { return prev.concat(added) })
+  }
+
+  function removeQuotationImage(id) {
+    setQuotationImages(function (prev) {
+      var hit = prev.find(function (qi) { return qi.id === id })
+      if (hit && hit.path) removedQuotationPathsRef.current.push(hit.path)
+      return prev.filter(function (qi) { return qi.id !== id })
+    })
   }
 
   function toggleCat(catId) {
@@ -146,6 +199,19 @@ function Vendors({ profile }) {
     if (!form.name.trim()) { alert('Vendor name required'); return }
     setSaving(true)
 
+    var finalQuotationPaths
+    try {
+      finalQuotationPaths = []
+      for (var qi = 0; qi < quotationImages.length; qi++) {
+        var q = quotationImages[qi]
+        finalQuotationPaths.push(q.file ? await uploadQuotationImage(q.file) : q.path)
+      }
+    } catch (uploadErr) {
+      alert('Failed to upload quotation image: ' + uploadErr.message)
+      setSaving(false)
+      return
+    }
+
     var payload = {
       name: form.name.trim(),
       contact: form.contact.trim() || null,
@@ -167,6 +233,8 @@ function Vendors({ profile }) {
       vendor_type: form.vendor_type || 'Supplier',
       lead_time_days: form.lead_time_days ? Number(form.lead_time_days) : null,
       referred_by: form.referred_by.trim() || null,
+      quotation_period: form.quotation_period.trim() || null,
+      quotation_image_paths: finalQuotationPaths,
     }
 
     if (editing === 'new') {
@@ -178,6 +246,10 @@ function Vendors({ profile }) {
       var { error } = await supabase.from('vendors').update(payload).eq('id', editing)
       if (error) { alert('Failed: ' + error.message); setSaving(false); return }
       try { await logActivity('VENDOR_EDIT', payload.name) } catch (_) {}
+    }
+
+    if (removedQuotationPathsRef.current.length > 0) {
+      try { await supabase.storage.from('receipts').remove(removedQuotationPathsRef.current) } catch (_) {}
     }
 
     setSaving(false)
@@ -966,6 +1038,51 @@ function Vendors({ profile }) {
             </div>
           </div>
 
+          {/* Quotation */}
+          <div className="p-5 space-y-3">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Quotation</p>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Quotation Period</label>
+              <input type="text" value={form.quotation_period}
+                onChange={function (e) { setForm(function (p) { return Object.assign({}, p, { quotation_period: e.target.value }) }) }}
+                placeholder="e.g. Oct 2026 - Mar 2027"
+                className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
+                style={{ fontSize: '16px' }} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Quotation Images</label>
+              <p className="text-[11px] text-gray-400 mb-2">Replace these whenever the vendor sends an updated quote — old ones don't need to be kept.</p>
+              <div className="flex flex-wrap gap-2">
+                {quotationImages.map(function (qi) {
+                  return (
+                    <div key={qi.id} className="relative w-20 h-20 shrink-0">
+                      {qi.isPdf ? (
+                        <a href={qi.previewUrl} target="_blank" rel="noreferrer"
+                          className="w-20 h-20 flex flex-col items-center justify-center gap-0.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-400 px-1">
+                          <span className="text-lg">📄</span>
+                          <span className="text-[9px] truncate max-w-full">PDF</span>
+                        </a>
+                      ) : (
+                        <a href={qi.previewUrl} target="_blank" rel="noreferrer">
+                          <img src={qi.previewUrl} alt="Quotation" className="w-20 h-20 object-cover rounded-lg border border-gray-300" />
+                        </a>
+                      )}
+                      <button type="button" onClick={function () { removeQuotationImage(qi.id) }} aria-label="Remove image"
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow text-[11px] leading-none">
+                        ✕
+                      </button>
+                    </div>
+                  )
+                })}
+                <label className="w-20 h-20 shrink-0 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-0.5 text-gray-400 cursor-pointer hover:bg-gray-50">
+                  <span className="text-lg">＋</span>
+                  <span className="text-[9px] font-bold">Add</span>
+                  <input type="file" accept="image/*,.pdf" multiple className="hidden" onChange={onPickQuotationImages} />
+                </label>
+              </div>
+            </div>
+          </div>
+
           {/* Notes */}
           <div className="p-5">
             <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
@@ -1151,6 +1268,11 @@ function Vendors({ profile }) {
                       {v.opening_balance_paise !== 0 && v.opening_balance_paise != null && (
                         <span className={"text-[10px] font-semibold " + (v.opening_balance_paise > 0 ? "text-amber-600" : "text-green-700")}>
                           Opening: ₹{(Math.abs(v.opening_balance_paise) / 100).toLocaleString('en-IN')} {v.opening_balance_paise > 0 ? 'Cr' : 'Dr'}
+                        </span>
+                      )}
+                      {(v.quotation_period || (v.quotation_image_paths || []).length > 0) && (
+                        <span className="text-[10px] font-semibold text-purple-600">
+                          📄 Quote{v.quotation_period ? ': ' + v.quotation_period : ''}
                         </span>
                       )}
                     </div>
