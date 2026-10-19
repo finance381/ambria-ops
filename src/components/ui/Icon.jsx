@@ -108,6 +108,7 @@ var PATHS = {
   utensils: <><path d="M6 2.5v7a2.5 2.5 0 0 0 5 0v-7" /><path d="M8.5 9.5V21.5" /><path d="M17.5 2.5c-1.7 1-2.5 3-2.5 5.5 0 1.8.7 3 2.5 3.5V21.5" /></>,
   creditCard: <><rect x="2.5" y="5" width="19" height="14" rx="2" /><path d="M2.5 9.5h19" /><path d="M6 14.5h3.5" /></>,
   transfer: <><path d="M4 8h15" /><path d="m15.5 4.5 3.5 3.5-3.5 3.5" /><path d="M20 16H5" /><path d="m8.5 12.5-3.5 3.5 3.5 3.5" /></>,
+  print: <><path d="M6 9V3h12v6" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="7" /></>,
 }
 
 function Icon({ name, size, className, strokeWidth, style }) {
