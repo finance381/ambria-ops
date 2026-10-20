@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints, formatPointsPlain } from '../../lib/format'
 import { computePlateSummary } from '../../lib/plateInfo'
+import { cateringMenuLabel } from '../../lib/constants'
 import Icon from '../../components/ui/Icon'
 
 // Read-only drill-in from the Store Requisition list — picked Variant B
@@ -120,7 +121,7 @@ function StoreRequisitionDetail({ id, onBack }) {
                     <span key={e.id}>
                       {(e.event_name || e.client_name || 'Event #' + e.id) +
                         (e.venue_name ? ' (' + e.venue_name + (e.function_date ? ' · ' + formatDate(e.function_date) : '') + ')' : '') +
-                        (e.catering ? ' — Menu: ' + e.catering : '')}
+                        (cateringMenuLabel(e.catering) ? ' — Menu: ' + cateringMenuLabel(e.catering) : '')}
                       {i < linkedEvents.length - 1 ? ',' : ''}
                     </span>
                   )

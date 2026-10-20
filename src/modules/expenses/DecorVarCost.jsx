@@ -12,6 +12,7 @@ import Modal from '../../components/ui/Modal'
 import { appConfirm } from '../../components/ui/AppDialog'
 import { buildDecorVarCostXlsx, deliverFile, exportFileName } from '../../lib/decorVarCostExport'
 import { deptCls, deptOrder } from '../../lib/ui'
+import { cateringMenuLabel } from '../../lib/constants'
 import {
   SHEETS, getSheet, rowGroups, rowCalc, formulaHint, entryAmountPaise,
   sheetTotals, validateEntry, filledCount, num, toPaise, cleanSheetData, cleanLines,
@@ -1316,7 +1317,7 @@ function DecorVarCost({ profile, inAdmin }) {
                   </p>
                   {cur.event && (
                     <p className="text-[11.5px] text-slate-500">
-                      {[cur.event.event_name, cur.event.client_name, cur.event.session, cur.event.total_plates ? cur.event.total_plates + ' plates' : null, cur.event.catering ? 'Menu: ' + cur.event.catering : null]
+                      {[cur.event.event_name, cur.event.client_name, cur.event.session, cur.event.total_plates ? cur.event.total_plates + ' plates' : null, cateringMenuLabel(cur.event.catering) ? 'Menu: ' + cateringMenuLabel(cur.event.catering) : null]
                         .filter(Boolean).join(' · ')}
                     </p>
                   )}
@@ -1750,7 +1751,7 @@ function DecorVarCost({ profile, inAdmin }) {
                     <p className="flex items-start gap-2 text-[12.5px] font-medium text-slate-500">
                       <Icon name="tag" size={13} className="shrink-0 mt-0.5 text-slate-400" />
                       <span className="min-w-0 break-words">
-                        {[cur.event.event_name, cur.event.client_name, cur.event.session, cur.event.total_plates ? cur.event.total_plates + ' plates' : null, cur.event.catering ? 'Menu: ' + cur.event.catering : null]
+                        {[cur.event.event_name, cur.event.client_name, cur.event.session, cur.event.total_plates ? cur.event.total_plates + ' plates' : null, cateringMenuLabel(cur.event.catering) ? 'Menu: ' + cateringMenuLabel(cur.event.catering) : null]
                           .filter(Boolean).join(' · ')}
                       </span>
                     </p>
