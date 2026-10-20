@@ -326,7 +326,7 @@ function DecorVarCost({ profile, inAdmin }) {
   async function loadList() {
     setListErr('')
     var q = supabase.from('decor_var_costs')
-      .select('id, serial_no, sheet_code, is_function, function_date, venue_id, sub_venue_id, event_detail, event_id, status, total_paise, created_at, submitted_at, created_by, profiles:created_by(name), event:event_id(event_name, client_name, session, venue_name), decor_var_cost_entries(entry_date, amount_paise)')
+      .select('id, serial_no, sheet_code, is_function, function_date, venue_id, sub_venue_id, event_detail, event_id, status, total_paise, created_at, submitted_at, created_by, profiles:created_by(name), event:event_id(event_name, client_name, session, venue_name, catering), decor_var_cost_entries(entry_date, amount_paise)')
       .order('created_at', { ascending: false })
       .limit(300)
     if (scope === 'mine') q = q.eq('created_by', profile.id)
@@ -338,7 +338,7 @@ function DecorVarCost({ profile, inAdmin }) {
   async function loadRecord(id) {
     setRecordLoading(true)
     var { data, error } = await supabase.from('decor_var_costs')
-      .select('*, creator:created_by(name), submitter:submitted_by(name), event:event_id(event_name, client_name, session, venue_name, department, total_plates), decor_var_cost_entries(id, entry_date, lines, amount_paise, remark, updated_at)')
+      .select('*, creator:created_by(name), submitter:submitted_by(name), event:event_id(event_name, client_name, session, venue_name, department, total_plates, catering), decor_var_cost_entries(id, entry_date, lines, amount_paise, remark, updated_at)')
       .eq('id', id).maybeSingle()
     setRecordLoading(false)
     if (error || !data) { setRecordErr(error ? error.message : 'This sheet could not be found'); return null }
@@ -1316,7 +1316,7 @@ function DecorVarCost({ profile, inAdmin }) {
                   </p>
                   {cur.event && (
                     <p className="text-[11.5px] text-slate-500">
-                      {[cur.event.event_name, cur.event.client_name, cur.event.session, cur.event.total_plates ? cur.event.total_plates + ' plates' : null]
+                      {[cur.event.event_name, cur.event.client_name, cur.event.session, cur.event.total_plates ? cur.event.total_plates + ' plates' : null, cur.event.catering ? 'Menu: ' + cur.event.catering : null]
                         .filter(Boolean).join(' · ')}
                     </p>
                   )}
@@ -1750,7 +1750,7 @@ function DecorVarCost({ profile, inAdmin }) {
                     <p className="flex items-start gap-2 text-[12.5px] font-medium text-slate-500">
                       <Icon name="tag" size={13} className="shrink-0 mt-0.5 text-slate-400" />
                       <span className="min-w-0 break-words">
-                        {[cur.event.event_name, cur.event.client_name, cur.event.session, cur.event.total_plates ? cur.event.total_plates + ' plates' : null]
+                        {[cur.event.event_name, cur.event.client_name, cur.event.session, cur.event.total_plates ? cur.event.total_plates + ' plates' : null, cur.event.catering ? 'Menu: ' + cur.event.catering : null]
                           .filter(Boolean).join(' · ')}
                       </span>
                     </p>
