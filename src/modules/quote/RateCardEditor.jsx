@@ -975,14 +975,6 @@ function TTDEditor({ config, onSave, saving }) {
 //  MENU EDITOR
 // ══════════════════════════════════════
 
-var FORMULA_FIELDS = [
-  { key: 'start_rate', label: 'Start Rate (₹/hd)' }, { key: 'start_pax', label: 'Start Pax' },
-  { key: 'step', label: 'Step (₹)' }, { key: 'step_pax', label: 'Step Pax' },
-  { key: 'floor_rate', label: 'Floor Rate (₹/hd)' }, { key: 'reset_pax', label: 'Reset Pax' },
-  { key: 'reset_rate', label: 'Reset Rate (₹/hd)' }, { key: 'reset_floor', label: 'Reset Floor (₹/hd)' },
-]
-var FORMULA_DEFAULTS = { start_rate: 1450, start_pax: 300, step: 50, step_pax: 100, floor_rate: 800, reset_pax: 800, reset_rate: 1350, reset_floor: 400 }
-
 function MenuEditor({ config, onSave, saving }) {
   var MENU_DEFAULTS = { labels: ['Magnum', 'Double Magnum', 'Multi Cuisine', 'Luxury'], base_rate: [1250, 1350, 0, 0], nv_upgrade: 300, flat_add: [0, 0, 0, 3], max_pax: [250, 300, 0, 0], is_sliding: [false, false, true, true], restro_only: [false, false, false, false], also_available_on: [[], [], [], []] }
 
@@ -1001,7 +993,6 @@ function MenuEditor({ config, onSave, saving }) {
   var [variant, setVariant] = useState('qc')
   var [menuQc, setMenuQc] = useState(normalizeMenu(config.menu))
   var [menuLms, setMenuLms] = useState(normalizeMenu(config.menu_lms || config.menu))
-  var [formula, setFormula] = useState(clone(config.menu_formula || FORMULA_DEFAULTS))
   var menu = variant === 'qc' ? menuQc : menuLms
   var setMenu = variant === 'qc' ? setMenuQc : setMenuLms
   var variantKey = variant === 'qc' ? 'menu' : 'menu_lms'
@@ -1009,7 +1000,6 @@ function MenuEditor({ config, onSave, saving }) {
 
   useEffect(function () { setMenuQc(normalizeMenu(config.menu)) }, [config.menu])
   useEffect(function () { setMenuLms(normalizeMenu(config.menu_lms || config.menu)) }, [config.menu_lms, config.menu])
-  useEffect(function () { setFormula(clone(config.menu_formula || FORMULA_DEFAULTS)) }, [config.menu_formula])
 
   async function copyFromQc() {
     if (await appConfirm('Copy all menu structure and rates from Quote Calc? Overwrites current LMS Push values (unsaved).')) {
@@ -1107,13 +1097,6 @@ function MenuEditor({ config, onSave, saving }) {
                 <div><div style={fl}>Max Pax (0=∞)</div><Num value={menu.max_pax[idx]} onChange={function (v) { updArr('max_pax', idx, v) }} /></div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button onClick={function () { updArr('is_sliding', idx, !menu.is_sliding[idx]) }}
-                  style={{
-                    padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                    border: '2px solid ' + (menu.is_sliding[idx] ? C.gold : C.border),
-                    background: menu.is_sliding[idx] ? '#FFF8F0' : '#fff',
-                    color: menu.is_sliding[idx] ? C.gold : C.muted,
-                  }}>{menu.is_sliding[idx] ? 'Sliding: ON' : 'Sliding: OFF'}</button>
                 <button onClick={function () { toggleRestroOnly(idx) }}
                   style={{
                     padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
@@ -1143,21 +1126,6 @@ function MenuEditor({ config, onSave, saving }) {
         })}
         <AddRow label="Add Menu" onClick={addMenu} />
         <Btn label={'Save ' + variantLabel + ' Menu Rates'} variant="primary" onClick={function () { onSave(variantKey, menu) }} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
-      </Card>
-
-      <Card title="Sliding Scale Formula">
-        <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Phase 1: start_rate at start_pax, drops by step every step_pax. Phase 2: resets at reset_pax.</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {FORMULA_FIELDS.map(function (f) {
-            return (
-              <div key={f.key}>
-                <div style={{ fontSize: 10, fontWeight: 600, color: C.muted, marginBottom: 3 }}>{f.label}</div>
-                <Num value={formula[f.key]} onChange={function (v) { var d = clone(formula); d[f.key] = v; setFormula(d) }} />
-              </div>
-            )
-          })}
-        </div>
-        <Btn label="Save Formula" variant="primary" onClick={function () { onSave('menu_formula', formula) }} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
       </Card>
     </>
   )
