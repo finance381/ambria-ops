@@ -1512,9 +1512,13 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
               return (
                 <div key={dim.name}>
                   <label className={F_LBL}>{dim.name}</label>
-                  <div className="flex gap-2">
-                    <input type="number" min="0" step="any" inputMode="decimal" value={dim.qty} onChange={function (e) { setDim({ qty: e.target.value }) }} placeholder="0" aria-label={dim.name + ' quantity'} className={F_INP + " flex-1 min-w-0"} />
-                    <select value={dim.unit} onChange={function (e) { setDim({ unit: e.target.value }) }} aria-label={dim.name + ' unit'} className={F_INP + " !w-32 shrink-0"}>
+                  {/* Number and unit as one field, the unit inside it at the
+                      right behind a divider — as Stock & pricing's Quantity. */}
+                  <div className="flex h-11 rounded-xl border border-slate-300 bg-white overflow-hidden focus-within:border-[#A9B1CB] focus-within:ring-4 focus-within:ring-[#3B4668]/10">
+                    <input type="number" min="0" step="any" inputMode="decimal" value={dim.qty} onChange={function (e) { setDim({ qty: e.target.value }) }} placeholder="0" aria-label={dim.name + ' quantity'}
+                      style={{ fontSize: '16px' }} className="flex-1 min-w-0 px-3 bg-transparent text-slate-900 placeholder:text-slate-400 focus:outline-none" />
+                    <select value={dim.unit || 'Pieces'} onChange={function (e) { setDim({ unit: e.target.value }) }} aria-label={dim.name + ' unit'}
+                      className="shrink-0 w-[96px] pl-2 pr-1 bg-slate-50 border-l border-slate-200 text-[13px] font-medium text-slate-700 focus:outline-none">
                       {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
                     </select>
                   </div>
@@ -1731,7 +1735,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
                 <div className="flex h-10 rounded-xl border border-slate-300 bg-white overflow-hidden focus-within:border-[#A9B1CB] focus-within:ring-4 focus-within:ring-[#3B4668]/10">
                   <input type="number" min="0" step="any" inputMode="decimal" value={dim.qty} onChange={function (e) { setDim({ qty: e.target.value }) }} placeholder="0" aria-label={dim.name + ' quantity'} style={{ fontSize: '16px' }}
                     className="flex-1 min-w-0 px-3 bg-transparent text-slate-900 placeholder:text-slate-400 focus:outline-none" />
-                  <select value={dim.unit} onChange={function (e) { setDim({ unit: e.target.value }) }} aria-label={dim.name + ' unit'}
+                  <select value={dim.unit || 'Pieces'} onChange={function (e) { setDim({ unit: e.target.value }) }} aria-label={dim.name + ' unit'}
                     className="shrink-0 w-[74px] pl-2 pr-1 bg-slate-50 border-l border-slate-200 text-[13px] font-medium text-slate-700 focus:outline-none">
                     {UNITS.map(function (u) { return <option key={u} value={u}>{u}</option> })}
                   </select>
