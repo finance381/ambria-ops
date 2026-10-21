@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints, formatPointsPlain } from '../../lib/format'
 import { computePlateSummary } from '../../lib/plateInfo'
+import { cateringMenuLabel } from '../../lib/constants'
 import Icon from '../../components/ui/Icon'
 
 // Read-only drill-in from the Store Requisition list — picked Variant B
@@ -64,7 +65,7 @@ function StoreRequisitionDetail({ id, onBack }) {
       if (reqRow && reqRow.event_ids && reqRow.event_ids.length > 0) {
         setPlateLoading(true)
         computePlateSummary(reqRow.event_ids).then(function (s) { setPlateSummary(s); setPlateLoading(false) })
-        supabase.from('events_safe').select('id, event_name, client_name, venue_name, function_date')
+        supabase.from('events_safe').select('id, event_name, client_name, venue_name, function_date, catering')
           .in('id', reqRow.event_ids)
           .then(function (evRes) { setLinkedEvents(evRes.data || []) })
       } else {
@@ -119,7 +120,8 @@ function StoreRequisitionDetail({ id, onBack }) {
                   return (
                     <span key={e.id}>
                       {(e.event_name || e.client_name || 'Event #' + e.id) +
-                        (e.venue_name ? ' (' + e.venue_name + (e.function_date ? ' · ' + formatDate(e.function_date) : '') + ')' : '')}
+                        (e.venue_name ? ' (' + e.venue_name + (e.function_date ? ' · ' + formatDate(e.function_date) : '') + ')' : '') +
+                        (cateringMenuLabel(e.catering) ? ' — Menu: ' + cateringMenuLabel(e.catering) : '')}
                       {i < linkedEvents.length - 1 ? ',' : ''}
                     </span>
                   )

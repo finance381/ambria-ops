@@ -28,6 +28,7 @@ var PATHS = {
   // of the arc, so it read as a circle with a tick loose beside it.
   refresh: <><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1.06 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></>,
   bell: <><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></>,
+  zap: <path d="M13 2 3 14h7l-1 8 11-14h-7z" />,
 
   // ── chevrons / arrows ────────────────────────────────────
   chevronDown: <path d="m6 9 6 6 6-6" />,
@@ -107,6 +108,7 @@ var PATHS = {
   utensils: <><path d="M6 2.5v7a2.5 2.5 0 0 0 5 0v-7" /><path d="M8.5 9.5V21.5" /><path d="M17.5 2.5c-1.7 1-2.5 3-2.5 5.5 0 1.8.7 3 2.5 3.5V21.5" /></>,
   creditCard: <><rect x="2.5" y="5" width="19" height="14" rx="2" /><path d="M2.5 9.5h19" /><path d="M6 14.5h3.5" /></>,
   transfer: <><path d="M4 8h15" /><path d="m15.5 4.5 3.5 3.5-3.5 3.5" /><path d="M20 16H5" /><path d="m8.5 12.5-3.5 3.5 3.5 3.5" /></>,
+  print: <><path d="M6 9V3h12v6" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="7" /></>,
 }
 
 function Icon({ name, size, className, strokeWidth, style }) {

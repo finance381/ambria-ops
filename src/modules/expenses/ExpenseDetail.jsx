@@ -289,6 +289,37 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
     })
   }
 
+  // One receipt per printed page, each honoring whatever rotation the
+  // viewer applied — a receipt shot sideways should print the way it's
+  // actually being read here, not however the phone camera happened to
+  // save it. A plain new window + window.print() rather than a PDF
+  // library: this only ever needs to hand the image to the OS print
+  // dialog, which already does paper sizing, scaling and printer choice.
+  function printReceipts(images) {
+    var w = window.open('', '_blank', 'width=800,height=900')
+    if (!w) { alert('Allow pop-ups for this site to print the receipt.'); return }
+    var pages = images.map(function (img) {
+      var rotated90 = img.rotation === 90 || img.rotation === 270
+      return '<div class="page"><img src="' + img.url.replace(/"/g, '&quot;') + '" ' +
+        'style="transform:rotate(' + img.rotation + 'deg);' +
+        (rotated90 ? 'max-width:100vh;max-height:100vw;' : 'max-width:100%;max-height:100vh;') +
+        '" /></div>'
+    }).join('')
+    w.document.write(
+      '<!doctype html><html><head><title>Receipt</title><style>' +
+      'html,body{margin:0}' +
+      '.page{display:flex;align-items:center;justify-content:center;height:100vh;page-break-after:always}' +
+      '.page:last-child{page-break-after:auto}' +
+      'img{object-fit:contain}' +
+      '</style></head><body>' + pages + '</body></html>'
+    )
+    w.document.close()
+    var imgs = w.document.querySelectorAll('img')
+    var remaining = imgs.length
+    function maybePrint() { remaining--; if (remaining <= 0) { w.focus(); w.print() } }
+    imgs.forEach(function (im) { im.complete && im.naturalWidth > 0 ? maybePrint() : (im.onload = im.onerror = maybePrint) })
+  }
+
   var [reverseGvTarget, setReverseGvTarget] = useState(null)
 
   async function reverseGv(reason) {
@@ -510,10 +541,18 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
 
       {receipts.length > 0 ? (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
-          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2">
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.1em]">
               {receipts.length === 1 && receipts[0].isVoice ? '🎙 Voice Receipt' : (receipts.length > 1 ? '📎 Receipts (' + receipts.length + ')' : '📎 Receipt')}
             </p>
+            {receipts.filter(function (r) { return r.isImage }).length > 1 && (
+              <button type="button" onClick={function () {
+                printReceipts(receipts.filter(function (r) { return r.isImage }).map(function (r) { return { url: r.url, rotation: imgRotations[r.path] || 0 } }))
+              }} className="inline-flex items-center gap-1 text-[10.5px] font-bold text-indigo-600 hover:text-indigo-800">
+                <Icon name="print" size={12} />
+                Print all
+              </button>
+            )}
           </div>
           <div className="p-3 space-y-2">
             {receipts.map(function (r, rIdx) {
@@ -571,10 +610,17 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                          read. */
                       className="w-full max-h-64 @3xl:max-h-[52vh] object-contain rounded-lg border border-slate-100 bg-slate-50 cursor-pointer active:opacity-80"
                     />
-                    <button type="button" onClick={function (e) { rotateImg(r.path, e) }} title="Rotate" aria-label="Rotate receipt"
-                      className="absolute top-2 right-2 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center">
-                      <Icon name="refresh" size={15} />
-                    </button>
+                    <div className="absolute top-2 right-2 flex items-center gap-1.5">
+                      <button type="button" onClick={function (e) { e.stopPropagation(); printReceipts([{ url: r.url, rotation: imgRotations[r.path] || 0 }]) }}
+                        title="Print" aria-label="Print receipt"
+                        className="w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center">
+                        <Icon name="print" size={14} />
+                      </button>
+                      <button type="button" onClick={function (e) { rotateImg(r.path, e) }} title="Rotate" aria-label="Rotate receipt"
+                        className="w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center">
+                        <Icon name="refresh" size={15} />
+                      </button>
+                    </div>
                     {receipts.length === 1 && <p className="text-[10px] text-slate-500 text-center mt-1">Tap to enlarge</p>}
                   </div>
                 )
@@ -647,6 +693,15 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
             title="Rotate" aria-label="Rotate receipt"
             className="absolute top-4 right-16 w-10 h-10 bg-white/20 text-white rounded-full flex items-center justify-center hover:bg-white/30"
           ><Icon name="refresh" size={18} /></button>
+          <button
+            onClick={function (e) {
+              e.stopPropagation()
+              var rotKey = receipts[fullscreenIdx] ? receipts[fullscreenIdx].path : fullscreenIdx
+              printReceipts([{ url: imgFullscreen, rotation: imgRotations[rotKey] || 0 }])
+            }}
+            title="Print" aria-label="Print receipt"
+            className="absolute top-4 right-28 w-10 h-10 bg-white/20 text-white rounded-full flex items-center justify-center hover:bg-white/30"
+          ><Icon name="print" size={17} /></button>
           {(function () {
             var rotKey = receipts[fullscreenIdx] ? receipts[fullscreenIdx].path : fullscreenIdx
             var rot = imgRotations[rotKey] || 0

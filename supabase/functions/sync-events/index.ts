@@ -178,7 +178,16 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
   const d = dep.d  // detail prefix
 
   const entryNo = (e[dep.entryNo] || "").trim()
-  const headId = e.headid || e.id || ""
+  // `headid` is the CONTRACT's id, shared by every function under it — a
+  // multi-function contract (confirmed live: same dep_entry_no + headid,
+  // different id/dhcd_function/dhcd_date/dhcd_session per function) was
+  // silently collapsing down to just its last-seen function, because the
+  // dedup key below used to be built from headid and every sibling function
+  // landed on the identical key. `id` is the one field unique per function-
+  // detail row, so it has to come first here — headid only still matters
+  // for lms_head_id below, where "which contract this belongs to" is
+  // actually the question being asked.
+  const detailId = e.id || e.headid || ""
   const entryById = dep.entryBy && e[dep.entryBy] ? String(e[dep.entryBy]).trim() : ""
   const createdName = entryById ? (lmsUserMap[entryById] || null) : null
 
@@ -191,8 +200,8 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
     : (e[dep.d + "venue2"] ? ((e[dep.d + "venue2"] || "") + " " + (e[dep.d + "address2"] || "")).trim() || null : null)
 
   return {
-    // Dedup key: Dept_EntryNo_HeadId (unique per contract row)
-    lms_event_id: dep.name + "_" + entryNo + "_" + headId,
+    // Dedup key: Dept_EntryNo_DetailId (unique per function within a contract)
+    lms_event_id: dep.name + "_" + entryNo + "_" + detailId,
     contract_no: entryNo || null,
     contract_date: e[h + "contract_date"] || null,
     department: dep.name,

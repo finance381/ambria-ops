@@ -448,7 +448,22 @@ function Events({ profile }) {
               </div>
 
               {isAdmin && (function () {
-                var totalBalance = group.functions.reduce(function (s, f) { return s + (f.balance_amount || 0) }, 0)
+                // balance_amount is a per-CONTRACT figure, not per-function —
+                // sync-events now correctly keeps a multi-function contract
+                // as separate rows (one per function), but every sibling
+                // still carries the identical contract-level balance. Naively
+                // summing across group.functions would count that one real
+                // balance once per sibling function. Dedupe by department +
+                // contract_no first so distinct contracts (e.g. Venue's and
+                // Catering's own separate balances for the same client) still
+                // add up, but a contract's own balance counts only once.
+                var seenContracts = {}
+                var totalBalance = group.functions.reduce(function (s, f) {
+                  var key = (f.department || '') + '|' + (f.contract_no || f.id)
+                  if (seenContracts[key]) return s
+                  seenContracts[key] = true
+                  return s + (f.balance_amount || 0)
+                }, 0)
                 if (!totalBalance) return null
                 return (
                   <div className="mt-3 flex items-center justify-between text-[12.5px]">
