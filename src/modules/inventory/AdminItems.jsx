@@ -1198,13 +1198,13 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
   function submitterOf(item) {
     var name = item.profiles?.name || ''
     return (
-      <div className="flex-1 min-w-[132px] flex items-center gap-2">
+      <div className="flex-1 min-w-0 flex items-center gap-2">
         <span aria-hidden="true" className="shrink-0 w-8 h-8 rounded-full bg-[#EDEFF5] text-[#333D5E] text-[13px] font-bold inline-flex items-center justify-center">
           {(name.trim()[0] || '?').toUpperCase()}
         </span>
         <span className="min-w-0">
           <span className="block text-[14px] font-bold text-gray-900 truncate">{name || '—'}</span>
-          <span className="block text-[12.5px] font-medium text-gray-600 whitespace-nowrap">{formatDate(item.entry_date || item.created_at)}</span>
+          <span className="block text-[12.5px] font-medium text-gray-600 truncate">{formatDate(item.entry_date || item.created_at)}</span>
         </span>
       </div>
     )
@@ -1627,10 +1627,10 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
                   )}
                 </div>
 
-                {/* Wraps instead of squeezing: on a narrow card (or zoomed in)
-                    the buttons drop to their own line rather than crushing
-                    the name and date into a column of single words. */}
-                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2.5 px-4 py-3 border-t border-slate-100 bg-slate-50/40">
+                {/* One line: name and date take what the buttons leave and
+                    the name truncates, rather than the buttons dropping to a
+                    second line. */}
+                <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-slate-100 bg-slate-50/40">
                   {submitterOf(item)}
                   {actionsOf(item)}
                 </div>
