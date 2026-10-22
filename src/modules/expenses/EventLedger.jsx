@@ -371,7 +371,7 @@ function EventLedger(props) {
     if (!ids || ids.length === 0) { setBalance(null); setBalancesByContract({}); return }
     setBalanceLoading(true)
     var { data, error } = await supabase.rpc('fn_event_group_balance', { p_event_ids: ids.map(function (id) { return Number(id) }) })
-    var agg = { pending_cash_paise: 0, pending_bank_paise: 0, agreed_cash_paise: 0, agreed_bank_paise: 0, collected_cash_paise: 0, collected_bank_paise: 0, spent_paise: 0 }
+    var agg = { pending_cash_paise: 0, pending_bank_paise: 0, pending_tax_paise: 0, agreed_cash_paise: 0, agreed_bank_paise: 0, tax_amount_paise: 0, collected_cash_paise: 0, collected_bank_paise: 0, spent_paise: 0 }
     var byId = {}
     var any = false
     if (!error && data) {
@@ -555,8 +555,10 @@ function EventLedger(props) {
 
   var pendCashP = balance ? Number(balance.pending_cash_paise || 0) : 0
   var pendBankP = balance ? Number(balance.pending_bank_paise || 0) : 0
+  var pendTaxP = balance ? Number(balance.pending_tax_paise || 0) : 0
   var agrCashP = balance ? Number(balance.agreed_cash_paise || 0) : 0
   var agrBankP = balance ? Number(balance.agreed_bank_paise || 0) : 0
+  var agrTaxP = balance ? Number(balance.tax_amount_paise || 0) : 0
   var colCashP = balance ? Number(balance.collected_cash_paise || 0) : 0
   var colBankP = balance ? Number(balance.collected_bank_paise || 0) : 0
   var spentP = balance ? Number(balance.spent_paise || 0) : 0
@@ -1509,6 +1511,14 @@ function EventLedger(props) {
                   <p className="text-[12px] text-slate-500 tabular-nums" data-notranslate>Collected {formatPoints(colBankP)}</p>
                   <p className={'text-[12px] font-bold tabular-nums ' + (pendBankP > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>
                     Pending {formatPoints(pendBankP)}
+                  </p>
+                </div>
+              } />
+            <MoneyTile label="Agreed Tax" value={balanceLoading ? '—' : formatPoints(agrTaxP)}
+              sub={
+                <div className="mt-2 space-y-0.5">
+                  <p className={'text-[12px] font-bold tabular-nums ' + (pendTaxP > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>
+                    Pending {formatPoints(pendTaxP)}
                   </p>
                 </div>
               } />
