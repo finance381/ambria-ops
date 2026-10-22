@@ -1198,13 +1198,10 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
   function submitterOf(item) {
     var name = item.profiles?.name || ''
     return (
-      <div className="flex-1 min-w-[132px] flex items-center gap-2">
-        <span aria-hidden="true" className="shrink-0 w-8 h-8 rounded-full bg-[#EDEFF5] text-[#333D5E] text-[13px] font-bold inline-flex items-center justify-center">
-          {(name.trim()[0] || '?').toUpperCase()}
-        </span>
-        <span className="min-w-0">
+      <div className="flex-1 min-w-0 flex items-center">
+        <span className="min-w-0" title={name}>
           <span className="block text-[14px] font-bold text-gray-900 truncate">{name || '—'}</span>
-          <span className="block text-[12.5px] font-medium text-gray-600 whitespace-nowrap">{formatDate(item.entry_date || item.created_at)}</span>
+          <span className="block text-[12.5px] font-medium text-gray-600 truncate">{formatDate(item.entry_date || item.created_at)}</span>
         </span>
       </div>
     )
@@ -1228,7 +1225,7 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
     var rest = Math.round((onHand - placed) * 1000) / 1000
     return (
       <button type="button" onClick={function () { openStock(item) }} title="Stock breakdown"
-        className={"inline-flex items-center gap-2.5 h-11 pl-1.5 pr-3.5 rounded-xl border text-left transition-colors " +
+        className={"inline-flex items-center gap-2 h-11 pl-1.5 pr-2.5 rounded-xl border text-left transition-colors " +
           (rest > 0 ? "border-amber-300 bg-amber-50 shadow-[0_2px_8px_-3px_rgba(217,119,6,0.35)] hover:bg-amber-100/70" : "border-slate-300 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.08)] hover:border-[#8A93B0] hover:bg-[#F6F7FB]")}>
         <span aria-hidden="true" className={"shrink-0 w-8 h-8 rounded-lg inline-flex items-center justify-center text-white " + (rest > 0 ? "bg-amber-500" : "bg-[#3B4668]")}>
           <Icon name="box" size={16} />
@@ -1244,10 +1241,10 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
   }
   function actionsOf(item) {
     return (
-      <div className="shrink-0 ml-auto flex items-center gap-1.5">
+      <div className="shrink-0 ml-auto flex items-center gap-1">
         {stockPillOf(item)}
         <button type="button" onClick={function () { setEditItem(item) }}
-          className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-[#3B4668] text-white text-[13px] font-semibold shadow-[0_2px_8px_-2px_rgba(59,70,104,0.45)] hover:bg-[#2F3854] transition-colors">
+          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-[#3B4668] text-white text-[13px] font-semibold shadow-[0_2px_8px_-2px_rgba(59,70,104,0.45)] hover:bg-[#2F3854] transition-colors">
           <Icon name="edit" size={14} />Edit
         </button>
         {item._source !== 'catering_store' && (
@@ -1627,10 +1624,10 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
                   )}
                 </div>
 
-                {/* Wraps instead of squeezing: on a narrow card (or zoomed in)
-                    the buttons drop to their own line rather than crushing
-                    the name and date into a column of single words. */}
-                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2.5 px-4 py-3 border-t border-slate-100 bg-slate-50/40">
+                {/* One line: name and date take what the buttons leave and
+                    the name truncates, rather than the buttons dropping to a
+                    second line. */}
+                <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-slate-100 bg-slate-50/40">
                   {submitterOf(item)}
                   {actionsOf(item)}
                 </div>
