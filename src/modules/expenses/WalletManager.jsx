@@ -815,6 +815,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     }
     setTxnsLoading(true)
 
+    // loadAllWallets() invents a synthetic id ('no_wallet_' + user id) for a
+    // profile that has never had a real wallets row — there's nothing in
+    // wallet_transactions to query for it yet, and sending that placeholder
+    // string into a uuid column fails loudly (invalid input syntax for type
+    // uuid) the moment any filter re-runs this query.
+    if (String(wid).indexOf('no_wallet_') === 0) {
+      setWalletTxns([])
+      setTxnsLoading(false)
+      return
+    }
+
     try {
       var query = supabase.from('wallet_transactions')
         .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode, bank_payment_type, cancel_wallet_tx_id, cancelled_at, cancelled_by, cancelled_reason, checked_by, checked_at, tally_entered_by, tally_entered_at')

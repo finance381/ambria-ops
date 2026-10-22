@@ -178,16 +178,30 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
   const d = dep.d  // detail prefix
 
   const entryNo = (e[dep.entryNo] || "").trim()
-  // `headid` is the CONTRACT's id, shared by every function under it — a
-  // multi-function contract (confirmed live: same dep_entry_no + headid,
-  // different id/dhcd_function/dhcd_date/dhcd_session per function) was
-  // silently collapsing down to just its last-seen function, because the
-  // dedup key below used to be built from headid and every sibling function
-  // landed on the identical key. `id` is the one field unique per function-
-  // detail row, so it has to come first here — headid only still matters
-  // for lms_head_id below, where "which contract this belongs to" is
-  // actually the question being asked.
-  const detailId = e.id || e.headid || ""
+  // Third attempt at this key — the first two each fixed one failure mode
+  // and opened another:
+  //  1. headid (the CONTRACT's id, shared by every function under it) --
+  //     collapsed a multi-function contract down to its last-seen function,
+  //     because every sibling function landed on the identical key.
+  //  2. e.id (LMS's own per-function-detail-row id) -- fixed #1, but it
+  //     turns out LMS regenerates this id on a plain resave of a contract
+  //     that didn't actually change (confirmed live: same contract, same
+  //     function_date/session, old id cancelled and a brand new id synced
+  //     two days later). Every resave orphaned that row's manually-entered
+  //     data (tally_entered_by, manual_plate_rate_paise, ...) onto a now-
+  //     cancelled row instead of updating it in place -- reported as
+  //     previously-"entered" contracts reverting to "not entered".
+  // function type + function date + session is stable across a resave (none
+  // of the three change just because LMS re-persisted the row) while still
+  // telling apart real siblings -- confirmed on 3 live multi-function
+  // contracts, every sibling differed in at least one of these three.
+  // Falls back to the old id/headid chain only when a row has no function
+  // date at all to key on (no better signal exists for that case).
+  const funcDate = (e[dep.functionDate] || "").trim()
+  const funcSignature = funcDate
+    ? (e[dep.funcCode] || "").trim() + "-" + funcDate + "-" + (e[d + "session"] || "").trim()
+    : ""
+  const detailId = funcSignature || e.id || e.headid || ""
   const entryById = dep.entryBy && e[dep.entryBy] ? String(e[dep.entryBy]).trim() : ""
   const createdName = entryById ? (lmsUserMap[entryById] || null) : null
 
