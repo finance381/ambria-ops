@@ -371,6 +371,7 @@ function DecorVarCost({ profile, inAdmin }) {
     var { data } = await supabase.from('events')
       .select('id, event_name, function_date, venue_name, session, client_name, department')
       .eq('function_date', dateStr)
+      .is('lms_cancelled_at', null)
       .order('event_name')
     setEvents(data || [])
     setEventsLoading(false)

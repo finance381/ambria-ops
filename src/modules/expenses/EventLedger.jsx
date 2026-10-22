@@ -357,6 +357,8 @@ function EventLedger(props) {
       var sameDate = await supabase.from('events')
         .select(EVT_COLS)
         .eq('function_date', primary.function_date)
+        .is('merged_into_id', null)
+        .is('lms_cancelled_at', null)
       var pool = (sameDate.data || []).filter(function (r) { return _groupKey(r) === _groupKey(primary) })
       if (pool.length === 0) pool = [primary]
       setFunctions(pool)
