@@ -600,7 +600,7 @@ function VendorCardInner({ v, onOpen, phone }) {
 // reason. If either really changes, the card re-renders.
 var VendorCard = memo(VendorCardInner)
 
-function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
+function VendorLedger({ profile, onNavigateToExpenses, inAdmin, initialVendorId, initialVendorName, initialVendorStatus }) {
   var permsNew = (profile && profile.permsNew) || []
   var isAdmin = hasPerm(permsNew, 'admin.dashboard')
   var canView = isAdmin || hasPerm(permsNew, 'finance.ledgers.vendor')
@@ -1028,6 +1028,27 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
     try { logActivity('VENDOR_LEDGER_VIEW', v.vendor_name + ' (id ' + v.vendor_id + ')') } catch (_) {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Entry point for the Pay Vendor screen — it picks (or creates) a vendor
+  // first, then hands off here to land straight on that vendor's ledger
+  // instead of this screen's own list. Waits for loadVendors() so an
+  // existing vendor opens with its real balance/history; a vendor created
+  // moments ago by that screen (genuinely zero activity, maybe not even in
+  // v_vendor_ledger yet) falls back to a synthesized zero-everything row
+  // built from what Pay Vendor already knows about it.
+  var autoOpenedRef = useRef(false)
+  useEffect(function () {
+    if (!initialVendorId || loading || autoOpenedRef.current) return
+    autoOpenedRef.current = true
+    var idNum = Number(initialVendorId)
+    var found = vendors.find(function (v) { return v.vendor_id === idNum })
+    openVendor(found || {
+      vendor_id: idNum, vendor_name: initialVendorName || '—', vendor_status: initialVendorStatus || 'complete',
+      vendor_active: true, balance_paise: 0, cash_balance_paise: 0, bank_balance_paise: 0,
+      overdue_count: 0, entry_count: 0, earliest_due_date: null, last_entry_date: null,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendors, loading, initialVendorId])
 
   function toggleShowDeleted(next) {
     setShowDeleted(next)

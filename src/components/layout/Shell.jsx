@@ -25,6 +25,7 @@ var Purchase = lazy(function () { return import('../../modules/purchase/Purchase
 var Expenses = lazy(function () { return import('../../modules/expenses/Expenses') })
 var Ledgers = lazy(function () { return import('../../modules/expenses/Ledgers') })
 var VendorLedger = lazy(function () { return import('../../modules/expenses/VendorLedger') })
+var PayVendor = lazy(function () { return import('../../modules/expenses/PayVendor') })
 var EventLedger = lazy(function () { return import('../../modules/expenses/EventLedger') })
 var Payments = lazy(function () { return import('../../modules/expenses/Payments') })
 var PaymentsLedger = lazy(function () { return import('../../modules/expenses/PaymentsLedger') })
@@ -142,6 +143,10 @@ var GROUPS = [
       { key: 'finance.payments', id: 'finance.cash_bank', label: 'Cash & Bank', icon: 'banknote', tab: 'cash_bank', noBadge: true },
       { key: 'finance.salary_payouts', label: 'Salary Payouts', icon: 'bank', tab: 'salary_payouts' },
       { key: 'finance.ledgers.vendor', label: 'Vendor Ledger', icon: 'building', tab: 'vendor_ledger' },
+      // Same permission as Vendor Ledger — paying a vendor from here is the
+      // same action Vendor Ledger's own detail view already does, just
+      // reached without first browsing the full vendor list.
+      { key: 'finance.ledgers.vendor', id: 'finance.pay_vendor', label: 'Pay Vendor', icon: 'creditCard', tab: 'pay_vendor', noBadge: true },
     ]
   },
   {
@@ -912,6 +917,9 @@ function Shell({ profile, onSignOut }) {
         )}
         {tab === 'vendor_ledger' && (
           <VendorLedger profile={profile} onNavigateToExpenses={navigateToExpenses} />
+        )}
+        {tab === 'pay_vendor' && (
+          <PayVendor profile={profile} onNavigateToExpenses={navigateToExpenses} />
         )}
         {tab === 'payments' && (
           <Payments profile={profile} />
