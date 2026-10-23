@@ -919,7 +919,7 @@ function Shell({ profile, onSignOut }) {
           <VendorLedger profile={profile} onNavigateToExpenses={navigateToExpenses} />
         )}
         {tab === 'pay_vendor' && (
-          <PayVendor profile={profile} onNavigateToExpenses={navigateToExpenses} />
+          <PayVendor profile={profile} />
         )}
         {tab === 'payments' && (
           <Payments profile={profile} />
