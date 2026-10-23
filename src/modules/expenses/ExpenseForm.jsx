@@ -2570,8 +2570,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                     return (
                                       <div key={im._key} className={"border rounded-xl px-3 py-2.5 flex items-center gap-2 transition-colors " + (complete ? "bg-white border-slate-200" : "bg-amber-50/40 border-amber-200")}>
                                         <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">{iIdx + 1}</span>
-                                        <button type="button" onClick={function () { if (!isEditing) setItemEditing(idx, iIdx) }}
-                                          className={"flex-1 min-w-0 flex items-center gap-2 text-left " + (isEditing ? "cursor-default" : "hover:opacity-70")}>
+                                        <button type="button" onClick={function () { if (!entry.itemsLocked) setItemEditing(idx, iIdx) }}
+                                          className={"flex-1 min-w-0 flex items-center gap-2 text-left " + (entry.itemsLocked ? "cursor-default" : "hover:opacity-70")}>
                                           <div className="min-w-0 flex-1">
                                             <p className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-900 truncate">
                                               {im.itemQuery ? im.itemQuery : <span className="font-normal text-slate-400">Unnamed item</span>}
@@ -2591,7 +2591,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                             <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">Incomplete</span>
                                           )}
                                         </button>
-                                        {!isEditing && (
+                                        {!entry.itemsLocked && (
                                           <button type="button" onClick={function () { removeItem(idx, iIdx) }}
                                             className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors" title="Delete item" aria-label="Delete item"><Icon name="trash" className="w-4 h-4" /></button>
                                         )}
@@ -2603,7 +2603,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                     // so filling in the last value does not fold the card away
                                     // from under the caret.
                                     <div key={im._key} className="ambria-rise border border-slate-200 rounded-xl bg-white p-3 space-y-2.5"
-                                      onFocusCapture={function () { if (editingIdx !== iIdx && !isEditing) setItemEditing(idx, iIdx) }}>
+                                      onFocusCapture={function () { if (editingIdx !== iIdx && !entry.itemsLocked) setItemEditing(idx, iIdx) }}>
                                       <div className="flex items-center justify-between">
                                         <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{'Item ' + (iIdx + 1)}</span>
                                         <div className="flex items-center gap-2">
@@ -2711,7 +2711,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                             onChange={function (e) { updateItem(idx, iIdx, 'itemNotes', e.target.value) }}
                                             placeholder="e.g. White ceramic, 10-inch round"
                                             className="flex-1 min-w-0 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
-                                          {!isEditing && (
+                                          {!entry.itemsLocked && (
                                             <button type="button" onClick={function () { setItemDone(idx) }}
                                               title={complete ? 'Done — collapse this item' : 'Collapse this item'}
                                               aria-label={complete ? 'Done, collapse this item' : 'Collapse this item'}
