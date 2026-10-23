@@ -520,13 +520,25 @@ function RentalsEditor({ config, onSave, saving }) {
   // rather than hardcoded index 0/1 so reordering categories doesn't
   // silently repoint it.
   var [offset, setOffset] = useState(config.rental_perfect_offset != null ? config.rental_perfect_offset : 0)
+  // Perfect -> Filler is the same kind of flat ₹L offset as King's -> Perfect,
+  // chained one category further: editing Perfect (directly, or because it
+  // just got cascaded from King's) autofills Filler as Perfect − this.
+  var [offsetPF, setOffsetPF] = useState(config.rental_filler_offset != null ? config.rental_filler_offset : 0)
+  // Pushpanjali's own grid is the base; Manaktala's and Exotica's sub-venues
+  // are each a flat ₹L subtraction off Pushpanjali's matching cell (every
+  // category, tier and slot) — same flat-offset idea, but across venues
+  // instead of across categories.
+  var [offsetPM, setOffsetPM] = useState(config.rental_pushpanjali_manaktala_offset != null ? config.rental_pushpanjali_manaktala_offset : 0)
+  var [offsetPE, setOffsetPE] = useState(config.rental_pushpanjali_exotica_offset != null ? config.rental_pushpanjali_exotica_offset : 0)
   var [tierPct, setTierPct] = useState(clone(config.rental_tier_pct || {}))
   var kingsIdx = 0
   var perfectIdx = 1
+  var fillerIdx = 2
   for (var _ci = 0; _ci < cats.length; _ci++) {
     var _lbl = (cats[_ci].label || '').toLowerCase()
     if (_lbl.indexOf('king') !== -1) kingsIdx = _ci
     if (_lbl.indexOf('perfect') !== -1) perfectIdx = _ci
+    if (_lbl.indexOf('filler') !== -1) fillerIdx = _ci
   }
 
   function getTierPct(vid) {
@@ -536,6 +548,9 @@ function RentalsEditor({ config, onSave, saving }) {
 
   useEffect(function () { setDraft(clone(config.rentals || {})) }, [config.rentals])
   useEffect(function () { setOffset(config.rental_perfect_offset != null ? config.rental_perfect_offset : 0) }, [config.rental_perfect_offset])
+  useEffect(function () { setOffsetPF(config.rental_filler_offset != null ? config.rental_filler_offset : 0) }, [config.rental_filler_offset])
+  useEffect(function () { setOffsetPM(config.rental_pushpanjali_manaktala_offset != null ? config.rental_pushpanjali_manaktala_offset : 0) }, [config.rental_pushpanjali_manaktala_offset])
+  useEffect(function () { setOffsetPE(config.rental_pushpanjali_exotica_offset != null ? config.rental_pushpanjali_exotica_offset : 0) }, [config.rental_pushpanjali_exotica_offset])
   useEffect(function () { setTierPct(clone(config.rental_tier_pct || {})) }, [config.rental_tier_pct])
 
   // Group venues by parent; each group holds one or more leaf items
@@ -548,6 +563,18 @@ function RentalsEditor({ config, onSave, saving }) {
   })
   var leaves = []
   groups.forEach(function (g) { g.items.forEach(function (it) { leaves.push(it) }) })
+
+  // Matched by parent-venue name (case-insensitive, partial) rather than a
+  // hardcoded id so renaming/reordering venues doesn't silently break it.
+  var pushLeafId = null
+  var manaktalaIds = []
+  var exoticaIds = []
+  groups.forEach(function (g) {
+    var gName = (g.parent || '').toLowerCase()
+    if (gName.indexOf('pushpanjali') !== -1 && g.items.length > 0) pushLeafId = g.items[0].id
+    if (gName.indexOf('manaktala') !== -1) g.items.forEach(function (it) { manaktalaIds.push(it.id) })
+    if (gName.indexOf('exotica') !== -1) g.items.forEach(function (it) { exoticaIds.push(it.id) })
+  })
 
   useEffect(function () {
     if (!selV && leaves.length > 0) {
@@ -588,10 +615,12 @@ function RentalsEditor({ config, onSave, saving }) {
 
   // Cascades one slot's just-edited value outward: Quote -> Target -> Floor
   // is a chain (Target off Quote, then Floor off that Target — not off
-  // Quote directly), and whichever tiers just changed also cascade to
-  // King's -> Perfect (flat ₹L offset) if the edited category is King's.
+  // Quote directly), and whichever tiers just changed also cascade along
+  // the King's -> Perfect -> Filler flat-₹L chain: editing King's cascades
+  // to Perfect (which then cascades on to Filler); editing Perfect directly
+  // cascades only to Filler.
   // Mutates vd in place — callers clone first.
-  function cascadeSlot(vd, tier, catIdx, slotIdx, offV, targetPctV, floorPctV) {
+  function cascadeSlot(vd, tier, catIdx, slotIdx, offV, offPFV, targetPctV, floorPctV) {
     var touchedTiers = [tier]
     if (tier === 'q' && vd.t[catIdx] && vd.f[catIdx]) {
       var qv = vd.q[catIdx][slotIdx] || 0
@@ -604,10 +633,19 @@ function RentalsEditor({ config, onSave, saving }) {
       vd.f[catIdx][slotIdx] = roundHalf(tv2 * (1 - floorPctV))
       touchedTiers = ['t', 'f']
     }
+    var cascadedToPerfect = false
     if (catIdx === kingsIdx && perfectIdx !== kingsIdx) {
       touchedTiers.forEach(function (tt) {
         if (vd[tt] && vd[tt][kingsIdx] && vd[tt][perfectIdx]) {
           vd[tt][perfectIdx][slotIdx] = roundHalf((vd[tt][kingsIdx][slotIdx] || 0) - offV)
+        }
+      })
+      cascadedToPerfect = true
+    }
+    if ((catIdx === perfectIdx || cascadedToPerfect) && fillerIdx !== perfectIdx) {
+      touchedTiers.forEach(function (tt) {
+        if (vd[tt] && vd[tt][perfectIdx] && vd[tt][fillerIdx]) {
+          vd[tt][fillerIdx][slotIdx] = roundHalf((vd[tt][perfectIdx][slotIdx] || 0) - offPFV)
         }
       })
     }
@@ -617,13 +655,35 @@ function RentalsEditor({ config, onSave, saving }) {
   // every slot) — used both for the "Apply to all venues" bulk action and
   // for live-recomputing the currently open venue the instant an offset
   // field itself changes, rather than only on the next cell edit.
-  function applyOffsetsToVenueData(vd, offV, targetPctV, floorPctV) {
+  function applyOffsetsToVenueData(vd, offV, offPFV, targetPctV, floorPctV) {
     var d = clone(vd)
     for (var ci = 0; ci < cats.length; ci++) {
       for (var si = 0; si < slots.length; si++) {
-        cascadeSlot(d, 'q', ci, si, offV, targetPctV, floorPctV)
+        cascadeSlot(d, 'q', ci, si, offV, offPFV, targetPctV, floorPctV)
       }
     }
+    return d
+  }
+
+  // Subtracts a flat ₹L amount from every cell of a grid (all categories,
+  // tiers and slots) — the Pushpanjali-as-base mechanic.
+  function subtractFlatGrid(vd, offV) {
+    var d = {}
+    TIERS.forEach(function (tier) {
+      d[tier] = (vd[tier] || []).map(function (row) {
+        return (row || []).map(function (v) { return roundHalf((v || 0) - offV) })
+      })
+    })
+    return d
+  }
+
+  // Pushes Pushpanjali's current grid (as the base) onto every Manaktala
+  // and Exotica sub-venue, each via its own flat ₹L offset.
+  function applyPushBaseOffsets(d, offMK, offEX) {
+    if (!pushLeafId) return d
+    var baseGrid = padRental(d[pushLeafId] || emptyRental())
+    manaktalaIds.forEach(function (id) { d[id] = subtractFlatGrid(baseGrid, offMK) })
+    exoticaIds.forEach(function (id) { d[id] = subtractFlatGrid(baseGrid, offEX) })
     return d
   }
 
@@ -634,7 +694,8 @@ function RentalsEditor({ config, onSave, saving }) {
     d[selV] = padRental(d[selV])
     d[selV][tier][catIdx][slotIdx] = val
     var p = getTierPct(selV)
-    cascadeSlot(d[selV], tier, catIdx, slotIdx, offset, p.target, p.floor)
+    cascadeSlot(d[selV], tier, catIdx, slotIdx, offset, offsetPF, p.target, p.floor)
+    if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE)
     setDraft(d)
   }
 
@@ -647,9 +708,34 @@ function RentalsEditor({ config, onSave, saving }) {
     var p = getTierPct(selV)
     setDraft(function (prev) {
       var d = clone(prev)
-      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), val, p.target, p.floor)
+      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), val, offsetPF, p.target, p.floor)
+      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE)
       return d
     })
+  }
+
+  function updateOffsetPF(val) {
+    setOffsetPF(val)
+    if (!selV) return
+    var p = getTierPct(selV)
+    setDraft(function (prev) {
+      var d = clone(prev)
+      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), offset, val, p.target, p.floor)
+      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE)
+      return d
+    })
+  }
+
+  // Pushpanjali-as-base offsets only ever read Pushpanjali's own grid, so
+  // they don't need the selected venue to be Pushpanjali to live-recompute.
+  function updateOffsetPM(val) {
+    setOffsetPM(val)
+    setDraft(function (prev) { return applyPushBaseOffsets(clone(prev), val, offsetPE) })
+  }
+
+  function updateOffsetPE(val) {
+    setOffsetPE(val)
+    setDraft(function (prev) { return applyPushBaseOffsets(clone(prev), offsetPM, val) })
   }
 
   function updateVenueTierPct(field, val) {
@@ -661,18 +747,20 @@ function RentalsEditor({ config, onSave, saving }) {
     var p = { target: next[selV].target || 0, floor: next[selV].floor || 0 }
     setDraft(function (prev) {
       var d = clone(prev)
-      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), offset, p.target, p.floor)
+      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), offset, offsetPF, p.target, p.floor)
+      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE)
       return d
     })
   }
 
   async function applyToAllVenues() {
-    if (!(await appConfirm('Recalculate every venue and sub-venue’s Target/Floor (and Perfect, from King’s) using each one’s own % offsets and the shared King’s offset? This overwrites whatever is already in those cells.'))) return
+    if (!(await appConfirm('Recalculate every venue and sub-venue’s Target/Floor (Perfect from King’s, Filler from Perfect, and Manaktala/Exotica from Pushpanjali) using each one’s own % offsets and the shared flat offsets? This overwrites whatever is already in those cells.'))) return
     var d = clone(draft)
     leaves.forEach(function (lf) {
       var p = getTierPct(lf.id)
-      d[lf.id] = applyOffsetsToVenueData(padRental(d[lf.id] || emptyRental()), offset, p.target, p.floor)
+      d[lf.id] = applyOffsetsToVenueData(padRental(d[lf.id] || emptyRental()), offset, offsetPF, p.target, p.floor)
     })
+    d = applyPushBaseOffsets(d, offsetPM, offsetPE)
     setDraft(d)
   }
 
@@ -691,6 +779,44 @@ function RentalsEditor({ config, onSave, saving }) {
           <Num value={offset} onChange={updateOffset} />
         </div>
         <Btn label="Save" variant="small" onClick={function () { onSave('rental_perfect_offset', offset) }} disabled={saving} />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: 10, borderRadius: 9, background: '#FFF8F0', border: '1px solid ' + C.border }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Perfect → Filler offset (₹L)</div>
+          <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction, shared by every venue and sub-venue. Filling a Perfect cell (directly, or via King's) autofills Filler as Perfect − this.</div>
+        </div>
+        <div style={{ width: 80, flexShrink: 0 }}>
+          <Num value={offsetPF} onChange={updateOffsetPF} />
+        </div>
+        <Btn label="Save" variant="small" onClick={function () { onSave('rental_filler_offset', offsetPF) }} disabled={saving} />
+      </div>
+
+      <div style={{ marginBottom: 14, padding: 10, borderRadius: 9, background: '#FFF8F0', border: '1px solid ' + C.border }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.maroon, letterSpacing: 0.5, marginBottom: 8 }}>PUSHPANJALI AS BASE</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Pushpanjali → Manaktala offset (₹L)</div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction off every Pushpanjali cell. Editing Pushpanjali's grid autofills every Manaktala sub-venue as Pushpanjali − this.</div>
+          </div>
+          <div style={{ width: 80, flexShrink: 0 }}>
+            <Num value={offsetPM} onChange={updateOffsetPM} />
+          </div>
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_pushpanjali_manaktala_offset', offsetPM) }} disabled={saving} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Pushpanjali → Exotica offset (₹L)</div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction off every Pushpanjali cell. Editing Pushpanjali's grid autofills every Exotica sub-venue as Pushpanjali − this.</div>
+          </div>
+          <div style={{ width: 80, flexShrink: 0 }}>
+            <Num value={offsetPE} onChange={updateOffsetPE} />
+          </div>
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_pushpanjali_exotica_offset', offsetPE) }} disabled={saving} />
+        </div>
+        {!pushLeafId && (
+          <div style={{ fontSize: 10, color: C.red, marginTop: 8 }}>No venue matching "Pushpanjali" found — this won't autofill until one exists.</div>
+        )}
       </div>
 
       <div style={{ marginBottom: 14, padding: 10, background: C.bg, borderRadius: 8 }}>
