@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
+import { hasPerm } from '../../lib/permissions'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import Icon from '../../components/ui/Icon'
 import PayVendorModal from './PayVendorModal'
@@ -21,6 +22,8 @@ function PayVendor({ profile }) {
   var [balanceLoading, setBalanceLoading] = useState(false)
   var [showPayModal, setShowPayModal] = useState(false)
   var [paidJustNow, setPaidJustNow] = useState(false)
+
+  var canQuickAdd = hasPerm(profile?.permsNew, 'procurement.vendors.quick_create')
 
   useEffect(function () {
     supabase.from('vendors').select('id, name, contact, status').eq('active', true).order('name')
@@ -118,18 +121,18 @@ function PayVendor({ profile }) {
       <div className="bg-white border border-slate-200 rounded-2xl p-4">
         <SearchDropdown
           label="Vendor"
-          placeholder={loading ? 'Loading vendors…' : 'Search or type a new vendor name...'}
+          placeholder={loading ? 'Loading vendors…' : (canQuickAdd ? 'Search or type a new vendor name...' : 'Search a vendor...')}
           items={items}
           value={picked ? String(picked.id) : ''}
           onChange={pickExisting}
-          allowAdd
-          onAdd={createVendor}
+          allowAdd={canQuickAdd}
+          onAdd={canQuickAdd ? createVendor : undefined}
         />
         {creating && <p className="mt-2 text-[12px] text-slate-400">Adding vendor…</p>}
         {error && <p className="mt-2 text-[12px] text-rose-600">{error}</p>}
       </div>
 
-      {!picked && (
+      {!picked && canQuickAdd && (
         <p className="text-[11.5px] text-slate-400 px-1 leading-relaxed">
           A vendor added here is created with just a name — fill in GST, bank
           details and categories later from Procurement &gt; Vendors.

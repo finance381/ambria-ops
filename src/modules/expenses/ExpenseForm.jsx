@@ -1323,6 +1323,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         items = lookupCache[field.source] || []
       }
       var isVendors = field.source === 'vendors'
+      var canQuickAddVendor = isVendors && hasPerm(profile?.permsNew, 'procurement.vendors.quick_create')
       return (
         <SearchDropdown
           key={field.key}
@@ -1331,8 +1332,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           value={value || ''}
           onChange={onChange}
           placeholder={'Select ' + field.label + '...'}
-          allowAdd={isVendors}
-          onAdd={isVendors ? function (typed) { return addVendorStub(typed, entry, onChange) } : undefined}
+          allowAdd={canQuickAddVendor}
+          onAdd={canQuickAddVendor ? function (typed) { return addVendorStub(typed, entry, onChange) } : undefined}
         />
       )
     }

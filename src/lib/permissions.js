@@ -90,6 +90,8 @@ export var PERM_GROUPS = [
       ]},
     { key: 'procurement.purchase_orders', label: 'Purchase Orders', scope: 'both', dataScope: true },
     { key: 'procurement.vendors',         label: 'Vendors Master',  scope: 'both' },
+    { key: 'procurement.vendors.quick_create', label: 'Quick-add Vendor', scope: 'both',
+      note: 'Lets someone create a bare-name vendor stub on the fly — from the expense form\'s vendor field, or from Finance → Pay Vendor — without needing full Vendors Master access. The stub is marked "incomplete" until someone fills in GST/bank/categories later.' },
   ]},
   { group: 'Projects', icon: '🏗️', scope: 'both', children: [
     { key: 'projects.view',         label: 'Projects',            scope: 'both', dataScope: true },
@@ -129,6 +131,8 @@ export var PERM_GROUPS = [
     { key: 'finance.salary_payouts', label: 'Salary Payouts', scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS,
       note: 'Also grant "See salaries" in HR → Employees' },
     { key: 'finance.cost_transfers', label: 'Cost Transfers', scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },
+    { key: 'finance.pay_vendor',     label: 'Pay Vendor',     scope: 'both',
+      note: 'Quick-pay shortcut — search any active vendor and pay them directly, without opening the full Vendor Ledger. Same balances and the same Pay Vendor action as Vendor Ledger\'s own detail view; grant Vendor Ledger too if they also need the full ledger/history.' },
     { key: 'finance.ledgers',        label: 'Ledgers',        scope: 'both', children: [
       { key: 'finance.ledgers.expense',       label: 'Expense Ledger',       scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },
       { key: 'finance.ledgers.event',         label: 'Event Ledger',         scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },

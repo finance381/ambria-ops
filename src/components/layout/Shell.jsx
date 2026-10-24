@@ -143,10 +143,11 @@ var GROUPS = [
       { key: 'finance.payments', id: 'finance.cash_bank', label: 'Cash & Bank', icon: 'banknote', tab: 'cash_bank', noBadge: true },
       { key: 'finance.salary_payouts', label: 'Salary Payouts', icon: 'bank', tab: 'salary_payouts' },
       { key: 'finance.ledgers.vendor', label: 'Vendor Ledger', icon: 'building', tab: 'vendor_ledger' },
-      // Same permission as Vendor Ledger — paying a vendor from here is the
-      // same action Vendor Ledger's own detail view already does, just
-      // reached without first browsing the full vendor list.
-      { key: 'finance.ledgers.vendor', id: 'finance.pay_vendor', label: 'Pay Vendor', icon: 'creditCard', tab: 'pay_vendor', noBadge: true },
+      // Own permission (finance.pay_vendor, migration 00121) — paying a
+      // vendor from here is the same action Vendor Ledger's own detail view
+      // already does, just reached without first browsing the full vendor
+      // list, but grantable independently of full Vendor Ledger access.
+      { key: 'finance.pay_vendor', label: 'Pay Vendor', icon: 'creditCard', tab: 'pay_vendor', noBadge: true },
     ]
   },
   {
