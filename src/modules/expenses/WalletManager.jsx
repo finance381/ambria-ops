@@ -1188,13 +1188,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setCheckingTxnId(null)
     if (error) { alert('Could not update: ' + error.message); return }
     var nowChecked = !!data
-    setWalletTxns(function (prev) { return prev.map(function (x) {
-      if (x.id !== t.id) return x
-      return Object.assign({}, x, {
-        checked_by: nowChecked ? profile.id : null,
-        checked_at: nowChecked ? new Date().toISOString() : null,
-      })
-    }) })
+    var checkPatch = { checked_by: nowChecked ? profile.id : null, checked_at: nowChecked ? new Date().toISOString() : null }
+    setWalletTxns(function (prev) { return prev.map(function (x) { return x.id === t.id ? Object.assign({}, x, checkPatch) : x }) })
+    // The payment-detail modal holds its own snapshot of this row (payDetailTarget.txn),
+    // separate from the walletTxns list it was opened from — without this it kept
+    // showing the pre-toggle state until the modal was closed and reopened.
+    setPayDetailTarget(function (prev) { return prev && prev.txn.id === t.id ? Object.assign({}, prev, { txn: Object.assign({}, prev.txn, checkPatch) }) : prev })
     if (nowChecked && profile && profile.id) {
       setWalletProfiles(function (prev) {
         if (prev[profile.id]) return prev
@@ -1238,13 +1237,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setEnteringTxnId(null)
     if (error) { alert('Could not update: ' + error.message); return }
     var nowEntered = !!data
-    setWalletTxns(function (prev) { return prev.map(function (x) {
-      if (x.id !== t.id) return x
-      return Object.assign({}, x, {
-        tally_entered_by: nowEntered ? profile.id : null,
-        tally_entered_at: nowEntered ? new Date().toISOString() : null,
-      })
-    }) })
+    var enterPatch = { tally_entered_by: nowEntered ? profile.id : null, tally_entered_at: nowEntered ? new Date().toISOString() : null }
+    setWalletTxns(function (prev) { return prev.map(function (x) { return x.id === t.id ? Object.assign({}, x, enterPatch) : x }) })
+    setPayDetailTarget(function (prev) { return prev && prev.txn.id === t.id ? Object.assign({}, prev, { txn: Object.assign({}, prev.txn, enterPatch) }) : prev })
     if (nowEntered && profile && profile.id) {
       setWalletProfiles(function (prev) {
         if (prev[profile.id]) return prev
@@ -1799,15 +1794,22 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   }
 
   async function openPaymentDetail(t) {
-    setPayDetailTarget({ txn: t, entry: null, partyName: '', loading: true })
-    if (!t.reference_id) { setPayDetailTarget({ txn: t, entry: null, partyName: '', loading: false }); return }
+    setPayDetailTarget({ txn: t, entry: null, dedEntry: null, bills: [], partyName: '', loading: true })
+    if (!t.reference_id) { setPayDetailTarget({ txn: t, entry: null, dedEntry: null, bills: [], partyName: '', loading: false }); return }
     // wallet_transactions.reference_id for a payment row is the shared UUID
     // (v_ref_id in pay_vendor / the salary-payment equivalent) — that value
-    // lives on ledger_entries.ref_id, not its own bigint id column.
-    var { data: entry } = await supabase.from('ledger_entries')
+    // lives on ledger_entries.ref_id, not its own bigint id column. A vendor
+    // payment made WITH a deduction writes two ledger_entries rows sharing
+    // this one ref_id (the payment itself, ref_type='vendor_payment', and
+    // the deduction credited against a bill, ref_type='vendor_deduction') —
+    // .maybeSingle() used to silently come back empty whenever a deduction
+    // was involved, since two rows matched it.
+    var { data: rows } = await supabase.from('ledger_entries')
       .select('id, ledger_type, party_id, entry_date, created_at, description, debit_paise, ref_type, metadata')
-      .eq('ref_id', t.reference_id).maybeSingle()
-    if (!entry) { setPayDetailTarget({ txn: t, entry: null, partyName: '', loading: false }); return }
+      .eq('ref_id', t.reference_id)
+    var entry = (rows || []).find(function (r) { return r.ref_type !== 'vendor_deduction' }) || null
+    var dedEntry = (rows || []).find(function (r) { return r.ref_type === 'vendor_deduction' }) || null
+    if (!entry) { setPayDetailTarget({ txn: t, entry: null, dedEntry: dedEntry, bills: [], partyName: '', loading: false }); return }
     var partyName = ''
     if (entry.ledger_type === 'vendor') {
       var { data: v } = await supabase.from('vendors').select('name').eq('id', entry.party_id).maybeSingle()
@@ -1816,14 +1818,34 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       var { data: p } = await supabase.from('profiles').select('name').eq('id', entry.party_id).maybeSingle()
       partyName = (p && p.name) || ''
     }
-    setPayDetailTarget({ txn: t, entry: entry, partyName: partyName, loading: false })
+    // The bill(s) a deduction was credited against — stored as raw expense
+    // ids on the deduction row's metadata, resolved here to something
+    // readable (same 'bill' PayVendorModal itself let the deduction be
+    // selected against).
+    var bills = []
+    var billIds = (dedEntry && dedEntry.metadata && dedEntry.metadata.source_expense_ids) || []
+    if (billIds.length > 0) {
+      var { data: exps } = await supabase.from('expenses').select('id, description, amount_paise, expense_date').in('id', billIds)
+      bills = exps || []
+    }
+    setPayDetailTarget({ txn: t, entry: entry, dedEntry: dedEntry, bills: bills, partyName: partyName, loading: false })
   }
 
   function renderPaymentDetailModal() {
     if (!payDetailTarget) return null
     var t = payDetailTarget.txn
     var entry = payDetailTarget.entry
+    var dedEntry = payDetailTarget.dedEntry
+    var bills = payDetailTarget.bills || []
     var meta = (entry && entry.metadata) || {}
+    var dedMeta = (dedEntry && dedEntry.metadata) || {}
+    // PaymentProofThumbs reads payment_images and deduction_image off one
+    // meta object — the two live on separate ledger_entries rows (the
+    // payment's own metadata, the deduction's own), so they're merged just
+    // for this.
+    var proofMeta = Object.assign({}, meta, dedEntry ? { deduction_image: dedMeta.deduction_image } : {})
+    var chkTarget = t
+    var showMark = !!(canMarkChecked || chkTarget.checked_by || canMarkEntered || chkTarget.tally_entered_by)
     return createPortal((
       <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
         onClick={function () { setPayDetailTarget(null) }}>
@@ -1854,6 +1876,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     <p className="font-medium text-gray-800">{meta.mode === 'cash' ? '💵 Cash' : '🏦 Bank'}</p>
                   </div>
                 )}
+                {meta.payment_type && (
+                  <div>
+                    <p className="text-[10px] uppercase text-gray-500">Payment type</p>
+                    <p className="font-medium text-gray-800">{meta.payment_type === 'advance' ? 'Advance' : 'FNF (Full & Final)'}</p>
+                  </div>
+                )}
                 {meta.salary_month && (
                   <div>
                     <p className="text-[10px] uppercase text-gray-500">Salary Month</p>
@@ -1873,10 +1901,69 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   <p className="text-sm text-gray-800">{meta.reason}</p>
                 </div>
               )}
-              {(meta.payment_images || meta.deduction_image) && (
+              {dedEntry && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1.5">
+                  <p className="text-[10px] uppercase font-bold text-amber-700">Deduction applied</p>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-gray-500">Amount</span>
+                    <span className="font-bold text-amber-700">{formatPoints(dedEntry.debit_paise)}</span>
+                  </div>
+                  {dedMeta.reason && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-gray-500 flex-shrink-0">Reason</span>
+                      <span className="font-medium text-gray-800 text-right">{dedMeta.reason}</span>
+                    </div>
+                  )}
+                  {bills.length > 0 && (
+                    <div>
+                      <p className="text-gray-500 mb-1">Credited against bill{bills.length === 1 ? '' : 's'}</p>
+                      <div className="space-y-1">
+                        {bills.map(function (b) {
+                          return (
+                            <div key={b.id} className="flex justify-between gap-3 bg-white rounded px-2 py-1 border border-amber-100">
+                              <span className="text-gray-700 truncate">{formatDate(b.expense_date)} · {b.description || 'Expense #' + b.id}</span>
+                              <span className="font-semibold text-gray-900 flex-shrink-0">{formatPoints(b.amount_paise)}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {!bills.length && dedMeta.source_expense_ids && dedMeta.source_expense_ids.length > 0 && (
+                    <p className="text-[11px] text-gray-400 italic">Bill(s) selected but no longer found.</p>
+                  )}
+                </div>
+              )}
+              {(meta.payment_images || proofMeta.deduction_image) && (
                 <div>
                   <p className="text-[10px] uppercase text-gray-500 mb-1">Proof</p>
-                  <PaymentProofThumbs meta={meta} />
+                  <PaymentProofThumbs meta={proofMeta} />
+                </div>
+              )}
+              {showMark && (
+                <div className="flex items-center justify-between pt-2 border-t border-gray-100" onClick={function (ev) { ev.stopPropagation() }}>
+                  <span className="text-[11px] font-semibold text-gray-500">Finance review</span>
+                  <span className="flex items-center gap-1.5">
+                    <EnteredMark
+                      entered={!!chkTarget.tally_entered_by}
+                      enteredByName={chkTarget.tally_entered_by && walletProfiles[chkTarget.tally_entered_by] ? walletProfiles[chkTarget.tally_entered_by].name : null}
+                      enteredAt={chkTarget.tally_entered_at}
+                      canToggle={canMarkEntered}
+                      canUnenter={chkTarget.tally_entered_by === profile.id || isAdmin || isAuditor}
+                      busy={enteringTxnId === t.id}
+                      onToggle={function () { toggleWalletEntered(t) }}
+                    />
+                    <CheckedStamp
+                      variant="stamp"
+                      checked={!!chkTarget.checked_by}
+                      checkerName={chkTarget.checked_by && walletProfiles[chkTarget.checked_by] ? walletProfiles[chkTarget.checked_by].name : null}
+                      checkedAt={chkTarget.checked_at}
+                      canToggle={canMarkChecked}
+                      canUncheck={chkTarget.checked_by === profile.id || isAdmin || isAuditor}
+                      busy={checkingTxnId === t.id}
+                      onToggle={function () { toggleWalletCheck(t) }}
+                    />
+                  </span>
                 </div>
               )}
               <p className="text-[10px] text-gray-400 pt-1">Logged {formatDate(t.created_at)}</p>
