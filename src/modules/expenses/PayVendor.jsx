@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
-import { formatPoints } from '../../lib/format'
+import { formatPoints, formatDate } from '../../lib/format'
 import { hasPerm } from '../../lib/permissions'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import Icon from '../../components/ui/Icon'
@@ -22,6 +22,9 @@ function PayVendor({ profile }) {
   var [balanceLoading, setBalanceLoading] = useState(false)
   var [showPayModal, setShowPayModal] = useState(false)
   var [paidJustNow, setPaidJustNow] = useState(false)
+
+  var [entries, setEntries] = useState([])
+  var [entriesLoading, setEntriesLoading] = useState(false)
 
   var canQuickAdd = hasPerm(profile?.permsNew, 'procurement.vendors.quick_create')
 
@@ -52,11 +55,29 @@ function PayVendor({ profile }) {
     setBalanceLoading(false)
   }
 
+  // Recent ledger entries for the picked vendor — a read-only glance at
+  // what's been happening on their account, not the full Vendor Ledger
+  // detail view (no receipts, breakdowns or check/enter actions here).
+  async function loadEntries(id) {
+    setEntriesLoading(true)
+    var { data } = await supabase.from('ledger_entries')
+      .select('id, entry_date, description, credit_paise, debit_paise, metadata')
+      .eq('ledger_type', 'vendor')
+      .eq('party_id', id)
+      .is('deleted_at', null)
+      .order('entry_date', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(20)
+    setEntries(data || [])
+    setEntriesLoading(false)
+  }
+
   function choose(id, name, status) {
     setError('')
     setPaidJustNow(false)
     setPicked({ id: id, name: name, status: status })
     loadBalance(id, name, status)
+    loadEntries(id)
   }
 
   function pickExisting(value) {
@@ -96,6 +117,7 @@ function PayVendor({ profile }) {
   function changeVendor() {
     setPicked(null)
     setBalance(null)
+    setEntries([])
     setPaidJustNow(false)
     setError('')
   }
@@ -103,7 +125,10 @@ function PayVendor({ profile }) {
   async function onPaySuccess() {
     setShowPayModal(false)
     setPaidJustNow(true)
-    if (picked) await loadBalance(picked.id, picked.name, picked.status)
+    if (picked) {
+      await loadBalance(picked.id, picked.name, picked.status)
+      await loadEntries(picked.id)
+    }
   }
 
   return (
@@ -186,6 +211,44 @@ function PayVendor({ profile }) {
                 Pay {picked.name}
               </button>
             </>
+          )}
+        </div>
+      )}
+
+      {picked && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400 mb-3">Recent ledger entries</p>
+          {entriesLoading ? (
+            <p className="text-[13px] text-slate-400">Loading entries…</p>
+          ) : entries.length === 0 ? (
+            <p className="text-[13px] text-slate-400">No entries for this vendor yet.</p>
+          ) : (
+            <div className="space-y-2.5">
+              {entries.map(function (e) {
+                var isCredit = (e.credit_paise || 0) > 0
+                var amt = isCredit ? (e.credit_paise || 0) : (e.debit_paise || 0)
+                var mode = e.metadata && e.metadata.mode
+                return (
+                  <div key={e.id} className="flex items-start justify-between gap-3 pb-2.5 border-b border-slate-100 last:border-0 last:pb-0">
+                    <div className="min-w-0">
+                      <p className="text-[12.5px] font-semibold text-slate-700 truncate">{e.description || '—'}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[11px] text-slate-400">{e.entry_date ? formatDate(e.entry_date) : '—'}</span>
+                        {mode && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-50 text-[10px] font-bold text-indigo-700">
+                            <Icon name={mode === 'cash' ? 'banknote' : 'bank'} size={10} />
+                            {mode === 'cash' ? 'Cash' : 'Bank'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <p className={"shrink-0 text-[13px] font-bold tabular-nums " + (isCredit ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>
+                      {isCredit ? '+' : '−'}{formatPoints(amt)}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
           )}
         </div>
       )}
