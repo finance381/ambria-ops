@@ -547,7 +547,7 @@ function PaymentsLedger({ profile }) {
     if (r.source === 'collection' && (r._eventId || r._performedBy)) {
       Promise.all([
         r._eventId
-          ? supabase.from('events').select('id, contract_no, event_name, client_name, function_date, venue_name, location').eq('id', r._eventId).maybeSingle()
+          ? supabase.from('events').select('id, contract_no, event_name, client_name, function_date, venue_name, location, created_user_name').eq('id', r._eventId).maybeSingle()
           : Promise.resolve({ data: null }),
         r._performedBy
           ? supabase.from('profiles').select('name').eq('id', r._performedBy).maybeSingle()
@@ -1250,8 +1250,31 @@ function PaymentsLedger({ profile }) {
                 {r.direction === 'in' ? '+' : '-'}{formatPoints(r.amount_paise || 0)}
               </p>
               <div className="space-y-1.5 text-sm">
+                {r.source === 'collection' && r._receiptNo && (
+                  <div className="flex justify-between"><span className="text-gray-500">Receipt #</span><span className="font-medium text-gray-800">{r._receiptNo}</span></div>
+                )}
+                <div className="flex justify-between"><span className="text-gray-500">Collection Date</span><span className="font-medium text-gray-800">{formatDate(r.date)}</span></div>
+
+                {r.source === 'collection' && detailTarget.event && (
+                  <>
+                    <p className="pt-1 text-[11px] font-bold uppercase tracking-wide text-gray-400">Function details</p>
+                    {detailTarget.event.contract_no && (
+                      <div className="flex justify-between"><span className="text-gray-500">Contract #</span><span className="font-medium text-gray-800">{detailTarget.event.contract_no}</span></div>
+                    )}
+                    <div className="flex justify-between"><span className="text-gray-500">Function date</span><span className="font-medium text-gray-800">{formatDate(detailTarget.event.function_date)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Client</span><span className="font-medium text-gray-800">{detailTarget.event.client_name || '—'}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Venue</span><span className="font-medium text-gray-800">{detailTarget.event.venue_name || '—'}</span></div>
+                    {detailTarget.event.location && (
+                      <div className="flex justify-between"><span className="text-gray-500">Sub-venue</span><span className="font-medium text-gray-800">{detailTarget.event.location}</span></div>
+                    )}
+                    {detailTarget.event.created_user_name && (
+                      <div className="flex justify-between"><span className="text-gray-500">Sales person</span><span className="font-medium text-gray-800">{detailTarget.event.created_user_name}</span></div>
+                    )}
+                  </>
+                )}
+
+                {r.source === 'collection' && <p className="pt-1 text-[11px] font-bold uppercase tracking-wide text-gray-400">Other details</p>}
                 <div className="flex justify-between"><span className="text-gray-500">Party</span><span className="font-medium text-gray-800">{r.party_name}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Date</span><span className="font-medium text-gray-800">{formatDate(r.date)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Mode</span><span className="font-medium text-gray-800">{r.mode === 'cash' ? 'Cash' : 'Bank'}</span></div>
                 {r._bankPaymentType && (
                   <div className="flex justify-between"><span className="text-gray-500">Payment Type</span><span className="font-medium text-gray-800">{r._bankPaymentType}</span></div>
@@ -1265,25 +1288,11 @@ function PaymentsLedger({ profile }) {
                 {meta.salary_month && (
                   <div className="flex justify-between"><span className="text-gray-500">Salary month</span><span className="font-medium text-gray-800">{meta.salary_month}</span></div>
                 )}
-                {r.source === 'collection' && r._receiptNo && (
-                  <div className="flex justify-between"><span className="text-gray-500">Receipt #</span><span className="font-medium text-gray-800">{r._receiptNo}</span></div>
-                )}
                 {r.source === 'collection' && (
                   <div className="flex justify-between"><span className="text-gray-500">Collected by</span><span className="font-medium text-gray-800">{detailTarget.loading ? '…' : (detailTarget.collectorName || '—')}</span></div>
                 )}
                 {r.source === 'collection' && r._isEpc && r._epc && (
                   <div className="flex justify-between"><span className="text-gray-500">Extra plates</span><span className="font-medium text-gray-800">{r._epc.extras_charged}</span></div>
-                )}
-                {r.source === 'collection' && detailTarget.event && (
-                  <>
-                    <div className="flex justify-between"><span className="text-gray-500">Contract #</span><span className="font-medium text-gray-800">{detailTarget.event.contract_no || '—'}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Client</span><span className="font-medium text-gray-800">{detailTarget.event.client_name || '—'}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Function date</span><span className="font-medium text-gray-800">{formatDate(detailTarget.event.function_date)}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Venue</span><span className="font-medium text-gray-800">{detailTarget.event.venue_name || '—'}</span></div>
-                    {detailTarget.event.location && (
-                      <div className="flex justify-between"><span className="text-gray-500">Sub-venue</span><span className="font-medium text-gray-800">{detailTarget.event.location}</span></div>
-                    )}
-                  </>
                 )}
               </div>
               {(meta.payment_images || meta.deduction_image) && (
