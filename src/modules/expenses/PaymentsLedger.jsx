@@ -1257,7 +1257,7 @@ function PaymentsLedger({ profile }) {
 
                 {r.source === 'collection' && detailTarget.event && (
                   <>
-                    <p className="pt-1 text-[11px] font-bold uppercase tracking-wide text-gray-600">Function details</p>
+                    <p className="pt-2 mt-1 border-t border-gray-200 text-[11px] font-bold uppercase tracking-wide text-gray-600">Function details</p>
                     {detailTarget.event.contract_no && (
                       <div className="flex justify-between"><span className="text-gray-500">Contract #</span><span className="font-medium text-gray-800">{detailTarget.event.contract_no}</span></div>
                     )}
@@ -1273,7 +1273,7 @@ function PaymentsLedger({ profile }) {
                   </>
                 )}
 
-                {r.source === 'collection' && <p className="pt-1 text-[11px] font-bold uppercase tracking-wide text-gray-600">Other details</p>}
+                {r.source === 'collection' && <p className="pt-2 mt-1 border-t border-gray-200 text-[11px] font-bold uppercase tracking-wide text-gray-600">Other details</p>}
                 <div className="flex justify-between"><span className="text-gray-500">Party</span><span className="font-medium text-gray-800">{r.party_name}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Mode</span><span className="font-medium text-gray-800">{r.mode === 'cash' ? 'Cash' : 'Bank'}</span></div>
                 {r._bankPaymentType && (
