@@ -26,7 +26,7 @@ $function$;
 -- the new 3-arg signature right below, so dropping them here is safe.
 DROP FUNCTION IF EXISTS public.fn_inventory_item_scope_visible(bigint, uuid) CASCADE;
 
-CREATE FUNCTION public.fn_inventory_item_scope_visible(_category_id bigint, _sub_category_id bigint, _submitted_by uuid)
+CREATE OR REPLACE FUNCTION public.fn_inventory_item_scope_visible(_category_id bigint, _sub_category_id bigint, _submitted_by uuid)
  RETURNS boolean
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
