@@ -37,7 +37,7 @@ function FilterDropdown({ value, onChange, options, placeholder, compact }) {
         {displayLabel}
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 w-full min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-lg" style={{ maxHeight: 320, display: 'flex', flexDirection: 'column' }}>
+        <div className="absolute z-[10000] mt-1 w-full min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-lg" style={{ maxHeight: 320, display: 'flex', flexDirection: 'column' }}>
           <div className="p-1.5 border-b border-gray-100">
             <input type="text" value={q} onChange={function (e) { setQ(e.target.value) }} placeholder="Type to filter..."
               autoFocus className="w-full px-2.5 py-1.5 text-[13px] text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"

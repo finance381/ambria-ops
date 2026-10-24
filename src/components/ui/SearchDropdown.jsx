@@ -268,7 +268,10 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
         {open && (filtered.length > 0 || showAddOption) && (
           <div
             ref={listRef}
-            className="absolute z-50 mt-1.5 w-full bg-white border border-slate-200 rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)] max-h-72 overflow-y-auto py-1"
+            // Above the global update-available toast (z-[9999], fixed bottom)
+            // — an open dropdown is an active interaction and must win
+            // against a passive, dismissible notification, not sit under it.
+            className="absolute z-[10000] mt-1.5 w-full bg-white border border-slate-200 rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)] max-h-72 overflow-y-auto py-1"
           >
             {filtered.map(function (item, idx) {
               return (
