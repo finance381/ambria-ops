@@ -486,6 +486,16 @@ function PaymentsLedger({ profile }) {
   // wallet_transactions row, and an expense-funded row checks the expense
   // itself (not this wallet_transactions row), since that's the one row an
   // expense can show up as "checked" on everywhere else in the app.
+  // Patches just the one row in place rather than re-running load() (every
+  // table + join it does, for all ~177 rows) after an action that only
+  // ever changes one row's own checked/entered stamp. load() used to run
+  // unconditionally here on top of whatever load() the useRealtime
+  // subscription below already triggers from this same write landing in
+  // the DB — the visible "whole list reloads" on every single click.
+  function patchRow(key, patch) {
+    setRows(function (prev) { return prev.map(function (r) { return r.key === key ? Object.assign({}, r, patch) : r }) })
+  }
+
   async function toggleChecked(row) {
     if (checkingKey || !row._checkId) return
     setCheckingKey(row.key)
@@ -496,10 +506,15 @@ function PaymentsLedger({ profile }) {
       : row.source === 'expense' ? 'p_expense_id'
       : 'p_entry_id'
     var params = {}; params[paramName] = row._checkId
-    var { error } = await supabase.rpc(rpcName, params)
+    var { data, error } = await supabase.rpc(rpcName, params)
     setCheckingKey(null)
     if (error) { alert('Could not update: ' + error.message); return }
-    load()
+    var nowChecked = !!data
+    patchRow(row.key, {
+      checked_by: nowChecked ? profile.id : null,
+      checked_at: nowChecked ? new Date().toISOString() : null,
+      _checkedByName: nowChecked ? profile.name : null,
+    })
   }
 
   async function toggleEntered(row) {
@@ -512,10 +527,15 @@ function PaymentsLedger({ profile }) {
       : row.source === 'expense' ? 'p_expense_id'
       : 'p_entry_id'
     var params = {}; params[paramName] = row._checkId
-    var { error } = await supabase.rpc(rpcName, params)
+    var { data, error } = await supabase.rpc(rpcName, params)
     setEnteringKey(null)
     if (error) { alert('Could not update: ' + error.message); return }
-    load()
+    var nowEntered = !!data
+    patchRow(row.key, {
+      tally_entered_by: nowEntered ? profile.id : null,
+      tally_entered_at: nowEntered ? new Date().toISOString() : null,
+      _enteredByName: nowEntered ? profile.name : null,
+    })
   }
 
   useEffect(function () { load() }, [canView, dateFrom, dateTo])
