@@ -175,9 +175,24 @@ function ContractList({ profile, deepLinkContractId }) {
     return matchSearch && matchVenue && matchDept && matchEntered && matchVenueType && matchSales && matchSession
   })
 
-  var totalPages = Math.ceil(filtered.length / perPage)
-  var paged = filtered.slice((page - 1) * perPage, page * perPage)
-  var rowsToShow = filterId ? (pinnedContract ? [pinnedContract] : []) : paged
+  // One group per contract (contract_no + department) rather than one row
+  // per function — a multi-function contract (Lunch, Dinner, Sagan, all
+  // under the same contract_no) used to show as N separate full-width
+  // cards. A row with no contract_no yet (tentative, no LMS contract) is
+  // its own singleton group, keyed by id so it never merges with anything.
+  function groupKeyOf(c) { return c.contract_no ? ((c.department || '') + '|' + c.contract_no) : ('single-' + c.id) }
+  var groupsMap = {}
+  var groupOrder = []
+  filtered.forEach(function (c) {
+    var k = groupKeyOf(c)
+    if (!groupsMap[k]) { groupsMap[k] = []; groupOrder.push(k) }
+    groupsMap[k].push(c)
+  })
+  var groups = groupOrder.map(function (k) { return { key: k, rows: groupsMap[k] } })
+
+  var totalPages = Math.ceil(groups.length / perPage)
+  var pagedGroups = groups.slice((page - 1) * perPage, page * perPage)
+  var groupsToShow = filterId ? (pinnedContract ? [{ key: 'pinned', rows: [pinnedContract] }] : []) : pagedGroups
 
   if (loading) {
     return <p className="text-slate-500 text-[13px] text-center py-10">Loading contracts…</p>
@@ -240,7 +255,7 @@ function ContractList({ profile, deepLinkContractId }) {
           </span>
         </div>
         <div className="flex items-center gap-1.5 px-0.5 text-[12.5px] text-slate-500">
-          <span className="h-6 px-2 rounded-md bg-slate-100 inline-flex items-center"><b className="text-slate-800 tabular-nums">{filtered.length}</b>&nbsp;contract{filtered.length === 1 ? '' : 's'}</span>
+          <span className="h-6 px-2 rounded-md bg-slate-100 inline-flex items-center"><b className="text-slate-800 tabular-nums">{groups.length}</b>&nbsp;contract{groups.length === 1 ? '' : 's'}</span>
           {(venueFilter || deptFilter || enteredFilter || venueTypeFilter || salesFilter || sessionFilter || search) && (
             <button type="button" onClick={function () { setSearch(''); setVenueFilter(''); setDeptFilter(''); setEnteredFilter(''); setVenueTypeFilter(''); setSalesFilter(''); setSessionFilter(''); setPage(1) }}
               className="h-6 px-2 rounded-md font-bold text-indigo-600 hover:bg-indigo-50">Reset</button>
@@ -255,7 +270,7 @@ function ContractList({ profile, deepLinkContractId }) {
       {filterId && !pinnedLoading && !pinnedContract && (
         <p className="text-slate-500 text-[13px] text-center py-8">That contract couldn't be found — it may have been merged or removed.</p>
       )}
-      {!filterId && filtered.length === 0 && (
+      {!filterId && groups.length === 0 && (
         <div className="bg-white border border-slate-200 rounded-2xl px-6 py-14 text-center">
           <span className="mx-auto w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 inline-flex items-center justify-center mb-3"><Icon name="fileText" size={22} /></span>
           <p className="font-display text-[15px] font-bold text-slate-800">No contracts found</p>
@@ -269,33 +284,67 @@ function ContractList({ profile, deepLinkContractId }) {
           different contracts, so the list kept reading as one long run
           with no clear edges. A gap and a border per card is unambiguous
           regardless of how heavy the internal divider is. */}
-      {rowsToShow.length > 0 && (
+      {groupsToShow.length > 0 && (
         <div className="space-y-2.5">
           <div className={'hidden sm:grid ' + COLS + ' gap-3 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[11.5px] font-bold uppercase tracking-[0.07em] text-slate-500'}>
             <span>Event</span><span>Contract</span><span>Date</span><span>Venue</span><span className="text-right">Balance</span><span className="text-right">Tally</span>
           </div>
-          {rowsToShow.map(function (c) {
+          {groupsToShow.map(function (g) {
+            var rows = g.rows
+            var c = rows[0]
+            var multi = rows.length > 1
+            var dates = rows.map(function (r) { return r.function_date || r.contract_date }).filter(Boolean).sort()
+            var dateStart = dates[0], dateEnd = dates[dates.length - 1]
+            var isTentative = rows.some(function (r) { return r.is_tentative })
+            var uniqueLocations = [...new Set(rows.map(function (r) { return r.location }).filter(Boolean))]
+            var enteredCount = rows.filter(function (r) { return r.tally_entered_by }).length
             return (
-              <div key={c.id} role="button" tabIndex={0}
-                onClick={function () { setSelected(c) }}
-                onKeyDown={function (e) { if (e.key === 'Enter') setSelected(c) }}
-                className={'group cursor-pointer bg-white border border-slate-200 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] px-4 py-3.5 hover:border-indigo-300 hover:bg-indigo-50/40 transition-colors sm:grid ' + COLS + ' sm:gap-3 sm:items-center'}>
+              <div key={g.key}
+                {...(!multi ? {
+                  role: 'button', tabIndex: 0,
+                  onClick: function () { setSelected(c) },
+                  onKeyDown: function (e) { if (e.key === 'Enter') setSelected(c) },
+                } : {})}
+                className={'group bg-white border border-slate-200 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] px-4 py-3.5 transition-colors sm:grid ' + COLS + ' sm:gap-3 sm:items-center ' +
+                  (multi ? '' : 'cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/40')}>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-display text-[14px] font-bold tracking-[-0.01em] text-slate-900 truncate group-hover:text-indigo-700">{c.event_name || '—'}</h3>
-                    {c.is_tentative && <span className="shrink-0 text-[10.5px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Tentative</span>}
+                    <h3 className={'font-display text-[14px] font-bold tracking-[-0.01em] text-slate-900 truncate ' + (multi ? '' : 'group-hover:text-indigo-700')}>
+                      {multi ? titleCase(c.client_name || '—') : (c.event_name || '—')}
+                    </h3>
+                    {isTentative && <span className="shrink-0 text-[10.5px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Tentative</span>}
                     {c.department && <span className={'shrink-0 text-[10.5px] font-bold uppercase px-1.5 py-0.5 rounded ' + (DEPT_BADGE[c.department] || 'bg-slate-100 text-slate-600')}>{c.department}</span>}
                   </div>
-                  <p className="text-[12.5px] text-slate-600 truncate mt-0.5">{titleCase(c.client_name || '—')}</p>
+                  {multi ? (
+                    <p className="mt-1 flex flex-wrap gap-1.5">
+                      {rows.map(function (r) {
+                        return (
+                          <span key={r.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 text-[11px] font-semibold text-slate-600">
+                            {r.event_name || '—'}{r.session ? ' · ' + r.session : ''}
+                          </span>
+                        )
+                      })}
+                    </p>
+                  ) : (
+                    <p className="text-[12.5px] text-slate-600 truncate mt-0.5">{titleCase(c.client_name || '—')}</p>
+                  )}
                   {/* phone: the columns as one meta line */}
                   <p className="sm:hidden mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-slate-500">
                     {c.contract_no && <span className="font-mono">#{c.contract_no}</span>}
-                    <span className="inline-flex items-center gap-1"><Icon name="calendar" size={12} className="text-slate-400" />{formatDate(c.function_date || c.contract_date)}</span>
-                    {c.contract_date && c.function_date && (
+                    <span className="inline-flex items-center gap-1"><Icon name="calendar" size={12} className="text-slate-400" />
+                      {multi && dateStart !== dateEnd ? formatDate(dateStart) + ' – ' + formatDate(dateEnd) : formatDate(dateStart || c.contract_date)}
+                    </span>
+                    {c.contract_date && dateStart && (
                       <span className="text-slate-400">Contracted {formatDate(c.contract_date)}</span>
                     )}
-                    {(c.venue_name || c.location) && <span className="inline-flex items-center gap-1"><Icon name="mapPin" size={12} className="text-slate-400" />{[c.venue_name, c.location].filter(Boolean).join(' · ')}</span>}
-                    {c.session && <span className="inline-flex items-center gap-1"><Icon name="clock" size={12} className="text-slate-400" />{c.session}</span>}
+                    {(c.venue_name || uniqueLocations.length > 0) && (
+                      <span className="inline-flex items-center gap-1">
+                        <Icon name="mapPin" size={12} className="text-slate-400" />
+                        {[c.venue_name, uniqueLocations.length === 1 ? uniqueLocations[0] : (uniqueLocations.length > 1 ? uniqueLocations.length + ' sub-venues' : null)].filter(Boolean).join(' · ')}
+                      </span>
+                    )}
+                    {!multi && c.session && <span className="inline-flex items-center gap-1"><Icon name="clock" size={12} className="text-slate-400" />{c.session}</span>}
+                    {multi && <span className="font-semibold text-slate-600">{rows.length} functions</span>}
                     {c.created_user_name && (
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 font-bold text-indigo-700">
                         <Icon name="user" size={11} />{c.created_user_name}
@@ -312,15 +361,18 @@ function ContractList({ profile, deepLinkContractId }) {
                   )}
                 </div>
                 <div className="hidden sm:block">
-                  <span className="block text-[13px] text-slate-700 tabular-nums">{formatDate(c.function_date || c.contract_date)}</span>
-                  {c.contract_date && c.function_date && (
+                  <span className="block text-[13px] text-slate-700 tabular-nums">
+                    {multi && dateStart !== dateEnd ? formatDate(dateStart) + ' – ' + formatDate(dateEnd) : formatDate(dateStart || c.contract_date)}
+                  </span>
+                  {c.contract_date && dateStart && (
                     <span className="block text-[10.5px] text-slate-400 tabular-nums">Contracted {formatDate(c.contract_date)}</span>
                   )}
                 </div>
                 <div className="hidden sm:block min-w-0">
                   <span className="block text-[13px] text-slate-600 truncate">{c.venue_name || '—'}</span>
-                  {c.location && <span className="block text-[11px] text-slate-400 truncate">{c.location}</span>}
-                  {c.session && (
+                  {uniqueLocations.length === 1 && <span className="block text-[11px] text-slate-400 truncate">{uniqueLocations[0]}</span>}
+                  {uniqueLocations.length > 1 && <span className="block text-[11px] text-slate-400 truncate">{uniqueLocations.length} sub-venues</span>}
+                  {!multi && c.session && (
                     <span className="inline-flex items-center gap-1 mt-0.5 text-[11px] text-slate-400">
                       <Icon name="clock" size={10} className="text-slate-400" />{c.session}
                     </span>
@@ -340,7 +392,9 @@ function ContractList({ profile, deepLinkContractId }) {
                         {formatPaise(Math.abs(c.balance_amount))} {c.balance_amount < 0 ? 'due' : 'adv'}
                       </span>
                     ) : null}
-                    {(c.tally_entered_by || canMarkEntered) && (
+                    {multi ? (
+                      <span className="ml-auto sm:ml-0 text-[11px] font-bold text-slate-500 tabular-nums">{enteredCount}/{rows.length} entered</span>
+                    ) : (c.tally_entered_by || canMarkEntered) && (
                       <span onClick={function (ev) { ev.stopPropagation() }} className="ml-auto sm:ml-0">
                         <EnteredMark
                           entered={!!c.tally_entered_by}
@@ -355,15 +409,66 @@ function ContractList({ profile, deepLinkContractId }) {
                     )}
                   </div>
 
-                  {/* LMS already computes these per Venue contract (see migration
-                      00094's note) — pax was already synced as total_plates, just
-                      never shown as a column; menu rate/venue rental/decor/
-                      entertainment are new. Scoped to Venue rows only — the other
-                      three departments are their own standalone contracts with
-                      nothing to decompose. A full-width strip under the row
-                      rather than more grid columns, since it's blank dead space
-                      for 3 of every 4 rows otherwise. */}
-                  {c.department === 'Venue' && (c.total_plates || c.menu_rate_paise != null || c.venue_rental_paise != null || c.decor_amount_paise != null || c.entertainment_amount_paise != null) && (
+                  {/* Multi-function contract: each function gets its own line —
+                      own date/session/venue, own Venue-dept Pax/rate chips, and
+                      critically its own EnteredMark, since "entered in Tally" is
+                      tracked per function, not per contract (see fix() notes on
+                      sync-events' composite dedup key — collapsing this back to
+                      one shared mark would silently hide a not-yet-entered
+                      sibling function). Clicking a line opens that one function's
+                      full detail; the card itself is no longer one click target. */}
+                  {multi ? (
+                    <div className="sm:col-span-full mt-2 pt-2 border-t border-slate-100 space-y-1">
+                      {rows.map(function (r) {
+                        var rVenueLine = (r.venue_name !== c.venue_name || r.location) ? [r.venue_name, r.location].filter(Boolean).join(' · ') : null
+                        return (
+                          <div key={r.id} role="button" tabIndex={0}
+                            onClick={function (ev) { ev.stopPropagation(); setSelected(r) }}
+                            onKeyDown={function (ev) { if (ev.key === 'Enter') setSelected(r) }}
+                            className="flex items-start justify-between gap-3 px-2.5 py-2 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap text-[12.5px]">
+                                <span className="font-bold text-slate-800">{r.event_name || '—'}</span>
+                                <span className="text-slate-400 tabular-nums">{formatDate(r.function_date)}{r.session ? ' · ' + r.session : ''}</span>
+                              </div>
+                              {rVenueLine && <p className="text-[11px] text-slate-400 mt-0.5 truncate">{rVenueLine}</p>}
+                              {r.department === 'Venue' && (r.total_plates || r.menu_rate_paise != null || r.venue_rental_paise != null || r.decor_amount_paise != null || r.entertainment_amount_paise != null) && (
+                                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[11px]">
+                                  {!!r.total_plates && <span className="text-slate-500">Pax <b className="text-slate-800 tabular-nums">{r.total_plates}</b></span>}
+                                  {r.menu_rate_paise != null && r.menu_rate_paise > 0 && <span className="text-slate-500">Menu <b className="text-slate-800 tabular-nums">{formatPaise(r.menu_rate_paise)}</b></span>}
+                                  {r.venue_rental_paise != null && <span className="text-slate-500">Rental <b className="text-slate-800 tabular-nums">{formatPaise(r.venue_rental_paise)}</b></span>}
+                                  {r.decor_amount_paise != null && r.decor_amount_paise > 0 && <span className="text-slate-500">Decor <b className="text-slate-800 tabular-nums">{formatPaise(r.decor_amount_paise)}</b></span>}
+                                  {r.entertainment_amount_paise != null && r.entertainment_amount_paise > 0 && <span className="text-slate-500">Entertainment <b className="text-slate-800 tabular-nums">{formatPaise(r.entertainment_amount_paise)}</b></span>}
+                                </div>
+                              )}
+                            </div>
+                            {(r.tally_entered_by || canMarkEntered) && (
+                              <span onClick={function (ev) { ev.stopPropagation() }} className="shrink-0">
+                                <EnteredMark
+                                  entered={!!r.tally_entered_by}
+                                  enteredByName={enteredNames[r.tally_entered_by]}
+                                  enteredAt={r.tally_entered_at}
+                                  canToggle={canMarkEntered}
+                                  canUnenter={r.tally_entered_by === profile.id || isSysAdmin}
+                                  busy={enteringId === r.id}
+                                  onToggle={function () { toggleContractEntered(r.id) }}
+                                />
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    /* LMS already computes these per Venue contract (see migration
+                       00094's note) — pax was already synced as total_plates, just
+                       never shown as a column; menu rate/venue rental/decor/
+                       entertainment are new. Scoped to Venue rows only — the other
+                       three departments are their own standalone contracts with
+                       nothing to decompose. A full-width strip under the row
+                       rather than more grid columns, since it's blank dead space
+                       for 3 of every 4 rows otherwise. */
+                    c.department === 'Venue' && (c.total_plates || c.menu_rate_paise != null || c.venue_rental_paise != null || c.decor_amount_paise != null || c.entertainment_amount_paise != null) && (
                     <div className="sm:col-span-full mt-2 pt-2 border-t border-slate-100 flex flex-wrap gap-x-5 gap-y-1 text-[11.5px]">
                       {!!c.total_plates && (
                         <span className="text-slate-500">Pax <b className="text-slate-800 tabular-nums">{c.total_plates}</b></span>
@@ -381,6 +486,7 @@ function ContractList({ profile, deepLinkContractId }) {
                         <span className="text-slate-500">Entertainment <b className="text-slate-800 tabular-nums">{formatPaise(c.entertainment_amount_paise)}</b></span>
                       )}
                     </div>
+                    )
                   )}
                 </div>
               )
