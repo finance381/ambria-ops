@@ -2720,9 +2720,18 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                         </div>
                                         <div>
                                           <label htmlFor={'item-unit-' + idx + '-' + iIdx} className="block text-[11px] font-semibold text-slate-600 mb-1">Unit</label>
-                                          <select id={'item-unit-' + idx + '-' + iIdx} value={im.itemUnit}
+                                          {/* Locked once matched to an existing inventory item — its unit is
+                                              already established from past purchases, and letting this form
+                                              override it per-expense is what let the same item get logged in
+                                              Pieces one time and Kg the next, scrambling its rate/qty history
+                                              in the Inventory Ledger. A "new" item (not yet in the catalog)
+                                              still picks its own unit freely here, since there's nothing to
+                                              conflict with yet. */}
+                                          <select id={'item-unit-' + idx + '-' + iIdx} value={im.itemUnit} disabled={!!im.itemMatchedId}
                                             onChange={function (e) { updateItem(idx, iIdx, 'itemUnit', e.target.value) }}
-                                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }}>
+                                            title={im.itemMatchedId ? 'Locked to this item\'s established unit' : undefined}
+                                            className={"w-full px-3 py-2.5 border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 " +
+                                              (im.itemMatchedId ? "bg-slate-50 text-slate-500 cursor-not-allowed" : "bg-white hover:border-slate-300")} style={{ fontSize: '16px' }}>
                                             {['Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens', 'Kg', 'Grams', 'Liters', 'ML', 'Meters', 'Feet', 'Rolls', 'Packets', 'Bags', 'Boxes', 'Cartons', 'Bottles', 'Sheets', 'Reams'].map(function (u) {
                                               return <option key={u} value={u}>{u}</option>
                                             })}
