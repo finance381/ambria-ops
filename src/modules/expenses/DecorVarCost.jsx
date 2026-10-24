@@ -12,6 +12,7 @@ import Modal from '../../components/ui/Modal'
 import { appConfirm } from '../../components/ui/AppDialog'
 import { buildDecorVarCostXlsx, deliverFile, exportFileName } from '../../lib/decorVarCostExport'
 import { deptCls, deptOrder } from '../../lib/ui'
+import { VENUE_LEGEND } from '../../lib/venueColors'
 import { cateringMenuLabel } from '../../lib/constants'
 import {
   SHEETS, getSheet, rowGroups, rowCalc, formulaHint, entryAmountPaise,
@@ -327,7 +328,7 @@ function DecorVarCost({ profile, inAdmin }) {
   async function loadList() {
     setListErr('')
     var q = supabase.from('decor_var_costs')
-      .select('id, serial_no, sheet_code, is_function, function_date, venue_id, sub_venue_id, event_detail, event_id, status, total_paise, created_at, submitted_at, created_by, profiles:created_by(name), event:event_id(event_name, client_name, session, venue_name, catering), decor_var_cost_entries(entry_date, amount_paise)')
+      .select('id, serial_no, sheet_code, is_function, function_date, venue_id, sub_venue_id, event_detail, event_id, status, total_paise, created_at, submitted_at, created_by, profiles:created_by(name), event:event_id(event_name, client_name, session, venue_name, catering, created_user_name), decor_var_cost_entries(entry_date, amount_paise)')
       .order('created_at', { ascending: false })
       .limit(300)
     if (scope === 'mine') q = q.eq('created_by', profile.id)
@@ -905,15 +906,21 @@ function DecorVarCost({ profile, inAdmin }) {
   function groupInfo(g) {
     var n = g.records.length
     var sheets = n + (n === 1 ? ' sheet' : ' sheets')
-    var title, sub
+    var title, sub, salesPerson = ''
     if (g.kind === 'f') {
       // The function's name (booking, else venue), its date underneath.
       var f = g.first
       var ev = f.event
       var venue = venueLabel(f.venue_id, f.sub_venue_id) || (ev && ev.venue_name) || ''
+      // Raw LMS venue_name strings only cover the 4 main venues (the ones
+      // VENUE_LEGEND names) — a sub-venue match from our own venues master
+      // or an unlisted venue name just shows with no code suffix.
+      var vLeg = venue && VENUE_LEGEND.find(function (l) { return venue.indexOf(l.name) !== -1 })
+      var venueDisp = venue ? (venue + (vLeg ? ' (' + vLeg.code + ')' : '')) : ''
       var name = ev ? [ev.event_name || ev.client_name, ev.session].filter(Boolean).join(' · ') : ''
-      title = [name, venue].filter(Boolean).join(' · ') || 'Function'
+      title = [name, venueDisp].filter(Boolean).join(' · ') || 'Function'
       sub = 'Function · ' + formatDate(f.function_date) + ' · ' + sheets
+      salesPerson = (ev && ev.created_user_name) || ''
     } else if (g.kind === 'u') {
       var ud = (g.first.event_detail || '').trim()
       title = ud || 'Not linked to a function'
@@ -930,6 +937,7 @@ function DecorVarCost({ profile, inAdmin }) {
       anyDraft: g.records.some(function (r) { return r.status === 'draft' }),
       title: title,
       sub: sub,
+      salesPerson: salesPerson,
     }
   }
 
@@ -967,6 +975,11 @@ function DecorVarCost({ profile, inAdmin }) {
           <div className="min-w-0 flex-1">
             <p className="font-display text-[15px] font-extrabold tracking-[-0.015em] text-slate-900 leading-snug break-words">{info.title}</p>
             <p className="text-[11.5px] font-semibold text-slate-500">{info.sub}</p>
+            {info.salesPerson && (
+              <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5 truncate">
+                <Icon name="user" size={11} className="shrink-0" />{info.salesPerson}
+              </p>
+            )}
           </div>
           <div className="shrink-0 text-right">
             <p data-notranslate className="font-display text-[16px] font-extrabold tabular-nums tracking-[-0.02em] text-slate-900">{formatPoints(info.total)}</p>
