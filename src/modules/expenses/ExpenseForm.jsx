@@ -1554,6 +1554,43 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       var newPaise = newBasePaise + newTaxPaise
       try {
         var editMeta = Object.assign({}, e0.fieldValues)
+        // e0.fieldValues.item_receipts is the array exactly as it was when the
+        // form loaded — editing an item (qty, rate, name...) in the form only
+        // ever updated e0.items, the separate UI-editable copy built from it
+        // in hydrateEntry. Without re-serializing e0.items back in here, every
+        // item edit on an existing expense was silently discarded on save:
+        // the request still carried the untouched original item_receipts.
+        // Matched by index (same order hydrateEntry read them in) rather than
+        // by matched_item_id, so a "new" line with no id yet still lines up
+        // with its own original row.
+        if (e0.isItemPurchase) {
+          var _origItems = Array.isArray(editMeta.item_receipts) ? editMeta.item_receipts : []
+          editMeta.item_receipts = e0.items.map(function (im, _ii) {
+            var qtyN = Number(im.itemQty) || 0
+            var rateN = Number(im.itemRate) || 0
+            var _orig = _origItems[_ii] || {}
+            return {
+              query: (im.itemQuery || '').trim(),
+              matched_item_id: im.itemMode === 'new' ? null : im.itemMatchedId,
+              matched_source: im.itemMode === 'new' ? 'new' : im.itemMatchedSource,
+              matched_category_id: im.itemMatchedCategoryId,
+              qty: qtyN,
+              unit: im.itemUnit,
+              notes: (im.itemNotes || '').trim() || null,
+              rate_paise: Math.round(rateN * 100),
+              line_total_paise: Math.round(qtyN * rateN * 100),
+              // These three only ever get set once an item has actually been
+              // received into inventory — editing the form never touches
+              // them, and itemsLocked already prevents editing items at all
+              // once any of them are set, so carrying them over unchanged
+              // from the original row (by position) is always correct.
+              resulting_item_id: _orig.resulting_item_id || null,
+              received_by: _orig.received_by || null,
+              received_at: _orig.received_at || null,
+              cancel_reason: _orig.cancel_reason || null,
+            }
+          })
+        }
         var keepPaths = existingReceipts.filter(function (p) { return removedReceipts.indexOf(p) === -1 })
         var _editSplit = getEntrySplit(e0)
         var editPayload = {
