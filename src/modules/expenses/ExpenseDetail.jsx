@@ -401,7 +401,20 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
       penalized_at: new Date().toISOString(),
     }).eq('id', exp.id)
     if (error) { alert('Deduction failed: ' + error.message); setSaving(false); return }
-    // Salary ledger debit is written automatically by trg_expense_deduction_to_salary_ledger
+    // Salary ledger debit is written automatically by trg_expense_deduction_to_salary_ledger.
+    // The expense's own wallet debit (the full amount, posted on submit) is
+    // untouched by that — only part of what they spent is being disallowed,
+    // so that part needs to come back to their wallet too, the same way a
+    // full "flag" already refunds the whole amount in flag() above.
+    try {
+      await supabase.rpc('wallet_admin_credit', {
+        p_user_id: exp.user_id,
+        p_amount_paise: deductionPaise,
+        p_description: 'Deduction credited back: expense #' + exp.id + ' — ' + rejectReason.trim(),
+        p_ref_type: 'expense_refund',
+        p_ref_id: String(exp.id),
+      })
+    } catch (_) {}
     try { await logActivity('EXPENSE_DEDUCT', (exp.description || 'Expense') + ' | Deduction ' + formatPoints(deductionPaise) + ' | ' + rejectReason.trim()) } catch (_) {}
     setSaving(false)
     onUpdated()
