@@ -337,11 +337,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [enteringTxnId, setEnteringTxnId] = useState(null)
   var [enteringExpId, setEnteringExpId] = useState(null)
   // Which transaction rows have their allocation breakdown expanded —
-  // collapsed by default so the History list fits more rows on screen.
+  // expanded by default (it's usually what someone opened the row to see),
+  // collapsed only once someone explicitly clicks to shrink it. The map
+  // tracks the exception (collapsed), not the default.
   var [expandedTxnIds, setExpandedTxnIds] = useState({})
+  function isTxnExpanded(id) { return expandAllTxns || expandedTxnIds[id] !== false }
   function toggleTxnExpanded(id, ev) {
     if (ev) ev.stopPropagation()
-    setExpandedTxnIds(function (prev) { var next = Object.assign({}, prev); next[id] = !next[id]; return next })
+    setExpandedTxnIds(function (prev) { var next = Object.assign({}, prev); next[id] = !(prev[id] !== false); return next })
   }
   // Master override: when on, every row's allocation breakdown shows
   // regardless of its own entry in expandedTxnIds.
@@ -4099,6 +4102,35 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var isDeletedExp = isExpRow && !!expenseRefs[t.reference_id] && !!expenseRefs[t.reference_id].deleted_at
     var isPayRow = PAYMENT_REF_TYPES.indexOf(t.reference_type) !== -1
     var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc || isPayRow
+
+    // ── Title line, per type — promoted up from what used to be shown
+    // further down the card, since the "Transfer"/"Expense" badge already
+    // says what kind of row this is; repeating it (or the raw description)
+    // as the title too was the redundant part.
+    var isTransferRow = t.reference_type === 'transfer'
+    var transferFromName = isTransferRow ? (t.type === 'debit' ? txnUser.name : fullListCpName) : null
+    var transferToName = isTransferRow ? (t.type === 'debit' ? fullListCpName : txnUser.name) : null
+    // Older transfers had the recipient's name baked straight into the
+    // stored description at send time ("Transfer: pc at gd → Amar Kumar") —
+    // stripped back out here for display only (the DB value is untouched)
+    // so the demoted description line doesn't just repeat the new title.
+    var transferCleanDesc = t.description || ''
+    if (isTransferRow) {
+      var _prefixM = transferCleanDesc.match(/^Transfer from .+?: /) || transferCleanDesc.match(/^Transfer: /)
+      if (_prefixM) transferCleanDesc = transferCleanDesc.slice(_prefixM[0].length)
+      var _suffixName = t.type === 'debit' ? fullListCpName : txnUser.name
+      if (_suffixName) {
+        var _suffix = ' → ' + _suffixName
+        if (transferCleanDesc.slice(-_suffix.length) === _suffix) transferCleanDesc = transferCleanDesc.slice(0, -_suffix.length)
+      }
+    }
+    var expRowForTitle = isExpRow ? expenseRefs[t.reference_id] : null
+    var expTypeNameForTitle = expRowForTitle ? (expRowForTitle.expense_types?.name || '') : ''
+    var expSubTypeNameForTitle = expRowForTitle ? (expRowForTitle.expense_sub_types?.name || '') : ''
+    var collRowForTitle = t.reference_type === 'collection' && t.reference_id ? collectionEventRefs[t.reference_id] : null
+    var collTitleBits = collRowForTitle
+      ? [collRowForTitle.function_date ? formatDate(collRowForTitle.function_date) : null, collRowForTitle.client_name, venueLabelWithCode(collRowForTitle.venue_name), collRowForTitle.location, collRowForTitle.session].filter(Boolean)
+      : []
     function handleRowClick() {
       if (!rowIsClickable) return
       if (isExpRow) {
@@ -4156,11 +4188,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </span>
               )}
               <p className={"text-[14px] font-bold text-slate-900 leading-snug " + (isCancelled ? "line-through" : "")}>
-                {t.description || '—'}
+                {isTransferRow ? (
+                  <>{transferFromName || '—'} <span className="text-slate-400 font-semibold">→</span> {transferToName || '—'}</>
+                ) : isExpRow && expTypeNameForTitle ? (
+                  <>{expTypeNameForTitle}{expSubTypeNameForTitle ? <span className="text-slate-400"> › {expSubTypeNameForTitle}</span> : null}</>
+                ) : collTitleBits.length > 0 ? (
+                  collTitleBits.join(' · ')
+                ) : (t.description || '—')}
                 {isEpc && ' · ' + epcHit.epc.extras_charged + ' extras'}
               </p>
               {t.reference_type === 'collection' && t.payment_mode && (
-                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
+                <span className="text-[11.5px] font-bold uppercase px-2 py-1 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
                   {t.payment_mode}{t.bank_payment_type ? ' · ' + t.bank_payment_type : ''}
                 </span>
               )}
@@ -4182,6 +4220,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </span>
               )}
             </div>
+            {/* Demoted description — whatever the title promoted in its
+                place (From → To, the type › sub-type, or the function
+                details) already carries the structured facts; this is just
+                whatever free text came with it. */}
+            {isTransferRow && transferCleanDesc && (
+              <p className="text-[12.5px] text-slate-500 mt-0.5 truncate">{transferCleanDesc}</p>
+            )}
+            {isExpRow && expTypeNameForTitle && t.description && (
+              <p className="text-[12.5px] text-slate-500 mt-0.5 truncate">{t.description}</p>
+            )}
+            {collTitleBits.length > 0 && t.description && (
+              <p className="text-[12.5px] text-slate-500 mt-0.5 truncate">{t.description}</p>
+            )}
             {isCancelled && t.cancelled_reason && (
               <p className="text-[10px] text-rose-600 italic mt-0.5">Reason: {t.cancelled_reason}</p>
             )}
@@ -4208,18 +4259,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </span>
               </p>
             )}
-            {/* Enrichment: collection → guest · session · event date, same facts the detail modal shows on click */}
-            {t.reference_type === 'collection' && t.reference_id && collectionEventRefs[t.reference_id] && (function () {
-              var ce = collectionEventRefs[t.reference_id]
-              var bits = [ce.function_date ? formatDate(ce.function_date) : null, ce.client_name, venueLabelWithCode(ce.venue_name), ce.location, ce.session].filter(Boolean)
-              if (bits.length === 0) return null
-              return <p className="text-[11.5px] text-slate-500 mt-0.5">{bits.join(' · ')}</p>
-            })()}
             {/* Enrichment: expense/refund → type › sub-type · event · vendor · extra fields · (refund amount + date) · per-allocation breakdown */}
             {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && (function () {
               var e = expenseRefs[t.reference_id]
-              var typeName = e.expense_types?.name || ''
-              var subTypeName = e.expense_sub_types?.name || ''
               var allocs = e.expense_allocations || []
               var parts = []
               var pairs = []
@@ -4248,13 +4290,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       every one of them grey and roughly the same size, is why
                       this read as a block rather than as facts — nothing told
                       the eye where one thing ended and the next began. */}
-                  {(typeName || e._event_name) && (
+                  {/* typeName/subTypeName moved up to the title — only the
+                      event-name chip still lives here. */}
+                  {e._event_name && (
                     <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-                      {typeName && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-bold">
-                          {typeName + (subTypeName ? ' › ' + subTypeName : '')}
-                        </span>
-                      )}
                       {e._event_name && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500">
                           <Icon name="calendar" size={11} />
@@ -4297,8 +4336,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       // than the section. At 10.5 it was the smallest thing on
                       // the card and read as a footnote.
                       className="mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-indigo-600 hover:text-indigo-800">
-                      <Icon name={expandedTxnIds[t.id] ? 'chevronDown' : 'chevronRight'} size={13} />
-                      {expandedTxnIds[t.id] ? 'Hide allocation details' : 'Allocation details'}
+                      <Icon name={isTxnExpanded(t.id) ? 'chevronDown' : 'chevronRight'} size={13} />
+                      {isTxnExpanded(t.id) ? 'Hide allocation details' : 'Allocation details'}
                     </button>
                   )}
                   {/* Under a rule, and indented off it. The breakdown and the
@@ -4308,7 +4347,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       other is when it happened and who did it. The rule makes
                       the breakdown read as belonging to the expense above it
                       rather than as one more line in a grey stack. */}
-                  {allocs.length > 0 && (expandAllTxns || !!expandedTxnIds[t.id]) && (function () {
+                  {allocs.length > 0 && isTxnExpanded(t.id) && (function () {
                     // "Decor" on every line, when every line is Decor, is 48px
                     // a row spent repeating the one thing they have in common —
                     // and it was 48px the chain needed to finish spelling
@@ -4398,7 +4437,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       credit rather than debiting the wallet in full — the
                       wallet balance change above only ever reflects the cash
                       leg, so without this the remainder is invisible here. */}
-                  {(expandAllTxns || !!expandedTxnIds[t.id]) && (e.payment_credit_paise || 0) > 0 && (
+                  {isTxnExpanded(t.id) && (e.payment_credit_paise || 0) > 0 && (
                     <div className="mt-2 pl-3 border-l-2 border-amber-100 space-y-1">
                       <p className="flex items-center justify-between gap-2 text-[12px]">
                         <span className="text-emerald-600">Paid now (cash)</span>
