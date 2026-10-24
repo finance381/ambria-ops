@@ -225,7 +225,18 @@ function ContractList({ profile, deepLinkContractId }) {
           </div>
           {[
             [venueFilter, setVenueFilter, 'mapPin', 'Venue', [['', 'All venues']].concat(venueNames.map(function (v) { return [v, venueMap[v] ? (venueMap[v] + ' — ' + v) : v] })), 'sm:w-52'],
-            [deptFilter, setDeptFilter, 'tag', 'Department', [['', 'All depts']].concat(departments.map(function (d) { return [d.name, d.name] })), 'sm:w-40'],
+            [deptFilter, setDeptFilter, 'tag', 'Department', [['', 'All depts']].concat(departments.map(function (d) {
+              // The "Department" master record (id 23) covers several sub-departments
+              // (Allied, Entertainment, Tech, Tender, ...) — renaming it to
+              // "Entertainment" in the masters screen would be wrong, since it isn't
+              // exclusively that. But every Entertainment-department contract is
+              // stamped with the literal string "Entertainment" on events.department
+              // by sync-events, with no master record of its own to filter by — so
+              // this one option is relabelled (and its filter value swapped to
+              // match) here only, scoped to this dropdown, leaving the master as is.
+              var label = d.name === 'Department' ? 'Entertainment' : d.name
+              return [label, label]
+            })), 'sm:w-40'],
             [enteredFilter, setEnteredFilter, 'checkCircle', 'Entered in Tally', [['', 'Entered: all'], ['yes', 'Entered'], ['no', 'Not entered']], 'sm:w-40'],
             [venueTypeFilter, setVenueTypeFilter, 'building', 'Indoor or outdoor', [['', 'Indoor & outdoor'], ['indoor', 'Indoor'], ['outdoor', 'Outdoor']], 'sm:w-44'],
             [salesFilter, setSalesFilter, 'user', 'Sales person', [['', 'All sales']].concat(salesNames.map(function (s) { return [s, s] })), 'sm:w-44'],
