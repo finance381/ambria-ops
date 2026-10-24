@@ -1296,13 +1296,13 @@ function PaymentsLedger({ profile }) {
                 )}
               </div>
               {(meta.payment_images || meta.deduction_image) && (
-                <div>
+                <div className="border-t border-gray-200 pt-3">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Proof</p>
                   <PaymentProofThumbs meta={meta} />
                 </div>
               )}
               {r.source === 'collection' && r._imgUrl && (
-                <div>
+                <div className="border-t border-gray-200 pt-3">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Receipt {r._imgIsVoice ? '(voice note)' : 'Image'}</p>
                   {r._imgIsVoice ? (
                     <audio src={r._imgUrl} controls className="w-full h-8" />
