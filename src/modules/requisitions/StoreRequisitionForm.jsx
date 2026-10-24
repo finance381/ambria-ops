@@ -730,12 +730,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">What was taken out</p>
-        <button onClick={addDeptRow} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-indigo-600 border border-dashed border-gray-300 rounded-lg hover:bg-indigo-50">
-          <Icon name="plus" size={13} /> Add Dept Row
-        </button>
-      </div>
+      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">What was taken out</p>
 
       {deptRows.map(function (row, idx) {
         var isKitchen = isKitchenRow(row)
