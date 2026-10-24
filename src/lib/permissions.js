@@ -37,7 +37,7 @@ export var FINANCE_SCOPE_OPTIONS = [
 export var INVENTORY_SCOPE_OPTIONS = [
   { value: 'all',              label: 'All',           icon: 'ti-world',   note: 'No restriction' },
   { value: 'own',              label: 'Mine',          icon: 'ti-user',    note: 'created_by = auth.uid()' },
-  { value: 'own_sub_dept',     label: 'Inventory Sub', icon: 'ti-sitemap', note: 'profiles.sub_department_ids, matched via the item\'s category' },
+  { value: 'own_sub_dept',     label: 'Inventory Sub', icon: 'ti-sitemap', note: 'profiles.sub_category_ids (Assigned Sub-categories), matched directly on the item\'s own sub-category — the finest-grained assignment available' },
   { value: 'own_expense_type', label: 'Expense Type',  icon: 'ti-tag',     note: 'profiles.expense_type_ids, matched via the item\'s category' },
 ]
 
