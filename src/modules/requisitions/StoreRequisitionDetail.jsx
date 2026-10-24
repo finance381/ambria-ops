@@ -34,6 +34,7 @@ function StoreRequisitionDetail({ id, onBack }) {
   var [plateLoading, setPlateLoading] = useState(false)
   var [selectedId, setSelectedId] = useState(null)
   var [linkedEvents, setLinkedEvents] = useState([])
+  var [linkedEventsLoading, setLinkedEventsLoading] = useState(false)
 
   useEffect(function () {
     setLoading(true)
@@ -65,11 +66,13 @@ function StoreRequisitionDetail({ id, onBack }) {
       if (reqRow && reqRow.event_ids && reqRow.event_ids.length > 0) {
         setPlateLoading(true)
         computePlateSummary(reqRow.event_ids).then(function (s) { setPlateSummary(s); setPlateLoading(false) })
+        setLinkedEventsLoading(true)
         supabase.from('events_safe').select('id, event_name, client_name, venue_name, function_date, catering')
           .in('id', reqRow.event_ids)
-          .then(function (evRes) { setLinkedEvents(evRes.data || []) })
+          .then(function (evRes) { setLinkedEvents(evRes.data || []); setLinkedEventsLoading(false) })
       } else {
         setLinkedEvents([])
+        setLinkedEventsLoading(false)
       }
     })
   }, [id])
@@ -114,8 +117,10 @@ function StoreRequisitionDetail({ id, onBack }) {
             {header.event_ids && header.event_ids.length > 0 && (
               <p className="text-xs text-gray-500 mt-1 flex items-center gap-1.5 flex-wrap">
                 <span className="font-semibold text-gray-600">Linked to:</span>
-                {linkedEvents.length === 0 ? (
+                {linkedEventsLoading ? (
                   <span className="text-gray-400">Loading…</span>
+                ) : linkedEvents.length === 0 ? (
+                  <span className="text-gray-400">Linked contract(s) not found — they may have been cancelled or merged in a later sync.</span>
                 ) : linkedEvents.map(function (e, i) {
                   return (
                     <span key={e.id}>
