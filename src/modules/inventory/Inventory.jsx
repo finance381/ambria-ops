@@ -105,6 +105,7 @@ function Inventory({ profile }) {
   var [subCatFilter, setSubCatFilter] = useState('')
   var [venueFilter, setVenueFilter] = useState('')
   var [subVenueFilter, setSubVenueFilter] = useState('')
+  var [statusFilter, setStatusFilter] = useState('')
   var [subVenues, setSubVenues] = useState([])
   var [searchDebounced, setSearchDebounced] = useState('')
   var [allCategories, setAllCategories] = useState([])
@@ -133,7 +134,7 @@ function Inventory({ profile }) {
   }, [search])
   useEffect(function () {
     if (metaReady) loadItems(false)
-  }, [tab, venueFilter, subVenueFilter, catFilter, subCatFilter, searchDebounced, metaReady])
+  }, [tab, venueFilter, subVenueFilter, catFilter, subCatFilter, statusFilter, searchDebounced, metaReady])
 
   // Sync ref every render so realtime callback always sees the fresh closure.
   loadItemsRef.current = loadItems
@@ -202,6 +203,8 @@ function Inventory({ profile }) {
     }
     if (catFilter) { invQ = invQ.eq('category_id', Number(catFilter)); csQ = csQ.eq('category_id', Number(catFilter)) }
     if (subCatFilter) { invQ = invQ.eq('sub_category_id', Number(subCatFilter)); csQ = csQ.eq('sub_category_id', Number(subCatFilter)) }
+    if (statusFilter === 'approved') { invQ = invQ.eq('status', 'approved'); csQ = csQ.eq('status', 'approved') }
+    else if (statusFilter === 'pending') { invQ = invQ.in('status', ['pending', 'pending_dept']); csQ = csQ.in('status', ['pending', 'pending_dept']) }
     if (searchDebounced) {
       var s = '*' + searchDebounced + '*'
       invQ = invQ.or('name.ilike.' + s + ',name_hindi.ilike.' + s + ',inventory_id.ilike.' + s)
@@ -275,12 +278,12 @@ function Inventory({ profile }) {
   }).sort(function (a, b) { return a.name.localeCompare(b.name) })
 
   function resetFilters() {
-    setSearch(''); setSearchDebounced(''); setCatFilter(''); setSubCatFilter(''); setVenueFilter(''); setSubVenueFilter('')
+    setSearch(''); setSearchDebounced(''); setCatFilter(''); setSubCatFilter(''); setVenueFilter(''); setSubVenueFilter(''); setStatusFilter('')
   }
 
   var SEL = "w-full h-11 pl-3 pr-8 appearance-none bg-white border border-slate-200 rounded-xl text-[14px] text-slate-800 focus:outline-none focus:ring-4 focus:ring-[#3B4668]/10 focus:border-[#A9B1CB]"
-  var anyFilter = !!(search || catFilter || subCatFilter || venueFilter || subVenueFilter)
-  var filterCount = [catFilter, subCatFilter, venueFilter, subVenueFilter].filter(Boolean).length
+  var anyFilter = !!(search || catFilter || subCatFilter || venueFilter || subVenueFilter || statusFilter)
+  var filterCount = [catFilter, subCatFilter, venueFilter, subVenueFilter, statusFilter].filter(Boolean).length
   var FLBL = "block text-[12px] font-semibold text-slate-600 mb-1"
 
   return (
@@ -369,9 +372,20 @@ function Inventory({ profile }) {
                <Icon name="chevronDown" size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
              </div>
            </div>
+           <div className="min-w-0">
+             <label className={FLBL}>Status</label>
+             <div className="relative">
+               <select value={statusFilter} onChange={function (e) { setStatusFilter(e.target.value) }} className={SEL}>
+                 <option value="">All</option>
+                 <option value="approved">Approved</option>
+                 <option value="pending">Pending</option>
+               </select>
+               <Icon name="chevronDown" size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+             </div>
+           </div>
            </div>
            <div className="flex gap-2 pt-1">
-             <button type="button" onClick={function () { setCatFilter(''); setSubCatFilter(''); setVenueFilter(''); setSubVenueFilter('') }} disabled={filterCount === 0}
+             <button type="button" onClick={function () { setCatFilter(''); setSubCatFilter(''); setVenueFilter(''); setSubVenueFilter(''); setStatusFilter('') }} disabled={filterCount === 0}
                className="flex-1 h-10 rounded-xl border border-slate-200 bg-white text-[13.5px] font-semibold text-slate-700 disabled:text-slate-400 active:bg-slate-50 transition-colors">
                Clear filters
              </button>
