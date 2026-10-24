@@ -323,12 +323,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var permsNew = (profile && profile.permsNew) || []
   var canCreateTentativeEvent = hasPerm(permsNew, 'events.list.create_tentative')
   var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
+  // A second, independent checked-mark — Transfer and Vendor Payment rows
+  // only — for a separate reviewer from whoever does the first check.
+  var canMarkChecked2 = hasPerm(permsNew, 'finance.wallet.mark_checked2')
   var canMarkEntered = hasPerm(permsNew, 'finance.wallet.mark_entered')
   // Cancelling/rejecting a transfer used to be open to either party to it;
   // now admin/auditor or an explicit grant only — being the sender or
   // recipient no longer qualifies on its own.
   var canCancelTransfer = isAdmin || isAuditor || hasPerm(permsNew, 'finance.wallet.cancel_transfer')
   var [checkingTxnId, setCheckingTxnId] = useState(null)
+  var [checking2TxnId, setChecking2TxnId] = useState(null)
   var [checkingExpId, setCheckingExpId] = useState(null)
   var [enteringTxnId, setEnteringTxnId] = useState(null)
   var [enteringExpId, setEnteringExpId] = useState(null)
@@ -828,7 +832,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
     try {
       var query = supabase.from('wallet_transactions')
-        .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode, bank_payment_type, cancel_wallet_tx_id, cancelled_at, cancelled_by, cancelled_reason, checked_by, checked_at, tally_entered_by, tally_entered_at')
+        .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode, bank_payment_type, cancel_wallet_tx_id, cancelled_at, cancelled_by, cancelled_reason, checked_by, checked_at, checked2_by, checked2_at, tally_entered_by, tally_entered_at')
         .eq('wallet_id', wid)
         .order('created_at', { ascending: false })
         .limit(500)
@@ -843,7 +847,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       if (error) { alert('Failed to load transactions: ' + error.message); setTxnsLoading(false); return }
       var txns = data || []
       var cpIds = {}
-      txns.forEach(function (t) { if (t.checked_by) cpIds[t.checked_by] = true; if (t.tally_entered_by) cpIds[t.tally_entered_by] = true })
+      txns.forEach(function (t) { if (t.checked_by) cpIds[t.checked_by] = true; if (t.checked2_by) cpIds[t.checked2_by] = true; if (t.tally_entered_by) cpIds[t.tally_entered_by] = true })
 
       var tRefIds = txns.filter(function (t) { return t.reference_type === 'transfer' && t.reference_id }).map(function (t) { return t.reference_id })
       var expRefIds = txns.filter(function (tt) {
@@ -1193,6 +1197,27 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     // The payment-detail modal holds its own snapshot of this row (payDetailTarget.txn),
     // separate from the walletTxns list it was opened from — without this it kept
     // showing the pre-toggle state until the modal was closed and reopened.
+    setPayDetailTarget(function (prev) { return prev && prev.txn.id === t.id ? Object.assign({}, prev, { txn: Object.assign({}, prev.txn, checkPatch) }) : prev })
+    if (nowChecked && profile && profile.id) {
+      setWalletProfiles(function (prev) {
+        if (prev[profile.id]) return prev
+        var next = Object.assign({}, prev); next[profile.id] = { id: profile.id, name: profile.name }; return next
+      })
+    }
+  }
+
+  // The second, independent checked-mark — Transfer/Vendor Payment rows
+  // only, gated by its own permission (finance.wallet.mark_checked2) so a
+  // different reviewer than the first check can do this one.
+  async function toggleWalletCheck2(t) {
+    if (checking2TxnId) return
+    setChecking2TxnId(t.id)
+    var { data, error } = await supabase.rpc('fn_toggle_wallet_check2', { p_transaction_id: t.id })
+    setChecking2TxnId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowChecked = !!data
+    var checkPatch = { checked2_by: nowChecked ? profile.id : null, checked2_at: nowChecked ? new Date().toISOString() : null }
+    setWalletTxns(function (prev) { return prev.map(function (x) { return x.id === t.id ? Object.assign({}, x, checkPatch) : x }) })
     setPayDetailTarget(function (prev) { return prev && prev.txn.id === t.id ? Object.assign({}, prev, { txn: Object.assign({}, prev.txn, checkPatch) }) : prev })
     if (nowChecked && profile && profile.id) {
       setWalletProfiles(function (prev) {
@@ -1845,7 +1870,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     // for this.
     var proofMeta = Object.assign({}, meta, dedEntry ? { deduction_image: dedMeta.deduction_image } : {})
     var chkTarget = t
-    var showMark = !!(canMarkChecked || chkTarget.checked_by || canMarkEntered || chkTarget.tally_entered_by)
+    var showSecondCheck = t.reference_type === 'vendor_payment' && !!(canMarkChecked2 || chkTarget.checked2_by)
+    var showMark = !!(canMarkChecked || chkTarget.checked_by || canMarkEntered || chkTarget.tally_entered_by || showSecondCheck)
     return createPortal((
       <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
         onClick={function () { setPayDetailTarget(null) }}>
@@ -1963,6 +1989,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       busy={checkingTxnId === t.id}
                       onToggle={function () { toggleWalletCheck(t) }}
                     />
+                    {showSecondCheck && (
+                      <CheckedStamp
+                        tone="violet"
+                        label={chkTarget.checked2_by ? 'Checked 2' : '2nd check'}
+                        checked={!!chkTarget.checked2_by}
+                        checkerName={chkTarget.checked2_by && walletProfiles[chkTarget.checked2_by] ? walletProfiles[chkTarget.checked2_by].name : null}
+                        checkedAt={chkTarget.checked2_at}
+                        canToggle={canMarkChecked2}
+                        canUncheck={chkTarget.checked2_by === profile.id || isAdmin || isAuditor}
+                        busy={checking2TxnId === t.id}
+                        onToggle={function () { toggleWalletCheck2(t) }}
+                      />
+                    )}
                   </span>
                 </div>
               )}
@@ -3402,7 +3441,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         if (isCancelled) return null
                         var chk = isExpRow ? xp : t
                         if (!chk) return null
-                        if ((!canMarkChecked && !chk.checked_by) && (!canMarkEntered && !chk.tally_entered_by)) return null
+                        var showSecondCheck = !isExpRow && (t.reference_type === 'transfer' || t.reference_type === 'vendor_payment') && (canMarkChecked2 || t.checked2_by)
+                        if ((!canMarkChecked && !chk.checked_by) && (!canMarkEntered && !chk.tally_entered_by) && !showSecondCheck) return null
                         return (
                           <span className="mt-1 flex items-center justify-end gap-1.5" onClick={function (ev) { ev.stopPropagation() }}>
                             <EnteredMark
@@ -3424,6 +3464,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                               busy={isExpRow ? checkingExpId === t.reference_id : checkingTxnId === t.id}
                               onToggle={function () { if (isExpRow) toggleExpenseCheck(t.reference_id); else toggleWalletCheck(t) }}
                             />
+                            {showSecondCheck && (
+                              <CheckedStamp
+                                tone="violet"
+                                label={t.checked2_by ? 'Checked 2' : '2nd check'}
+                                checked={!!t.checked2_by}
+                                checkerName={t.checked2_by && walletProfiles[t.checked2_by] ? walletProfiles[t.checked2_by].name : null}
+                                checkedAt={t.checked2_at}
+                                canToggle={canMarkChecked2}
+                                canUncheck={t.checked2_by === profile.id || isAdmin || isAuditor}
+                                busy={checking2TxnId === t.id}
+                                onToggle={function () { toggleWalletCheck2(t) }}
+                              />
+                            )}
                           </span>
                         )
                       })()}
@@ -4455,7 +4508,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               // Nothing is drawn for someone who cannot mark a row and is
               // looking at one nobody has marked — CheckedStamp returns null
               // there, and an empty wrapper would still spend its margin.
-              if ((!canMarkChecked && !chk.checked_by) && (!canMarkEntered && !chk.tally_entered_by)) return null
+              var showSecondCheck2 = !isExpRow && (t.reference_type === 'transfer' || t.reference_type === 'vendor_payment') && (canMarkChecked2 || t.checked2_by)
+              if ((!canMarkChecked && !chk.checked_by) && (!canMarkEntered && !chk.tally_entered_by) && !showSecondCheck2) return null
               return (
               /* The artwork, not the chip: a chip beside an amount reads as
                  one more label, and this is a verdict on the figure above it.
@@ -4506,6 +4560,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       busy={checkingTxnId === t.id}
                       onToggle={function (ev) { ev.stopPropagation(); toggleWalletCheck(t) }}
                     />
+                    {showSecondCheck2 && (
+                      <CheckedStamp
+                        tone="violet"
+                        label={t.checked2_by ? 'Checked 2' : '2nd check'}
+                        checked={!!t.checked2_by}
+                        checkerName={t.checked2_by && walletProfiles[t.checked2_by] ? walletProfiles[t.checked2_by].name : null}
+                        checkedAt={t.checked2_at}
+                        canToggle={canMarkChecked2}
+                        canUncheck={t.checked2_by === profile.id || isAdmin || isAuditor}
+                        busy={checking2TxnId === t.id}
+                        onToggle={function (ev) { ev.stopPropagation(); toggleWalletCheck2(t) }}
+                      />
+                    )}
                   </>
                 )}
               </div>
