@@ -401,11 +401,11 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
       penalized_at: new Date().toISOString(),
     }).eq('id', exp.id)
     if (error) { alert('Deduction failed: ' + error.message); setSaving(false); return }
-    // Salary ledger debit is written automatically by trg_expense_deduction_to_salary_ledger.
-    // The expense's own wallet debit (the full amount, posted on submit) is
-    // untouched by that — only part of what they spent is being disallowed,
-    // so that part needs to come back to their wallet too, the same way a
-    // full "flag" already refunds the whole amount in flag() above.
+    // Used to also post a salary ledger debit via trg_expense_deduction_to_
+    // salary_ledger (dropped in migration 00123) — the deduction now only
+    // ever moves money in the wallet, the same way a full "flag" already
+    // refunds the whole amount in flag() above. Only part of what they
+    // spent is being disallowed, so only that part comes back.
     try {
       await supabase.rpc('wallet_admin_credit', {
         p_user_id: exp.user_id,

@@ -50,6 +50,8 @@ function ContractList({ profile, deepLinkContractId }) {
   var [venueFilter, setVenueFilter] = useState('')
   var [deptFilter, setDeptFilter] = useState('')
   var [venueTypeFilter, setVenueTypeFilter] = useState('')
+  var [salesFilter, setSalesFilter] = useState('')
+  var [sessionFilter, setSessionFilter] = useState('')
   var [page, setPage] = useState(1)
   var [perPage, setPerPage] = useState(25)
   var [selected, setSelected] = useState(null)
@@ -152,6 +154,8 @@ function ContractList({ profile, deepLinkContractId }) {
     : contracts
 
   var venueNames = [...new Set(contracts.map(function (c) { return c.venue_name }).filter(Boolean))]
+  var salesNames = [...new Set(contracts.map(function (c) { return c.created_user_name }).filter(Boolean))].sort()
+  var sessionNames = [...new Set(contracts.map(function (c) { return c.session }).filter(Boolean))].sort()
 
   var searchLower = search.toLowerCase()
   var filtered = visible.filter(function (c) {
@@ -166,7 +170,9 @@ function ContractList({ profile, deepLinkContractId }) {
     var matchDept = !deptFilter || c.department === deptFilter
     var matchEntered = !enteredFilter || (enteredFilter === 'yes' ? !!c.tally_entered_by : !c.tally_entered_by)
     var matchVenueType = !venueTypeFilter || c.contract_type === (venueTypeFilter === 'outdoor' ? 'O' : 'I')
-    return matchSearch && matchVenue && matchDept && matchEntered && matchVenueType
+    var matchSales = !salesFilter || c.created_user_name === salesFilter
+    var matchSession = !sessionFilter || c.session === sessionFilter
+    return matchSearch && matchVenue && matchDept && matchEntered && matchVenueType && matchSales && matchSession
   })
 
   var totalPages = Math.ceil(filtered.length / perPage)
@@ -207,6 +213,8 @@ function ContractList({ profile, deepLinkContractId }) {
             [deptFilter, setDeptFilter, 'tag', 'Department', [['', 'All depts']].concat(departments.map(function (d) { return [d.name, d.name] })), 'sm:w-40'],
             [enteredFilter, setEnteredFilter, 'checkCircle', 'Entered in Tally', [['', 'Entered: all'], ['yes', 'Entered'], ['no', 'Not entered']], 'sm:w-40'],
             [venueTypeFilter, setVenueTypeFilter, 'building', 'Indoor or outdoor', [['', 'Indoor & outdoor'], ['indoor', 'Indoor'], ['outdoor', 'Outdoor']], 'sm:w-44'],
+            [salesFilter, setSalesFilter, 'user', 'Sales person', [['', 'All sales']].concat(salesNames.map(function (s) { return [s, s] })), 'sm:w-44'],
+            [sessionFilter, setSessionFilter, 'clock', 'Session', [['', 'All sessions']].concat(sessionNames.map(function (s) { return [s, s] })), 'sm:w-36'],
           ].map(function (f) {
             return (
               <div key={f[3]} className={'relative w-[calc(50%-4px)] ' + f[5]}>
@@ -233,8 +241,8 @@ function ContractList({ profile, deepLinkContractId }) {
         </div>
         <div className="flex items-center gap-1.5 px-0.5 text-[12.5px] text-slate-500">
           <span className="h-6 px-2 rounded-md bg-slate-100 inline-flex items-center"><b className="text-slate-800 tabular-nums">{filtered.length}</b>&nbsp;contract{filtered.length === 1 ? '' : 's'}</span>
-          {(venueFilter || deptFilter || enteredFilter || venueTypeFilter || search) && (
-            <button type="button" onClick={function () { setSearch(''); setVenueFilter(''); setDeptFilter(''); setEnteredFilter(''); setVenueTypeFilter(''); setPage(1) }}
+          {(venueFilter || deptFilter || enteredFilter || venueTypeFilter || salesFilter || sessionFilter || search) && (
+            <button type="button" onClick={function () { setSearch(''); setVenueFilter(''); setDeptFilter(''); setEnteredFilter(''); setVenueTypeFilter(''); setSalesFilter(''); setSessionFilter(''); setPage(1) }}
               className="h-6 px-2 rounded-md font-bold text-indigo-600 hover:bg-indigo-50">Reset</button>
           )}
         </div>
@@ -262,13 +270,14 @@ function ContractList({ profile, deepLinkContractId }) {
           <div className={'hidden sm:grid ' + COLS + ' gap-3 px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-[11.5px] font-bold uppercase tracking-[0.07em] text-slate-500'}>
             <span>Event</span><span>Contract</span><span>Date</span><span>Venue</span><span className="text-right">Balance</span><span className="text-right">Tally</span>
           </div>
-          <div className="divide-y divide-slate-100">
-            {rowsToShow.map(function (c) {
+          <div className="divide-y-2 divide-slate-200">
+            {rowsToShow.map(function (c, idx) {
               return (
                 <div key={c.id} role="button" tabIndex={0}
                   onClick={function () { setSelected(c) }}
                   onKeyDown={function (e) { if (e.key === 'Enter') setSelected(c) }}
-                  className={'group cursor-pointer px-4 py-3 hover:bg-indigo-50/40 transition-colors sm:grid ' + COLS + ' sm:gap-3 sm:items-center'}>
+                  className={'group cursor-pointer px-4 py-3.5 hover:bg-indigo-50/40 transition-colors sm:grid ' + COLS + ' sm:gap-3 sm:items-center ' +
+                    (idx % 2 === 1 ? 'bg-slate-50/60' : 'bg-white')}>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-display text-[14px] font-bold tracking-[-0.01em] text-slate-900 truncate group-hover:text-indigo-700">{c.event_name || '—'}</h3>
@@ -276,6 +285,12 @@ function ContractList({ profile, deepLinkContractId }) {
                       {c.department && <span className={'shrink-0 text-[10.5px] font-bold uppercase px-1.5 py-0.5 rounded ' + (DEPT_BADGE[c.department] || 'bg-slate-100 text-slate-600')}>{c.department}</span>}
                     </div>
                     <p className="text-[12.5px] text-slate-600 truncate mt-0.5">{titleCase(c.client_name || '—')}</p>
+                    {(c.session || c.created_user_name) && (
+                      <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-slate-400">
+                        {c.session && <span className="inline-flex items-center gap-1"><Icon name="clock" size={11} className="text-slate-400" />{c.session}</span>}
+                        {c.created_user_name && <span className="inline-flex items-center gap-1"><Icon name="user" size={11} className="text-slate-400" />{c.created_user_name}</span>}
+                      </p>
+                    )}
                     {/* phone: the columns as one meta line */}
                     <p className="sm:hidden mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-slate-500">
                       {c.contract_no && <span className="font-mono">#{c.contract_no}</span>}
