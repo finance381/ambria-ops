@@ -21,7 +21,10 @@ AS $function$
   SELECT COALESCE(sub_category_ids::bigint[], ARRAY[]::bigint[]) FROM profiles WHERE id = auth.uid()
 $function$;
 
-DROP FUNCTION IF EXISTS public.fn_inventory_item_scope_visible(bigint, uuid);
+-- CASCADE: the 2-arg version is depended on by inventory_select,
+-- inventory_update and cs_items_select — all three are redefined against
+-- the new 3-arg signature right below, so dropping them here is safe.
+DROP FUNCTION IF EXISTS public.fn_inventory_item_scope_visible(bigint, uuid) CASCADE;
 
 CREATE FUNCTION public.fn_inventory_item_scope_visible(_category_id bigint, _sub_category_id bigint, _submitted_by uuid)
  RETURNS boolean
