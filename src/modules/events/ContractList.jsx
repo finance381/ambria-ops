@@ -9,7 +9,7 @@ import EnteredMark from '../../components/ui/EnteredMark'
 import Icon from '../../components/ui/Icon'
 
 // The list's columns from sm up: event, contract, date, venue, balance, Tally.
-var COLS = 'sm:grid-cols-[minmax(0,2.4fr)_90px_110px_minmax(0,1.5fr)_150px_120px]'
+var COLS = 'sm:grid-cols-[minmax(0,2.2fr)_140px_110px_minmax(0,1.5fr)_150px_120px]'
 var CTL = 'h-10 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-800 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-900/5'
 
 var DEPT_BADGE = {
@@ -263,56 +263,70 @@ function ContractList({ profile, deepLinkContractId }) {
         </div>
       )}
 
-      {/* The contracts: one card of rows. From sm up the rows line up in
-          columns under a header; on a phone each row stacks. */}
+      {/* The contracts: one bordered card per contract, with a gap between
+          them — a shared divider between a card's own header row and its
+          Pax/rate detail strip read the same as the gap between two
+          different contracts, so the list kept reading as one long run
+          with no clear edges. A gap and a border per card is unambiguous
+          regardless of how heavy the internal divider is. */}
       {rowsToShow.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] overflow-hidden">
-          <div className={'hidden sm:grid ' + COLS + ' gap-3 px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-[11.5px] font-bold uppercase tracking-[0.07em] text-slate-500'}>
+        <div className="space-y-2.5">
+          <div className={'hidden sm:grid ' + COLS + ' gap-3 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[11.5px] font-bold uppercase tracking-[0.07em] text-slate-500'}>
             <span>Event</span><span>Contract</span><span>Date</span><span>Venue</span><span className="text-right">Balance</span><span className="text-right">Tally</span>
           </div>
-          <div className="divide-y-2 divide-slate-200">
-            {rowsToShow.map(function (c, idx) {
-              return (
-                <div key={c.id} role="button" tabIndex={0}
-                  onClick={function () { setSelected(c) }}
-                  onKeyDown={function (e) { if (e.key === 'Enter') setSelected(c) }}
-                  className={'group cursor-pointer px-4 py-3.5 hover:bg-indigo-50/40 transition-colors sm:grid ' + COLS + ' sm:gap-3 sm:items-center ' +
-                    (idx % 2 === 1 ? 'bg-slate-50/60' : 'bg-white')}>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-display text-[14px] font-bold tracking-[-0.01em] text-slate-900 truncate group-hover:text-indigo-700">{c.event_name || '—'}</h3>
-                      {c.is_tentative && <span className="shrink-0 text-[10.5px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Tentative</span>}
-                      {c.department && <span className={'shrink-0 text-[10.5px] font-bold uppercase px-1.5 py-0.5 rounded ' + (DEPT_BADGE[c.department] || 'bg-slate-100 text-slate-600')}>{c.department}</span>}
-                    </div>
-                    <p className="text-[12.5px] text-slate-600 truncate mt-0.5">{titleCase(c.client_name || '—')}</p>
-                    {(c.session || c.created_user_name) && (
-                      <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-slate-400">
-                        {c.session && <span className="inline-flex items-center gap-1"><Icon name="clock" size={11} className="text-slate-400" />{c.session}</span>}
-                        {c.created_user_name && <span className="inline-flex items-center gap-1"><Icon name="user" size={11} className="text-slate-400" />{c.created_user_name}</span>}
-                      </p>
-                    )}
-                    {/* phone: the columns as one meta line */}
-                    <p className="sm:hidden mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-slate-500">
-                      {c.contract_no && <span className="font-mono">#{c.contract_no}</span>}
-                      <span className="inline-flex items-center gap-1"><Icon name="calendar" size={12} className="text-slate-400" />{formatDate(c.function_date || c.contract_date)}</span>
-                      {c.contract_date && c.function_date && (
-                        <span className="text-slate-400">Contracted {formatDate(c.contract_date)}</span>
-                      )}
-                      {(c.venue_name || c.location) && <span className="inline-flex items-center gap-1"><Icon name="mapPin" size={12} className="text-slate-400" />{[c.venue_name, c.location].filter(Boolean).join(' · ')}</span>}
-                    </p>
+          {rowsToShow.map(function (c) {
+            return (
+              <div key={c.id} role="button" tabIndex={0}
+                onClick={function () { setSelected(c) }}
+                onKeyDown={function (e) { if (e.key === 'Enter') setSelected(c) }}
+                className={'group cursor-pointer bg-white border border-slate-200 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] px-4 py-3.5 hover:border-indigo-300 hover:bg-indigo-50/40 transition-colors sm:grid ' + COLS + ' sm:gap-3 sm:items-center'}>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-display text-[14px] font-bold tracking-[-0.01em] text-slate-900 truncate group-hover:text-indigo-700">{c.event_name || '—'}</h3>
+                    {c.is_tentative && <span className="shrink-0 text-[10.5px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Tentative</span>}
+                    {c.department && <span className={'shrink-0 text-[10.5px] font-bold uppercase px-1.5 py-0.5 rounded ' + (DEPT_BADGE[c.department] || 'bg-slate-100 text-slate-600')}>{c.department}</span>}
                   </div>
-                  <span className="hidden sm:block font-mono text-[12.5px] text-slate-600">{c.contract_no ? '#' + c.contract_no : '—'}</span>
-                  <div className="hidden sm:block">
-                    <span className="block text-[13px] text-slate-700 tabular-nums">{formatDate(c.function_date || c.contract_date)}</span>
+                  <p className="text-[12.5px] text-slate-600 truncate mt-0.5">{titleCase(c.client_name || '—')}</p>
+                  {/* phone: the columns as one meta line */}
+                  <p className="sm:hidden mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-slate-500">
+                    {c.contract_no && <span className="font-mono">#{c.contract_no}</span>}
+                    <span className="inline-flex items-center gap-1"><Icon name="calendar" size={12} className="text-slate-400" />{formatDate(c.function_date || c.contract_date)}</span>
                     {c.contract_date && c.function_date && (
-                      <span className="block text-[10.5px] text-slate-400 tabular-nums">Contracted {formatDate(c.contract_date)}</span>
+                      <span className="text-slate-400">Contracted {formatDate(c.contract_date)}</span>
                     )}
-                  </div>
-                  <div className="hidden sm:block min-w-0">
-                    <span className="block text-[13px] text-slate-600 truncate">{c.venue_name || '—'}</span>
-                    {c.location && <span className="block text-[11px] text-slate-400 truncate">{c.location}</span>}
-                  </div>
-                  <span className="hidden sm:block text-right">
+                    {(c.venue_name || c.location) && <span className="inline-flex items-center gap-1"><Icon name="mapPin" size={12} className="text-slate-400" />{[c.venue_name, c.location].filter(Boolean).join(' · ')}</span>}
+                    {c.session && <span className="inline-flex items-center gap-1"><Icon name="clock" size={12} className="text-slate-400" />{c.session}</span>}
+                    {c.created_user_name && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 font-bold text-indigo-700">
+                        <Icon name="user" size={11} />{c.created_user_name}
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className="hidden sm:block min-w-0">
+                  <span className="block font-mono text-[12.5px] text-slate-600">{c.contract_no ? '#' + c.contract_no : '—'}</span>
+                  {c.created_user_name && (
+                    <span className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 text-[10.5px] font-bold text-indigo-700 max-w-full truncate">
+                      <Icon name="user" size={10} className="shrink-0" /><span className="truncate">{c.created_user_name}</span>
+                    </span>
+                  )}
+                </div>
+                <div className="hidden sm:block">
+                  <span className="block text-[13px] text-slate-700 tabular-nums">{formatDate(c.function_date || c.contract_date)}</span>
+                  {c.contract_date && c.function_date && (
+                    <span className="block text-[10.5px] text-slate-400 tabular-nums">Contracted {formatDate(c.contract_date)}</span>
+                  )}
+                </div>
+                <div className="hidden sm:block min-w-0">
+                  <span className="block text-[13px] text-slate-600 truncate">{c.venue_name || '—'}</span>
+                  {c.location && <span className="block text-[11px] text-slate-400 truncate">{c.location}</span>}
+                  {c.session && (
+                    <span className="inline-flex items-center gap-1 mt-0.5 text-[11px] text-slate-400">
+                      <Icon name="clock" size={10} className="text-slate-400" />{c.session}
+                    </span>
+                  )}
+                </div>
+                <span className="hidden sm:block text-right">
                     {isAdmin && c.balance_amount ? (
                       <span className={'text-[13px] font-bold tabular-nums ' + (c.balance_amount < 0 ? 'text-red-600' : 'text-emerald-600')}>
                         {formatPaise(Math.abs(c.balance_amount))}
@@ -371,7 +385,6 @@ function ContractList({ profile, deepLinkContractId }) {
                 </div>
               )
             })}
-          </div>
         </div>
       )}
 
