@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
-import { formatPoints } from '../../lib/format'
+import { formatPoints, formatDate } from '../../lib/format'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import AllocationRows from '../../components/ui/AllocationRows'
 import ysFixWebmDuration from 'fix-webm-duration'
@@ -214,7 +214,9 @@ function makeItem() {
     itemQty: '',
     itemUnit: 'Pieces',
     itemNotes: '',
-    itemRate: ''
+    itemRate: '',
+    itemLastPurchase: null,
+    itemLastPurchaseLoading: false
   }
 }
 
@@ -255,7 +257,9 @@ function hydrateEntry(exp) {
       itemQty: it.qty != null ? String(it.qty) : '',
       itemUnit: it.unit || 'Pieces',
       itemNotes: it.notes || '',
-      itemRate: it.rate_paise != null ? String(it.rate_paise / 100) : ''
+      itemRate: it.rate_paise != null ? String(it.rate_paise / 100) : '',
+      itemLastPurchase: null,
+      itemLastPurchaseLoading: false
     }
   }) : []
 
@@ -355,6 +359,24 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     if (isEditing && editExp && editExp.event_id && editExp.expense_date) {
       loadEventsByDate(editExp.expense_date)
     }
+  }, [])
+
+  // Editing an existing item-purchase expense hydrates items already
+  // matched to a catalog item (from the saved item_receipts) — those never
+  // went through pickItemMatch in this session, so the last-purchase
+  // lookup it triggers never ran for them. Firing it once here on mount
+  // keeps the hint consistent whether the match just happened or was
+  // loaded from a prior save.
+  useEffect(function () {
+    if (!isEditing) return
+    entries.forEach(function (e, eIdx) {
+      ;(e.items || []).forEach(function (it, iIdx) {
+        if (it.itemMode !== 'new' && it.itemMatchedId) {
+          loadLastPurchase(eIdx, iIdx, { id: it.itemMatchedId, _source: it.itemMatchedSource })
+        }
+      })
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ─── Draft: check localStorage on mount ───
@@ -932,6 +954,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
             itemMatchedId: null,
             itemMatchedSource: null,
             itemMatchedCategoryId: null,
+            itemLastPurchase: null,
+            itemLastPurchaseLoading: false,
           })
         })
         return Object.assign({}, e, { items: newItems, _editingItemIdx: itemIdx })
@@ -955,6 +979,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
             ic.itemMatchedId = null
             ic.itemMatchedSource = null
             ic.itemMatchedCategoryId = null
+            ic.itemLastPurchase = null
+            ic.itemLastPurchaseLoading = false
           }
           return ic
         })
@@ -991,6 +1017,40 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     }, 300)
   }
 
+  // Patches the one item at [entryIdx][itemIdx], but only if it's still
+  // matched to the same item id — guards against a slow lookup landing
+  // after the user has already picked (or cleared) a different match.
+  function patchItemIfStillMatched(entryIdx, itemIdx, itemId, patch) {
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== entryIdx) return e
+        var copy = Object.assign({}, e)
+        copy.items = e.items.map(function (it, j) {
+          if (j !== itemIdx || it.itemMatchedId !== itemId) return it
+          return Object.assign({}, it, patch)
+        })
+        return copy
+      })
+    })
+  }
+
+  function loadLastPurchase(entryIdx, itemIdx, item) {
+    patchItemIfStillMatched(entryIdx, itemIdx, item.id, { itemLastPurchaseLoading: true })
+    supabase.from('v_item_purchase_history')
+      .select('rate_paise, vendor_name, txn_date')
+      .eq('item_id', item.id)
+      .eq('item_source', item._source)
+      .order('txn_date', { ascending: false })
+      .limit(1)
+      .then(function (res) {
+        var row = (res.data || [])[0] || null
+        patchItemIfStillMatched(entryIdx, itemIdx, item.id, {
+          itemLastPurchase: row,
+          itemLastPurchaseLoading: false
+        })
+      })
+  }
+
   function pickItemMatch(entryIdx, itemIdx, item) {
     setEntries(function (prev) {
       return prev.map(function (e, i) {
@@ -1004,7 +1064,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
             itemMatchedId: item.id,
             itemMatchedSource: item._source,
             itemMatchedCategoryId: item.category_id || null,
-            itemUnit: item.unit || it.itemUnit
+            itemUnit: item.unit || it.itemUnit,
+            itemLastPurchase: null,
+            itemLastPurchaseLoading: true
           })
         })
         return copy
@@ -1012,6 +1074,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     })
     setItemMatches([])
     setItemSearchKey('')
+    loadLastPurchase(entryIdx, itemIdx, item)
   }
 
   function duplicateEntry(idx) {
@@ -2745,6 +2808,23 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                             className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
                                         </div>
                                       </div>
+
+                                      {/* Last purchase rate/vendor, from the same purchase
+                                          history the Inventory Ledger reads (v_item_purchase_history)
+                                          — a reference point so the rate just typed above isn't
+                                          picked blind against what this item has actually sold for. */}
+                                      {im.itemMatchedId && (
+                                        <p className="text-[11px] text-slate-500 -mt-1">
+                                          {im.itemLastPurchaseLoading ? 'Checking last purchase…' : (
+                                            im.itemLastPurchase ? (
+                                              <>Last purchased at <b className="text-slate-700 tabular-nums">{formatPoints(im.itemLastPurchase.rate_paise)}</b>
+                                                {im.itemLastPurchase.vendor_name ? ' from ' + im.itemLastPurchase.vendor_name : ''}
+                                                {im.itemLastPurchase.txn_date ? ' · ' + formatDate(im.itemLastPurchase.txn_date) : ''}
+                                              </>
+                                            ) : 'No prior purchase on record'
+                                          )}
+                                        </p>
+                                      )}
 
                                       <div>
                                         <label htmlFor={'item-notes-' + idx + '-' + iIdx} className="block text-[11px] font-semibold text-slate-600 mb-1">Notes <span className="font-normal text-slate-500">(brand, size, spec)</span></label>
