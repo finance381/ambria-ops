@@ -27,6 +27,20 @@ export var FINANCE_SCOPE_OPTIONS = [
   { value: 'own_expense_type', label: 'Expense Type', icon: 'ti-tag',      note: 'profiles.expense_type_ids' },
 ]
 
+// Inventory's own "View & Edit" row — same own_sub_dept/own_expense_type
+// values and profile fields Finance already reads, just relabelled for
+// this surface and matched against an item's own category chain
+// (category -> sub_department, category -> ... -> expense type) instead
+// of an expense's own allocation/type. Also what the expense form's Item
+// Name picker reads — it queries inventory_items/catering_store_items
+// directly, so the same RLS scope narrows that dropdown for free.
+export var INVENTORY_SCOPE_OPTIONS = [
+  { value: 'all',              label: 'All',           icon: 'ti-world',   note: 'No restriction' },
+  { value: 'own',              label: 'Mine',          icon: 'ti-user',    note: 'created_by = auth.uid()' },
+  { value: 'own_sub_dept',     label: 'Inventory Sub', icon: 'ti-sitemap', note: 'profiles.sub_department_ids, matched via the item\'s category' },
+  { value: 'own_expense_type', label: 'Expense Type',  icon: 'ti-tag',     note: 'profiles.expense_type_ids, matched via the item\'s category' },
+]
+
 // ---- Nested feature catalog (mirrors Shell.jsx + AdminShell.jsx UI) ----
 // Node fields:
 //   key        — new namespaced identifier (finance.wallet, finance.ledgers.expense)
@@ -43,7 +57,8 @@ export var PERM_GROUPS = [
   ]},
   { group: 'Inventory', icon: '📦', scope: 'both', children: [
     { key: 'inventory.add',        label: 'Add Items',         scope: 'both' },
-    { key: 'inventory.items',      label: 'View & Edit',       scope: 'both', dataScope: true,
+    { key: 'inventory.items',      label: 'View & Edit',       scope: 'both', dataScope: true, scopeOptions: INVENTORY_SCOPE_OPTIONS,
+      note: 'This scope also narrows the Item Name picker in the expense form (it queries inventory_items/catering_store_items directly) — not just the Inventory module itself.',
       optional: [{ key: 'inventory.items.delete', label: 'Delete items' }] },
     { key: 'inventory.production', label: 'Production Orders', scope: 'both', dataScope: true },
     { key: 'inventory.boxes',      label: 'Boxes',             scope: 'both' },
