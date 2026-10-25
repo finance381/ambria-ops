@@ -151,6 +151,32 @@ function _buildGroups(rows) {
   })
   return out
 }
+// _buildGroups buckets by exact date+venue+session — right for the month
+// browser, where Haldi lunch and Wedding dinner are genuinely different
+// calendar cells, even under the same contract. But money is tracked per
+// contract, not per function: a collection logged against any one function
+// of a multi-function contract counts toward the whole contract's balance.
+// This folds every function sharing one contract_no into a single group, so
+// financials opened from any one of them show the true, shared total.
+function _buildContractGroup(rows) {
+  if (rows.length === 0) return null
+  var contracts = rows.slice().sort(function (a, b) {
+    var d = new Date(a.function_date || 0) - new Date(b.function_date || 0)
+    return d !== 0 ? d : _deptOrder(a.department) - _deptOrder(b.department)
+  })
+  var primary = contracts[0]
+  return {
+    key: 'contract:' + (primary.contract_no || primary.id),
+    contracts: contracts,
+    event_ids: contracts.map(function (c) { return c.id }),
+    event_name: primary.event_name,
+    client_name: primary.client_name,
+    venue_name: primary.venue_name,
+    location: primary.location,
+    session: primary.session,
+    function_date: primary.function_date
+  }
+}
 
 // The ground behind the phone screen: a soft photograph of daylight falling
 // across a pale wall.
@@ -354,15 +380,27 @@ function EventLedger(props) {
         .eq('id', Number(propEventId)).maybeSingle()
       if (!primaryRes.data) return
       var primary = primaryRes.data
-      var sameDate = await supabase.from('events')
-        .select(EVT_COLS)
-        .eq('function_date', primary.function_date)
-        .is('merged_into_id', null)
-        .is('lms_cancelled_at', null)
-      var pool = (sameDate.data || []).filter(function (r) { return _groupKey(r) === _groupKey(primary) })
+      var pool
+      if (primary.contract_no) {
+        var sameContract = await supabase.from('events')
+          .select(EVT_COLS)
+          .eq('contract_no', primary.contract_no)
+          .is('merged_into_id', null)
+          .is('lms_cancelled_at', null)
+        pool = sameContract.data || []
+      } else {
+        // Tentative events have no contract_no yet — fall back to the
+        // single-function match used before.
+        var sameDate = await supabase.from('events')
+          .select(EVT_COLS)
+          .eq('function_date', primary.function_date)
+          .is('merged_into_id', null)
+          .is('lms_cancelled_at', null)
+        pool = (sameDate.data || []).filter(function (r) { return _groupKey(r) === _groupKey(primary) })
+      }
       if (pool.length === 0) pool = [primary]
       setFunctions(pool)
-      var group = _buildGroups(pool)[0]
+      var group = primary.contract_no ? _buildContractGroup(pool) : _buildGroups(pool)[0]
       selectGroup(group)
     })()
   }, [propEventId])
