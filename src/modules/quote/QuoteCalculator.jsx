@@ -122,7 +122,19 @@ function fmtDate(val) {
 
 // ── Formatting ──
 function fmtL(n) { return '\u20B9' + (n % 1 === 0 ? n : n.toFixed(2)) + 'L' }
-function fmtRound(n) { return '\u20B9' + (Math.ceil(n * 2) / 2) + 'L' }
+// A quote's fractional lakh rounds to whichever of the three "real" prices \u2014
+// the whole number, the half, or the next whole number \u2014 it reads closest
+// to: .1-.2 down to the whole, .3-.6 to the half, .7-.9 up to the next whole.
+// Rounding frac to 3dp first keeps a value like 12.3 (12.3 - 12 = 0.29999999999999982
+// in floating point) from falling on the wrong side of the 0.3 boundary.
+function roundQuoteLakhs(n) {
+  var base = Math.floor(n)
+  var frac = Math.round((n - base) * 1000) / 1000
+  if (frac < 0.3) return base
+  if (frac < 0.7) return base + 0.5
+  return base + 1
+}
+function fmtRound(n) { return '\u20B9' + roundQuoteLakhs(n) + 'L' }
 function fmtK(n) { return n >= 1 ? '\u20B9' + n + 'L' : '\u20B9' + Math.round(n * 100) + 'K' }
 function fmtINR(n) { return '\u20B9' + Math.round(n * 100000).toLocaleString('en-IN') }
 function rd(n) { return Math.round(n * 100) / 100 }
