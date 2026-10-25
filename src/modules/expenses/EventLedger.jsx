@@ -523,13 +523,20 @@ function EventLedger(props) {
     // would see as "settled"), and only whatever's left over after that still
     // reduces tax pending, so the same rupee of surplus is never counted
     // against both buckets at once.
+    //
+    // agreedCash/collCash (and the shortfall below) are in the hidden ÷10
+    // cash scale (see cashX10), but collBank/agreedBank are true rupee
+    // values -- bankExcess has to be converted down to that same hidden
+    // scale before it can be netted against a cash-scale shortfall, or the
+    // subtraction compares two different units and the result is off by 10x.
     var bankExcess = Math.max(0, collBank - agreedBank)
+    var bankExcessHidden = Math.round(bankExcess / 10)
     var cashShortfall = agreedCash - collCash
-    var leftoverForTax = Math.max(0, bankExcess - Math.max(0, cashShortfall))
+    var leftoverForTax = Math.max(0, bankExcessHidden - Math.max(0, cashShortfall)) * 10
     setBalance({
       agreed_cash_paise: agreedCash, agreed_bank_paise: agreedBank, tax_amount_paise: tax,
       collected_cash_paise: collCash, collected_bank_paise: collBank,
-      pending_cash_paise: cashShortfall - bankExcess,
+      pending_cash_paise: cashShortfall - bankExcessHidden,
       pending_bank_paise: Math.max(0, agreedBank - collBank),
       pending_tax_paise: Math.max(0, tax - leftoverForTax),
       spent_paise: spent,

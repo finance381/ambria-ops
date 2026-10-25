@@ -94,15 +94,18 @@ export async function fetchContractBalanceSummary(eventId) {
   }
 
   // See EventLedger.jsx's loadContractBalance for why bank surplus pays down
-  // cash shortfall before any of it reduces tax pending — same math, kept in
-  // sync here.
+  // cash shortfall before any of it reduces tax pending, and why bankExcess
+  // must be converted to the hidden ÷10 cash scale first (agreedCash/collCash
+  // are hidden-scale, collBank/agreedBank are true rupee values) -- same
+  // math, kept in sync here.
   var bankExcess = Math.max(0, collBank - agreedBank)
+  var bankExcessHidden = Math.round(bankExcess / 10)
   var cashShortfall = agreedCash - collCash
-  var leftoverForTax = Math.max(0, bankExcess - Math.max(0, cashShortfall))
+  var leftoverForTax = Math.max(0, bankExcessHidden - Math.max(0, cashShortfall)) * 10
   return {
     agreed_cash_paise: agreedCash, agreed_bank_paise: agreedBank, tax_amount_paise: tax,
     collected_cash_paise: collCash, collected_bank_paise: collBank,
-    pending_cash_paise: cashShortfall - bankExcess,
+    pending_cash_paise: cashShortfall - bankExcessHidden,
     pending_bank_paise: Math.max(0, agreedBank - collBank),
     pending_tax_paise: Math.max(0, tax - leftoverForTax),
     spent_paise: spent,
