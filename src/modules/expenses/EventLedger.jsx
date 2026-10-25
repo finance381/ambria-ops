@@ -428,9 +428,14 @@ function EventLedger(props) {
         // duplicate can still be the one real money is sitting on. merged_into_id
         // stays excluded: a real merge does move collections over (see
         // submitMerge), so the merged-away row would be a true duplicate.
+        // department IS part of the key: LMS numbers each department's
+        // contracts in its own independent sequence (see lms-payment-collections'
+        // same gotcha), so contract_no alone can collide across two totally
+        // unrelated real contracts in different departments.
         var sameContract = await supabase.from('events')
           .select(EVT_COLS)
           .eq('contract_no', primary.contract_no)
+          .eq('department', primary.department)
           .is('merged_into_id', null)
         pool = sameContract.data || []
       } else {

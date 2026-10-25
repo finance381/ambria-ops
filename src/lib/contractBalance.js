@@ -41,8 +41,12 @@ export async function fetchContractBalanceSummary(eventId) {
 
   var pool = [primary]
   if (primary.contract_no) {
+    // department IS part of the key: LMS numbers each department's contracts
+    // in its own independent sequence, so contract_no alone can collide
+    // across two unrelated real contracts in different departments.
     var sameContract = await supabase.from('events').select(EVT_COLS)
       .eq('contract_no', primary.contract_no)
+      .eq('department', primary.department)
       .is('merged_into_id', null)
     if (sameContract.data && sameContract.data.length > 0) pool = sameContract.data
   }
