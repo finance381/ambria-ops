@@ -98,6 +98,7 @@ async function buildComponents(t, WA_APP_ID, WA_ACCESS_TOKEN, WA_API_VERSION) {
       type: "BUTTONS",
       buttons: buttons.map(function (b) {
         if (b.type === "url") return { type: "URL", text: b.text, url: b.url }
+        if (b.type === "phone_number") return { type: "PHONE_NUMBER", text: b.text, phone_number: b.phone_number }
         return { type: "QUICK_REPLY", text: b.text }
       }),
     })
