@@ -400,6 +400,15 @@ entrypoint = "./functions/sync-events/index.ts"
 
 # Cross-project catering integration — shared-secret auth (FNB_TO_OPS_SECRET),
 # not JWT. Gateway JWT check MUST be off; secret is validated inside the function.
+[functions.catering-inventory-decrement]
+enabled = true
+verify_jwt = false
+
+# Cross-project Ambria IMS integration — shared-secret auth
+# (AMBRIA_IMS_TO_OPS_SECRET), not JWT. Same reasoning as catering-inventory-decrement.
+[functions.ambria-ims-expenses]
+enabled = true
+verify_jwt = false
 
 # Meta calls this directly with its own verify-token handshake + an
 # X-Hub-Signature-256 (checked against WA_APP_SECRET inside the function) —
