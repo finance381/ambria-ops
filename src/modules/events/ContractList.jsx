@@ -7,6 +7,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import EnteredMark from '../../components/ui/EnteredMark'
 import Icon from '../../components/ui/Icon'
+import EventLedger from '../expenses/EventLedger'
 
 // The list's columns from sm up: event, contract, date, venue, balance, Tally.
 var COLS = 'sm:grid-cols-[minmax(0,2.2fr)_140px_110px_minmax(0,1.5fr)_150px_120px]'
@@ -55,6 +56,40 @@ function ContractList({ profile, deepLinkContractId }) {
   var [page, setPage] = useState(1)
   var [perPage, setPerPage] = useState(25)
   var [selected, setSelected] = useState(null)
+  var [showFinancials, setShowFinancials] = useState(false)
+  var [lmsPayments, setLmsPayments] = useState(null)
+  var [lmsPaymentsLoading, setLmsPaymentsLoading] = useState(false)
+  var [lmsPaymentsError, setLmsPaymentsError] = useState('')
+  var [lmsPaymentsOpen, setLmsPaymentsOpen] = useState(false)
+
+  // What LMS itself has on record for this contract — someone can collect
+  // straight into LMS without ever touching Ambria Ops' wallet, so this is
+  // the only place that money would otherwise show up at all. Reloads
+  // whenever a different contract is opened; department is required since
+  // LMS numbers each department's contracts in its own sequence, so
+  // contract_no alone can match an unrelated department's records too.
+  useEffect(function () {
+    setShowFinancials(false)
+    setLmsPaymentsOpen(false)
+    setLmsPayments(null)
+    setLmsPaymentsError('')
+    if (!selected || !selected.contract_no) return
+    setLmsPaymentsLoading(true)
+    supabase.auth.getSession().then(function (sessionRes) {
+      var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
+      return supabase.functions.invoke('lms-payment-collections', {
+        body: { contract_no: selected.contract_no, department: selected.department || '' },
+        headers: token ? { Authorization: 'Bearer ' + token } : {},
+      })
+    }).then(function (res) {
+      if (res.error) throw new Error(res.error.message || 'Could not load LMS payment history')
+      setLmsPayments((res.data && res.data.data) || [])
+    }).catch(function (err) {
+      setLmsPaymentsError(err.message || 'Could not load LMS payment history')
+    }).finally(function () {
+      setLmsPaymentsLoading(false)
+    })
+  }, [selected && selected.id])
 
   // Deep-link from a "new contract synced" notification — pins the view to
   // just that one contract regardless of the normal date-floor/search/filter
@@ -585,7 +620,7 @@ function ContractList({ profile, deepLinkContractId }) {
 
             {isAdmin && (selected.balance_received != null || selected.balance_bank != null || selected.balance_amount != null) && (
               <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
-                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Balance</p>
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Balance (per LMS sync)</p>
                 {selected.balance_received != null && (
                   <div className="flex justify-between"><span className="text-gray-500">Cash received</span><span className="font-medium text-gray-800">{formatPaise(selected.balance_received)}</span></div>
                 )}
@@ -596,6 +631,84 @@ function ContractList({ profile, deepLinkContractId }) {
                   <div className="flex justify-between">
                     <span className="text-gray-500">{selected.balance_amount < 0 ? 'Due' : 'Advance'}</span>
                     <span className={"font-bold " + (selected.balance_amount < 0 ? "text-red-600" : "text-green-600")}>{formatPaise(Math.abs(selected.balance_amount))}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* What LMS itself has on record — payments collected straight
+                into LMS, outside Ambria Ops' own wallet entirely. Distinct
+                from the Ambria Ops financials below, which only ever reflect
+                money collected through this app's own wallet. */}
+            {isAdmin && (
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <button type="button" onClick={function () { setLmsPaymentsOpen(!lmsPaymentsOpen) }}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white hover:bg-gray-50 transition-colors">
+                  <span className="flex items-center gap-1.5 text-[11.5px] font-bold text-gray-600">
+                    <Icon name="receipt" size={13} className="text-gray-400" />
+                    Past collections (LMS payment history)
+                    {lmsPayments && lmsPayments.length > 0 && (
+                      <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-gray-100 text-gray-500 text-[10px] font-bold">
+                        {lmsPayments.length}
+                      </span>
+                    )}
+                  </span>
+                  <Icon name={lmsPaymentsOpen ? 'chevronDown' : 'chevronRight'} size={13} className="text-gray-400" />
+                </button>
+                {lmsPaymentsOpen && (
+                  <div className="px-3 py-2 border-t border-gray-100 bg-gray-50/60">
+                    {lmsPaymentsLoading ? (
+                      <p className="text-xs text-gray-400">Checking LMS...</p>
+                    ) : lmsPaymentsError ? (
+                      <p className="text-xs text-red-600">{lmsPaymentsError}</p>
+                    ) : !lmsPayments || lmsPayments.length === 0 ? (
+                      <p className="text-xs text-gray-400">No payments on record in LMS for this contract.</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {lmsPayments.map(function (p, pi) {
+                          return (
+                            <div key={pi} className="flex items-start justify-between gap-2 text-[11.5px] bg-white border border-gray-100 rounded-lg px-2.5 py-2">
+                              <div className="min-w-0">
+                                <div className="font-semibold text-gray-800">
+                                  {p.date ? formatDate(p.date) : '—'}
+                                  {p.pay_mode ? ' · ' + titleCase(p.pay_mode) : ''}
+                                  {p.receive_type ? ' · ' + p.receive_type : ''}
+                                </div>
+                                {p.remarks && <div className="text-gray-500 mt-0.5 truncate">{p.remarks}</div>}
+                                <div className="text-gray-400 mt-0.5">
+                                  {p.entry_by ? 'Entered by ' + p.entry_by : ''}
+                                  {p.status && p.status !== 'Y' ? (p.entry_by ? ' · status ' : 'status ') + p.status : ''}
+                                  {p.order_no && p.order_no !== selected.contract_no && (
+                                    <span className="text-amber-600 font-semibold"> · order #{p.order_no} ⚠</span>
+                                  )}
+                                </div>
+                              </div>
+                              <span className="shrink-0 font-bold text-gray-800 tabular-nums">{formatPaise(p.net_amount_paise)}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* New collections — everything collected through Ambria Ops'
+                own wallet, deduped across any LMS resync duplicates of this
+                contract (see EventLedger._buildContractGroup). This is what
+                accounts should treat as the authoritative Agreed/Collected/
+                Pending figures, since it reconciles the whole contract. */}
+            {isAdmin && (
+              <div>
+                <button type="button"
+                  onClick={function () { setShowFinancials(!showFinancials) }}
+                  className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                  {showFinancials ? '− Hide Ambria Ops financials' : '+ Show Ambria Ops financials'}
+                </button>
+                {showFinancials && (
+                  <div className="mt-3">
+                    <EventLedger profile={profile} eventId={selected.id} />
                   </div>
                 )}
               </div>
