@@ -9,6 +9,7 @@ import EnteredMark from '../../components/ui/EnteredMark'
 import Icon from '../../components/ui/Icon'
 import EventLedger from '../expenses/EventLedger'
 import EventDatePicker from '../../components/ui/EventDatePicker'
+import { fetchContractBalanceSummary } from '../../lib/contractBalance'
 
 // The list's columns from sm up: event, contract, date, venue, balance, Tally.
 var COLS = 'sm:grid-cols-[minmax(0,2.2fr)_140px_110px_minmax(0,1.5fr)_150px_120px]'
@@ -61,12 +62,26 @@ function ContractList({ profile, deepLinkContractId }) {
   var [perPage, setPerPage] = useState(25)
   var [selected, setSelected] = useState(null)
   var [showFinancials, setShowFinancials] = useState(false)
+  var [liveBalance, setLiveBalance] = useState(null)
+  var [liveBalanceLoading, setLiveBalanceLoading] = useState(false)
 
   // Reset the financials disclosure whenever a different contract is opened,
   // so it doesn't stay expanded (showing the previous contract's figures for
-  // a flash) across a selection change.
+  // a flash) across a selection change. The top Balance box reflects the
+  // real, reconciled figures (every function under this contract pooled
+  // together, LMS's own payment history folded in) — the same numbers "Show
+  // financials" reveals in full below — rather than the stale balance_* columns
+  // events carries from whatever LMS last synced, so it loads independent of
+  // that toggle and whether it's open.
   useEffect(function () {
     setShowFinancials(false)
+    setLiveBalance(null)
+    if (!selected) return
+    setLiveBalanceLoading(true)
+    fetchContractBalanceSummary(selected.id).then(function (b) {
+      setLiveBalance(b)
+      setLiveBalanceLoading(false)
+    })
   }, [selected && selected.id])
 
   // Deep-link from a "new contract synced" notification — pins the view to
@@ -646,21 +661,31 @@ function ContractList({ profile, deepLinkContractId }) {
               })}
             </div>
 
-            {isAdmin && (selected.balance_received != null || selected.balance_bank != null || selected.balance_amount != null) && (
+            {/* The real, reconciled balance — every function under this
+                contract pooled together and LMS's own payment history
+                folded in, the same numbers "Show financials" shows in full
+                below — not events.balance_received/balance_bank/balance_amount,
+                which are only ever whatever LMS last synced onto this one
+                row and go stale the moment a resync replaces it or someone
+                collects straight into LMS. */}
+            {isAdmin && (
               <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
-                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Balance (per LMS sync)</p>
-                {selected.balance_received != null && (
-                  <div className="flex justify-between"><span className="text-gray-500">Cash received</span><span className="font-medium text-gray-800">{formatPaise(selected.balance_received)}</span></div>
-                )}
-                {selected.balance_bank != null && (
-                  <div className="flex justify-between"><span className="text-gray-500">Bank received</span><span className="font-medium text-gray-800">{formatPaise(selected.balance_bank)}</span></div>
-                )}
-                {selected.balance_amount != null && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">{selected.balance_amount < 0 ? 'Due' : 'Advance'}</span>
-                    <span className={"font-bold " + (selected.balance_amount < 0 ? "text-red-600" : "text-green-600")}>{formatPaise(Math.abs(selected.balance_amount))}</span>
-                  </div>
-                )}
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Balance</p>
+                {liveBalanceLoading || !liveBalance ? (
+                  <p className="text-xs text-gray-400">{liveBalanceLoading ? 'Loading…' : 'Not available'}</p>
+                ) : (function () {
+                  var pendingTotal = Number(liveBalance.pending_cash_paise || 0) + Number(liveBalance.pending_bank_paise || 0)
+                  return (
+                    <>
+                      <div className="flex justify-between"><span className="text-gray-500">Cash collected</span><span className="font-medium text-gray-800">{formatPaise(liveBalance.collected_cash_paise)}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">Bank collected</span><span className="font-medium text-gray-800">{formatPaise(liveBalance.collected_bank_paise)}</span></div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">{pendingTotal > 0 ? 'Pending' : 'Over-collected'}</span>
+                        <span className={"font-bold " + (pendingTotal > 0 ? "text-red-600" : "text-green-600")}>{formatPaise(Math.abs(pendingTotal))}</span>
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
             )}
 
