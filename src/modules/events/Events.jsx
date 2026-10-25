@@ -10,6 +10,7 @@ import QuickSendDrawer from '../../components/broadcast/QuickSendDrawer'
 import SubscriberCard from '../../components/ui/SubscriberCard'
 import Icon from '../../components/ui/Icon'
 import { appConfirm } from '../../components/ui/AppDialog'
+import EventDatePicker from '../../components/ui/EventDatePicker'
 
 var lastSyncTime = 0
 var SYNC_COOLDOWN = 5 * 60 * 1000
@@ -97,10 +98,12 @@ function Events({ profile }) {
   var [search, setSearch] = useState('')
   var [venueFilter, setVenueFilter] = useState('')
   var [deptFilter, setDeptFilter] = useState('')
+  var [dateFrom, setDateFrom] = useState('')
+  var [dateTo, setDateTo] = useState('')
+  var [showGroupLedger, setShowGroupLedger] = useState(false)
   var [departments, setDepartments] = useState([])
   var [page, setPage] = useState(1)
   var [perPage, setPerPage] = useState(24)
-  var [showLedger, setShowLedger] = useState(false)
   var [extraPlateSummary, setExtraPlateSummary] = useState(null)
   var [linkedProjects, setLinkedProjects] = useState([])
   var refData = useReferenceData()
@@ -295,7 +298,12 @@ function Events({ profile }) {
     var matchVenue = !venueFilter || g.venues.includes(venueFilter) ||
       g.functions.some(function (f) { return f.venue_name === venueFilter })
     var matchDept = !deptFilter || g.functions.some(function (f) { return f.department === deptFilter })
-    return matchSearch && matchVenue && matchDept
+    // A group spans date_start..date_end (its earliest to latest function) —
+    // it matches when that span overlaps the picked range at all, so a
+    // multi-day booking still shows up for a "From" that lands mid-event.
+    var matchDate = (!dateFrom || !g.date_end || g.date_end >= dateFrom) &&
+      (!dateTo || !g.date_start || g.date_start <= dateTo)
+    return matchSearch && matchVenue && matchDept && matchDate
   })
 
   var totalPages = Math.ceil(filtered.length / perPage)
@@ -359,6 +367,24 @@ function Events({ profile }) {
             </select>
             <Icon name="chevronDown" size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
+          <div className="flex items-stretch bg-white border border-slate-200 rounded-xl overflow-hidden w-full sm:w-auto">
+            <div className="flex-1 min-w-[108px]">
+              <EventDatePicker value={dateFrom} placeholder="From" collapsible includePast plain
+                onChange={function (v) { setDateFrom(v); setPage(1) }} />
+            </div>
+            <span aria-hidden="true" className="shrink-0 self-stretch my-2 w-px bg-slate-200" />
+            <div className="flex-1 min-w-[108px]">
+              <EventDatePicker value={dateTo} placeholder="To" collapsible includePast plain
+                onChange={function (v) { setDateTo(v); setPage(1) }} />
+            </div>
+            {(dateFrom || dateTo) && (
+              <button type="button" onClick={function () { setDateFrom(''); setDateTo(''); setPage(1) }}
+                aria-label="Clear dates"
+                className="shrink-0 px-2 text-slate-400 hover:text-slate-600">
+                <Icon name="close" size={14} />
+              </button>
+            )}
+          </div>
           <span className="inline-flex items-center gap-2 ml-auto">
             <button onClick={function () { syncFromLMS(false) }} disabled={syncing}
               className="h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-[13px] font-bold text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1.5 disabled:opacity-60 whitespace-nowrap">
@@ -416,7 +442,7 @@ function Events({ profile }) {
           var showLocation = group.location && !group.venues.some(function (v) { return v.toLowerCase().indexOf(group.location.toLowerCase()) !== -1 || group.location.toLowerCase().indexOf(v.toLowerCase()) !== -1 })
           elements.push(
             <div key={group.id}
-              onClick={function () { setSelectedGroup(group) }}
+              onClick={function () { setSelectedGroup(group); setShowGroupLedger(false) }}
               className="group bg-white border border-slate-200 rounded-2xl p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-indigo-300 hover:shadow-[0_6px_18px_rgba(15,23,42,0.07)] cursor-pointer transition-all">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -524,7 +550,7 @@ function Events({ profile }) {
       )}
 
       {/* ═══ GROUP DETAIL MODAL ═══ */}
-      <Modal open={!!selectedGroup && !selectedFunction} onClose={function () { setSelectedGroup(null) }}
+      <Modal open={!!selectedGroup && !selectedFunction} onClose={function () { setSelectedGroup(null); setShowGroupLedger(false) }}
         title={selectedGroup ? titleCase(selectedGroup.client_name) : ''} wide>
         {selectedGroup && (
           <div className="space-y-5">
@@ -557,7 +583,7 @@ function Events({ profile }) {
               <div className="space-y-2">
                 {selectedGroup.functions.map(function (f) {
                   return (
-                    <div key={f.id} onClick={function () { setSelectedFunction(f); setShowLedger(false) }}
+                    <div key={f.id} onClick={function () { setSelectedFunction(f) }}
                       className="bg-white border border-gray-200 rounded-lg p-3 hover:bg-indigo-50 cursor-pointer transition-colors active:bg-indigo-100">
                       <div className="flex items-center justify-between">
                         <div className="flex-1 min-w-0">
@@ -579,12 +605,30 @@ function Events({ profile }) {
                 })}
               </div>
             </div>
+
+            {/* Financials are contract-level, not per function — a function
+                picked above never had its own separate ledger, so this lives
+                here once, outside the functions list, split by department
+                the same way EventLedger already groups a multi-contract
+                client (DeptChip). */}
+            <div>
+              <button type="button"
+                onClick={function () { setShowGroupLedger(!showGroupLedger) }}
+                className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                {showGroupLedger ? '− Hide financials' : '+ Show financials'}
+              </button>
+              {showGroupLedger && (
+                <div className="mt-3">
+                  <EventLedger eventId={selectedGroup.functions[0].id} />
+                </div>
+              )}
+            </div>
           </div>
         )}
       </Modal>
 
       {/* ═══ FUNCTION DETAIL MODAL ═══ */}
-      <Modal open={!!selectedFunction} onClose={function () { setSelectedFunction(null); setShowLedger(false) }}
+      <Modal open={!!selectedFunction} onClose={function () { setSelectedFunction(null) }}
         title={selectedFunction?.event_name || ''} wide>
         {selectedFunction && (
           <div className="space-y-5">
@@ -696,20 +740,6 @@ function Events({ profile }) {
                 </div>
               </div>
             )}
-
-            {/* Financial details — hidden by default */}
-            <div>
-              <button type="button"
-                onClick={function () { setShowLedger(!showLedger) }}
-                className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
-                {showLedger ? '− Hide financials' : '+ Show financials'}
-              </button>
-              {showLedger && (
-                <div className="mt-3">
-                  <EventLedger eventId={selectedFunction.id} />
-                </div>
-              )}
-            </div>
 
             {selectedFunction.synced_at && (
               <p className="text-xs text-gray-400 text-right">Last synced: {formatDate(selectedFunction.synced_at)}</p>
