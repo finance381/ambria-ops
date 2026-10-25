@@ -80,14 +80,23 @@ serve(async (req) => {
     // LMS reports amounts as plain rupee decimals ("25000.0") — converted to
     // paise here so this matches the unit every other figure in Ambria Ops
     // already uses (formatPoints et al. all expect paise).
+    //
+    // Ambria Ops' own cash figures are always stored at a tenth of the real
+    // amount (the wallet, event_ledger — "cash ×10" toggles everywhere
+    // reveal the true one from that stored value). LMS's own API reports the
+    // real, un-hidden rupee amount for cash, so it's divided by 10 here, once,
+    // at the source — the same ×10 toggles already used for every other cash
+    // figure then reveal the true amount for these rows too, with no special
+    // casing needed anywhere that reads this response.
     const rows = Array.isArray(lmsData.data) ? lmsData.data : []
     const mapped = rows.map(function (r: any) {
+      const isCash = String(r.pr_paymode || "").toLowerCase().indexOf("cash") !== -1
       return {
         receive_id: r.pr_receive_id || null,
         date: r.pr_date || null,
-        amount_paise: Math.round(Number(r.pr_amount || 0) * 100),
-        deduct_paise: Math.round(Number(r.pr_deduct || 0) * 100),
-        net_amount_paise: Math.round(Number(r.pr_netamount || 0) * 100),
+        amount_paise: Math.round(Number(r.pr_amount || 0) * (isCash ? 10 : 100)),
+        deduct_paise: Math.round(Number(r.pr_deduct || 0) * (isCash ? 10 : 100)),
+        net_amount_paise: Math.round(Number(r.pr_netamount || 0) * (isCash ? 10 : 100)),
         pay_mode: r.pr_paymode || null,
         receive_type: r.pr_receive_typ || null,
         remarks: r.pr_remarks || null,

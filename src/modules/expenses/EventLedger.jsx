@@ -1885,15 +1885,21 @@ function EventLedger(props) {
         return (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            {/* The same subtle dot as Agreed Cash on the Financials tab —
-                cash amounts are logged at a tenth of the real figure, and
-                this is the one control that reveals the true one, here too.
-                Its own state, so toggling it never changes what the
-                Financials tab shows — it lights up amber while on, since a
-                dot you can't tell is pressed is a dot you forget you pressed. */}
-            <button type="button" title={txnCashX10 ? 'Showing true cash amount — click to hide' : 'Show true cash amount'}
-              onClick={function () { setTxnCashX10(function (v) { return !v }) }}
-              className={'w-2.5 h-2.5 rounded-full transition-colors ' + (txnCashX10 ? 'bg-amber-400' : 'bg-slate-200 opacity-25 hover:opacity-50')} />
+            {/* Cash amounts are logged at a tenth of the real figure — this
+                reveals the true one. A near-invisible dot here (matching the
+                Financials tile's own subtle one) turned out to be too easy to
+                never notice at all, so this one is a real, visible button
+                instead. Its own state, so toggling it never changes what the
+                Financials tab shows. */}
+            <button type="button" onClick={function () { setTxnCashX10(function (v) { return !v }) }}
+              aria-pressed={txnCashX10}
+              className={'inline-flex items-center gap-1.5 h-10 px-3 rounded-xl text-[13px] font-bold border transition-colors ' +
+                (txnCashX10
+                  ? 'border-amber-300 bg-amber-50 text-amber-700'
+                  : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
+              <Icon name="eye" size={14} />
+              {txnCashX10 ? 'True cash shown' : 'Show true cash'}
+            </button>
             {/* The search takes what is left of the row rather than a fixed
                 220: at 220 the three controls came to 422 against the 358 a
                 phone has, and Export sat over the edge. */}
