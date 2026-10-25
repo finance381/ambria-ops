@@ -1758,9 +1758,9 @@ function EventLedger(props) {
               value={balanceLoading ? '—' : formatPoints(cashX10 ? agrCashP * 10 : agrCashP)}
               sub={
                 <div className="mt-2 space-y-0.5">
-                  <p className="text-[12px] text-slate-500 tabular-nums" data-notranslate>Collected {formatPoints(colCashP)}</p>
+                  <p className="text-[12px] text-slate-500 tabular-nums" data-notranslate>Collected {formatPoints(cashX10 ? colCashP * 10 : colCashP)}</p>
                   <p className={'text-[12px] font-bold tabular-nums ' + (pendCashP > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>
-                    Pending {formatPoints(pendCashP)}
+                    Pending {formatPoints(cashX10 ? pendCashP * 10 : pendCashP)}
                   </p>
                 </div>
               } />
@@ -1781,7 +1781,7 @@ function EventLedger(props) {
                   </p>
                 </div>
               } />
-            <MoneyTile label="Total Collected" tone="text-emerald-700" value={balanceLoading ? '—' : formatPoints(colCashP + colBankP)}
+            <MoneyTile label="Total Collected" tone="text-emerald-700" value={balanceLoading ? '—' : formatPoints((cashX10 ? colCashP * 10 : colCashP) + colBankP)}
               sub={<p className="mt-2 text-[12px] text-slate-500">Cash and bank together</p>} />
             <MoneyTile label="Total Spent" tone="text-rose-700" value={balanceLoading ? '—' : formatPoints(spentP)}
               sub={<p className="mt-2 text-[12px] text-slate-500">Expenses booked to this event</p>} />
@@ -1797,11 +1797,12 @@ function EventLedger(props) {
               <div className="@3xl:hidden divide-y divide-slate-100">
                 {contracts.map(function (c) {
                   var b = balancesByContract[c.id] || {}
-                  var pcash = Number(b.pending_cash_paise || 0)
+                  var cashMul = cashX10 ? 10 : 1
+                  var pcash = Number(b.pending_cash_paise || 0) * cashMul
                   var pbank = Number(b.pending_bank_paise || 0)
                   var rows = [
-                    { k: 'Agreed', cash: Number(b.agreed_cash_paise || 0), bank: Number(b.agreed_bank_paise || 0), cls: 'text-slate-800' },
-                    { k: 'Collected', cash: Number(b.collected_cash_paise || 0), bank: Number(b.collected_bank_paise || 0), cls: 'text-slate-600' },
+                    { k: 'Agreed', cash: Number(b.agreed_cash_paise || 0) * cashMul, bank: Number(b.agreed_bank_paise || 0), cls: 'text-slate-800' },
+                    { k: 'Collected', cash: Number(b.collected_cash_paise || 0) * cashMul, bank: Number(b.collected_bank_paise || 0), cls: 'text-slate-600' },
                   ]
                   return (
                     <div key={c.id} className="px-4 py-3.5">
@@ -1853,7 +1854,8 @@ function EventLedger(props) {
                   <tbody>
                     {contracts.map(function (c) {
                       var b = balancesByContract[c.id] || {}
-                      var pcash = Number(b.pending_cash_paise || 0)
+                      var cashMul = cashX10 ? 10 : 1
+                      var pcash = Number(b.pending_cash_paise || 0) * cashMul
                       var pbank = Number(b.pending_bank_paise || 0)
                       return (
                         <tr key={c.id} className="border-b border-slate-100 last:border-b-0">
@@ -1863,8 +1865,8 @@ function EventLedger(props) {
                               {c.created_user_name && <span className="text-[11px] text-slate-400">by {c.created_user_name}</span>}
                             </div>
                           </td>
-                          <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-800" data-notranslate>{formatPoints(Number(b.agreed_cash_paise || 0))}</td>
-                          <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-600" data-notranslate>{formatPoints(Number(b.collected_cash_paise || 0))}</td>
+                          <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-800" data-notranslate>{formatPoints(Number(b.agreed_cash_paise || 0) * cashMul)}</td>
+                          <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-600" data-notranslate>{formatPoints(Number(b.collected_cash_paise || 0) * cashMul)}</td>
                           <td className={'px-3 py-2.5 text-right text-[13px] font-bold tabular-nums ' + (pcash > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>{formatPoints(pcash)}</td>
                           <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-800" data-notranslate>{formatPoints(Number(b.agreed_bank_paise || 0))}</td>
                           <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-600" data-notranslate>{formatPoints(Number(b.collected_bank_paise || 0))}</td>
