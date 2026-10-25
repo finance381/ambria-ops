@@ -708,6 +708,12 @@ function EventLedger(props) {
     if (parts.length === 0) return '—'
     return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase()
   }
+  // Cash entries are logged at a tenth of the real amount — the same
+  // convention the Financials tab's Agreed Cash tile already reveals via
+  // cashX10. Only cash; bank/other modes are already the real figure.
+  function rowAmount(e) {
+    return e.payment_mode === 'cash' && cashX10 ? e.amount_paise * 10 : e.amount_paise
+  }
 
   var txnModes = []
   entries.forEach(function (e) {
@@ -861,7 +867,7 @@ function EventLedger(props) {
                     amount and the colour already says which way it went. */}
                 <span data-notranslate className={'shrink-0 text-[15px] font-bold tabular-nums ' +
                   (e.direction === 'in' ? 'text-emerald-700' : 'text-rose-700')}>
-                  {(e.direction === 'in' ? '+' : '−') + formatPoints(e.amount_paise)}
+                  {(e.direction === 'in' ? '+' : '−') + formatPoints(rowAmount(e))}
                 </span>
               </div>
 
@@ -972,13 +978,13 @@ function EventLedger(props) {
                   <td className="px-3 py-2.5 align-top text-[13px] text-slate-600 whitespace-nowrap">{e.payment_mode ? titleCase(e.payment_mode) : '—'}</td>
                   <td className="px-3 py-2.5 align-top text-right text-[13px] font-bold tabular-nums whitespace-nowrap" data-notranslate>
                     {e.direction === 'in'
-                      ? <span className="text-emerald-700">{formatPoints(e.amount_paise)}</span>
+                      ? <span className="text-emerald-700">{formatPoints(rowAmount(e))}</span>
                       : <span className="text-slate-200">—</span>}
                   </td>
                   <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
                     <span data-notranslate className="block text-[13px] font-bold tabular-nums">
                       {e.direction === 'out'
-                        ? <span className="text-rose-700">{formatPoints(e.amount_paise)}</span>
+                        ? <span className="text-rose-700">{formatPoints(rowAmount(e))}</span>
                         : <span className="text-slate-200">—</span>}
                     </span>
                     {/* The verdict sits with the figure it is a verdict on. In
@@ -1631,6 +1637,12 @@ function EventLedger(props) {
         return (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
+            {/* The same subtle dot as Agreed Cash on the Financials tab —
+                cash amounts are logged at a tenth of the real figure, and
+                this is the one control that reveals the true one, here too. */}
+            <button type="button" aria-hidden="true" tabIndex={-1}
+              onClick={function () { setCashX10(function (v) { return !v }) }}
+              className="w-2.5 h-2.5 rounded-full bg-slate-200 opacity-25" />
             {/* The search takes what is left of the row rather than a fixed
                 220: at 220 the three controls came to 422 against the 358 a
                 phone has, and Export sat over the edge. */}
