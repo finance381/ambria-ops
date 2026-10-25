@@ -1441,13 +1441,13 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
     setEventDate(val)
     setTtdIdx(autoTtdIdx(val, ttdData))
     var c = classifyDate(val, seasonDates)
-    // A date this close in prices as Filler regardless of its calendar
-    // tagging — there's no realistic lead time left to book it at a
-    // King's Date/Perfect Comp rate. The calendar's own tag still shows
-    // separately as "(auto: ...)" next to the date, it just isn't what's
-    // applied.
+    // A King's Date this close in prices as Perfect Comp instead — there's
+    // no realistic lead time left to book it at a King's Date rate. Perfect
+    // Comp and Filler dates are left exactly as the calendar tags them. The
+    // calendar's own tag still shows separately as "(auto: ...)" next to the
+    // date, it just isn't what's applied.
     var days = daysUntil(val)
-    if (days != null && days <= 45) c = 2
+    if (c === 0 && days != null && days <= 45) c = 1
     if (c >= 0) setCatOverride(c)
   }
 
