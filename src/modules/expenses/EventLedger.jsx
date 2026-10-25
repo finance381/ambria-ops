@@ -151,6 +151,24 @@ function _buildGroups(rows) {
   })
   return out
 }
+// An LMS resync mints a new event row for the same function rather than
+// updating the old one in place, marking the old one lms_cancelled_at — so
+// one real function can appear as several rows sharing a contract_no. This
+// picks the one row per distinct function (_groupKey) that should represent
+// it: the live (not cancelled) one, or among equally-(non-)cancelled rows
+// the highest id, since ids increase with sync order here.
+function _pickCanonical(rows) {
+  var byKey = {}
+  rows.forEach(function (e) {
+    var k = _groupKey(e)
+    var cur = byKey[k]
+    var eLive = !e.lms_cancelled_at
+    var curLive = cur && !cur.lms_cancelled_at
+    if (!cur || (eLive && !curLive) || (eLive === curLive && Number(e.id) > Number(cur.id))) byKey[k] = e
+  })
+  return byKey
+}
+
 // _buildGroups buckets by exact date+venue+session — right for the month
 // browser, where Haldi lunch and Wedding dinner are genuinely different
 // calendar cells, even under the same contract. But money is tracked per
@@ -158,9 +176,18 @@ function _buildGroups(rows) {
 // of a multi-function contract counts toward the whole contract's balance.
 // This folds every function sharing one contract_no into a single group, so
 // financials opened from any one of them show the true, shared total.
+//
+// `contracts` (used for display — the Contracts/Documents lists, department
+// chips) is deduped to one canonical row per function, so a resync-cancelled
+// duplicate never shows up as if it were its own separate contract card.
+// `event_ids` stays the full pool — every id any real collection could be
+// attached to — and `all_contracts` keeps the full pool too, so a
+// transaction row still resolves its department chip even when it's tied to
+// a superseded id that isn't in the deduped `contracts` list.
 function _buildContractGroup(rows) {
   if (rows.length === 0) return null
-  var contracts = rows.slice().sort(function (a, b) {
+  var canonicalByKey = _pickCanonical(rows)
+  var contracts = Object.keys(canonicalByKey).map(function (k) { return canonicalByKey[k] }).sort(function (a, b) {
     var d = new Date(a.function_date || 0) - new Date(b.function_date || 0)
     return d !== 0 ? d : _deptOrder(a.department) - _deptOrder(b.department)
   })
@@ -168,7 +195,8 @@ function _buildContractGroup(rows) {
   return {
     key: 'contract:' + (primary.contract_no || primary.id),
     contracts: contracts,
-    event_ids: contracts.map(function (c) { return c.id }),
+    all_contracts: rows,
+    event_ids: rows.map(function (c) { return c.id }),
     event_name: primary.event_name,
     client_name: primary.client_name,
     venue_name: primary.venue_name,
@@ -386,11 +414,17 @@ function EventLedger(props) {
       var primary = primaryRes.data
       var pool
       if (primary.contract_no) {
+        // Deliberately NOT filtering out lms_cancelled_at here: a resync
+        // mints a new event row for the same function and marks the old one
+        // cancelled, rather than updating it in place, but never re-points
+        // collections already logged against the old id — so a "cancelled"
+        // duplicate can still be the one real money is sitting on. merged_into_id
+        // stays excluded: a real merge does move collections over (see
+        // submitMerge), so the merged-away row would be a true duplicate.
         var sameContract = await supabase.from('events')
           .select(EVT_COLS)
           .eq('contract_no', primary.contract_no)
           .is('merged_into_id', null)
-          .is('lms_cancelled_at', null)
         pool = sameContract.data || []
       } else {
         // Tentative events have no contract_no yet — fall back to the
@@ -404,10 +438,71 @@ function EventLedger(props) {
       }
       if (pool.length === 0) pool = [primary]
       setFunctions(pool)
-      var group = primary.contract_no ? _buildContractGroup(pool) : _buildGroups(pool)[0]
-      selectGroup(group)
+      if (primary.contract_no) {
+        var group = _buildContractGroup(pool)
+        setTab('overview')
+        setFilter('all')
+        resetTxnView()
+        setEventId(String(group.event_ids[0]))
+        setEventDetail(group.contracts[0])
+        setCurrentEventIds(group.event_ids)
+        // Not loadBalance(group.event_ids) — see loadContractBalance for why
+        // a plain per-id sum over resync duplicates would triple-count the
+        // Agreed targets instead of just recovering their collected money.
+        loadContractBalance(pool)
+        loadEntries(group.event_ids)
+        loadPlateEvents(group.event_ids)
+        window.requestAnimationFrame(function () { window.scrollTo(0, 0) })
+      } else {
+        selectGroup(_buildGroups(pool)[0])
+      }
     })()
   }, [propEventId])
+
+  // Agreed targets are restated identically on every resync duplicate of the
+  // same function (see fn_event_group_balance), so they must be taken from
+  // one canonical row per distinct function — never summed across
+  // duplicates. Collected/spent are safe to sum across every id in the pool:
+  // each id's event_ledger rows are disjoint, so the total is just whatever
+  // money actually exists, regardless of which duplicate it's attached to.
+  // Pending is then recomputed here from those corrected totals, mirroring
+  // fn_event_group_balance's own formulas exactly.
+  async function loadContractBalance(pool) {
+    var allIds = pool.map(function (e) { return e.id })
+    if (allIds.length === 0) { setBalance(null); setBalancesByContract({}); return }
+    setBalanceLoading(true)
+    var { data, error } = await supabase.rpc('fn_event_group_balance', { p_event_ids: allIds.map(Number) })
+    if (error || !data) { setBalance(null); setBalancesByContract({}); setBalanceLoading(false); return }
+    var byId = {}
+    data.forEach(function (row) { byId[row.event_id] = row })
+    setBalancesByContract(byId)
+
+    var canonicalByKey = _pickCanonical(pool)
+    var agreedCash = 0, agreedBank = 0, tax = 0
+    Object.keys(canonicalByKey).forEach(function (k) {
+      var row = byId[canonicalByKey[k].id]
+      if (row) {
+        agreedCash += Number(row.agreed_cash_paise || 0)
+        agreedBank += Number(row.agreed_bank_paise || 0)
+        tax += Number(row.tax_amount_paise || 0)
+      }
+    })
+    var collCash = 0, collBank = 0, spent = 0
+    data.forEach(function (row) {
+      collCash += Number(row.collected_cash_paise || 0)
+      collBank += Number(row.collected_bank_paise || 0)
+      spent += Number(row.spent_paise || 0)
+    })
+    setBalance({
+      agreed_cash_paise: agreedCash, agreed_bank_paise: agreedBank, tax_amount_paise: tax,
+      collected_cash_paise: collCash, collected_bank_paise: collBank,
+      pending_cash_paise: agreedCash - collCash,
+      pending_bank_paise: Math.max(0, agreedBank - collBank),
+      pending_tax_paise: Math.max(0, tax - Math.max(0, collBank - agreedBank)),
+      spent_paise: spent,
+    })
+    setBalanceLoading(false)
+  }
 
   async function loadBalance(ids) {
     if (!ids || ids.length === 0) { setBalance(null); setBalancesByContract({}); return }
@@ -615,7 +710,7 @@ function EventLedger(props) {
     ? _groups.find(function (g) { return g.event_ids.map(String).indexOf(String(eventId)) !== -1 })
     : null
   var contractByEventId = {}
-  if (selectedGroup) selectedGroup.contracts.forEach(function (c) { contractByEventId[c.id] = c })
+  if (selectedGroup) (selectedGroup.all_contracts || selectedGroup.contracts).forEach(function (c) { contractByEventId[c.id] = c })
   var contracts = selectedGroup ? selectedGroup.contracts : (eventDetail ? [eventDetail] : [])
   var multiContract = contracts.length > 1
 
