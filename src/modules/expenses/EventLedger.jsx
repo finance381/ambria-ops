@@ -281,6 +281,11 @@ function EventLedger(props) {
   var [functions, setFunctions] = useState([])
   var [eventId, setEventId] = useState(propEventId || '')
   var [eventDetail, setEventDetail] = useState(null)
+  // Set only for the contract-pooled path (propEventId + a real contract_no).
+  // Render reaches for this instead of re-deriving selectedGroup from
+  // _buildGroups(dateRows), which has no idea about resync duplicates and
+  // would show every one of them as its own "contract" card again.
+  var [contractGroup, setContractGroup] = useState(null)
   var [balance, setBalance] = useState(null)
   var [balanceLoading, setBalanceLoading] = useState(false)
   var [entries, setEntries] = useState([])
@@ -446,6 +451,7 @@ function EventLedger(props) {
         setEventId(String(group.event_ids[0]))
         setEventDetail(group.contracts[0])
         setCurrentEventIds(group.event_ids)
+        setContractGroup(group)
         // Not loadBalance(group.event_ids) — see loadContractBalance for why
         // a plain per-id sum over resync duplicates would triple-count the
         // Agreed targets instead of just recovering their collected money.
@@ -454,6 +460,7 @@ function EventLedger(props) {
         loadPlateEvents(group.event_ids)
         window.requestAnimationFrame(function () { window.scrollTo(0, 0) })
       } else {
+        setContractGroup(null)
         selectGroup(_buildGroups(pool)[0])
       }
     })()
@@ -706,9 +713,9 @@ function EventLedger(props) {
     ? functions
     : (date ? monthRows.filter(function (r) { return String(r.function_date || '').slice(0, 10) === date }) : [])
   var _groups = _buildGroups(dateRows)
-  var selectedGroup = eventId
+  var selectedGroup = contractGroup || (eventId
     ? _groups.find(function (g) { return g.event_ids.map(String).indexOf(String(eventId)) !== -1 })
-    : null
+    : null)
   var contractByEventId = {}
   if (selectedGroup) (selectedGroup.all_contracts || selectedGroup.contracts).forEach(function (c) { contractByEventId[c.id] = c })
   var contracts = selectedGroup ? selectedGroup.contracts : (eventDetail ? [eventDetail] : [])
