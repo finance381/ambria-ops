@@ -27,7 +27,7 @@ var CONTRACT_SELECT = 'id, lms_event_id, contract_no, contract_date, function_da
   'catering, total_plates, complementary_plates, extra_plates_charge, balance_received, balance_bank, ' +
   'balance_amount, status, synced_at, created_user_name, ppt_link, pdf_link, enquiry_mode, priority, address, ' +
   'is_tentative, pax, function_type, merged_into_id, tally_entered_by, tally_entered_at, ' +
-  'menu_rate_paise, venue_rental_paise, decor_amount_paise, entertainment_amount_paise'
+  'menu_rate_paise, venue_rental_paise, decor_amount_paise, entertainment_amount_paise, tentative_created_at'
 
 // LMS's own indoor/outdoor flag — confirmed directly against the live API:
 // every department returns a `lead_type` field, "I" (one of Ambria's own
@@ -55,6 +55,7 @@ function ContractList({ profile, deepLinkContractId }) {
   var [venueTypeFilter, setVenueTypeFilter] = useState('')
   var [salesFilter, setSalesFilter] = useState('')
   var [sessionFilter, setSessionFilter] = useState('')
+  var [tentativeFilter, setTentativeFilter] = useState('')
   var [dateFrom, setDateFrom] = useState('')
   var [dateTo, setDateTo] = useState('')
   var [filtersOpen, setFiltersOpen] = useState(false)
@@ -200,9 +201,10 @@ function ContractList({ profile, deepLinkContractId }) {
     var matchVenueType = !venueTypeFilter || c.contract_type === (venueTypeFilter === 'outdoor' ? 'O' : 'I')
     var matchSales = !salesFilter || c.created_user_name === salesFilter
     var matchSession = !sessionFilter || c.session === sessionFilter
+    var matchTentative = !tentativeFilter || (tentativeFilter === 'yes' ? !!c.is_tentative : !c.is_tentative)
     var cDate = (c.function_date || c.contract_date || '').slice(0, 10)
     var matchDate = (!dateFrom || !cDate || cDate >= dateFrom) && (!dateTo || !cDate || cDate <= dateTo)
-    return matchSearch && matchVenue && matchDept && matchEntered && matchVenueType && matchSales && matchSession && matchDate
+    return matchSearch && matchVenue && matchDept && matchEntered && matchVenueType && matchSales && matchSession && matchTentative && matchDate
   })
 
   // One group per contract (contract_no + department) rather than one row
@@ -263,11 +265,12 @@ function ContractList({ profile, deepLinkContractId }) {
           [venueTypeFilter, setVenueTypeFilter, 'building', 'Indoor or outdoor', [['', 'Indoor & outdoor'], ['indoor', 'Indoor'], ['outdoor', 'Outdoor']]],
           [salesFilter, setSalesFilter, 'user', 'Sales person', [['', 'All sales']].concat(salesNames.map(function (s) { return [s, s] }))],
           [sessionFilter, setSessionFilter, 'clock', 'Session', [['', 'All sessions']].concat(sessionNames.map(function (s) { return [s, s] }))],
+          [tentativeFilter, setTentativeFilter, 'alert', 'Tentative', [['', 'Tentative: all'], ['yes', 'Tentative only'], ['no', 'Confirmed only']]],
         ]
-        var filterCount = [venueFilter, deptFilter, enteredFilter, venueTypeFilter, salesFilter, sessionFilter, dateFrom, dateTo].filter(Boolean).length
+        var filterCount = [venueFilter, deptFilter, enteredFilter, venueTypeFilter, salesFilter, sessionFilter, tentativeFilter, dateFrom, dateTo].filter(Boolean).length
         function clearAll() {
           setSearch(''); setVenueFilter(''); setDeptFilter(''); setEnteredFilter(''); setVenueTypeFilter('')
-          setSalesFilter(''); setSessionFilter(''); setDateFrom(''); setDateTo(''); setPage(1)
+          setSalesFilter(''); setSessionFilter(''); setTentativeFilter(''); setDateFrom(''); setDateTo(''); setPage(1)
         }
         return (
       <div className="bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] p-3 space-y-2.5">
@@ -426,6 +429,9 @@ function ContractList({ profile, deepLinkContractId }) {
                     {c.contract_date && dateStart && (
                       <span className="text-slate-400">Contracted {formatDate(c.contract_date)}</span>
                     )}
+                    {c.is_tentative && c.tentative_created_at && (
+                      <span className="text-slate-400">Created {formatDate(c.tentative_created_at)}</span>
+                    )}
                     {(c.venue_name || uniqueLocations.length > 0) && (
                       <span className="inline-flex items-center gap-1">
                         <Icon name="mapPin" size={12} className="text-slate-400" />
@@ -455,6 +461,9 @@ function ContractList({ profile, deepLinkContractId }) {
                   </span>
                   {c.contract_date && dateStart && (
                     <span className="block text-[10.5px] text-slate-400 tabular-nums">Contracted {formatDate(c.contract_date)}</span>
+                  )}
+                  {c.is_tentative && c.tentative_created_at && (
+                    <span className="block text-[10.5px] text-slate-400 tabular-nums">Created {formatDate(c.tentative_created_at)}</span>
                   )}
                 </div>
                 <div className="hidden sm:block min-w-0">
@@ -631,6 +640,7 @@ function ContractList({ profile, deepLinkContractId }) {
                 ['Contact number', selected.contact_number],
                 ['Secondary contact', selected.secondary_contact],
                 ['Contract date', selected.contract_date ? formatDate(selected.contract_date) : null],
+                ['Tentative created', selected.is_tentative && selected.tentative_created_at ? formatDate(selected.tentative_created_at) : null],
                 ['Function date', selected.function_date ? formatDate(selected.function_date) : null],
                 ['Venue type', venueTypeLabel(selected.contract_type)],
                 ['Function type', selected.function_type],
