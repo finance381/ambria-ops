@@ -272,6 +272,8 @@ function EventLedger(props) {
   var [checkingTxnId, setCheckingTxnId] = useState(null)
   var [enteringExpId, setEnteringExpId] = useState(null)
   var [enteringTxnId, setEnteringTxnId] = useState(null)
+  var [checkingLmsId, setCheckingLmsId] = useState(null)
+  var [enteringLmsId, setEnteringLmsId] = useState(null)
   var [printingDocId, setPrintingDocId] = useState(null)
   var [collDetail, setCollDetail] = useState(null)
   var [currentEventIds, setCurrentEventIds] = useState([])
@@ -452,11 +454,14 @@ function EventLedger(props) {
         setEventDetail(group.contracts[0])
         setCurrentEventIds(group.event_ids)
         setContractGroup(group)
+        var lmsRows = await fetchLmsPayments(primary.contract_no, primary.department)
         // Not loadBalance(group.event_ids) — see loadContractBalance for why
         // a plain per-id sum over resync duplicates would triple-count the
         // Agreed targets instead of just recovering their collected money.
-        loadContractBalance(pool)
-        loadEntries(group.event_ids)
+        loadContractBalance(pool, lmsRows)
+        loadEntries(group.event_ids).then(function () {
+          if (lmsRows.length > 0) setEntries(function (prev) { return prev.concat(lmsRows) })
+        })
         loadPlateEvents(group.event_ids)
         window.requestAnimationFrame(function () { window.scrollTo(0, 0) })
       } else {
@@ -474,7 +479,7 @@ function EventLedger(props) {
   // money actually exists, regardless of which duplicate it's attached to.
   // Pending is then recomputed here from those corrected totals, mirroring
   // fn_event_group_balance's own formulas exactly.
-  async function loadContractBalance(pool) {
+  async function loadContractBalance(pool, lmsRows) {
     var allIds = pool.map(function (e) { return e.id })
     if (allIds.length === 0) { setBalance(null); setBalancesByContract({}); return }
     setBalanceLoading(true)
@@ -499,6 +504,13 @@ function EventLedger(props) {
       collCash += Number(row.collected_cash_paise || 0)
       collBank += Number(row.collected_bank_paise || 0)
       spent += Number(row.spent_paise || 0)
+    })
+    // LMS-only collections (never touched Ambria Ops' own wallet) count
+    // toward the real total too — otherwise "Collected" understates what the
+    // contract has actually taken in, and "Pending" overstates what's owed.
+    ;(lmsRows || []).forEach(function (r) {
+      if (r.payment_mode === 'cash') collCash += Number(r.amount_paise || 0)
+      else collBank += Number(r.amount_paise || 0)
     })
     setBalance({
       agreed_cash_paise: agreedCash, agreed_bank_paise: agreedBank, tax_amount_paise: tax,
@@ -598,6 +610,43 @@ function EventLedger(props) {
     setEntriesLoading(false)
   }
 
+  // Fetches LMS's own payment history for a contract (the same read the
+  // Wallet's Collect flow uses) and maps each row into the same shape as a
+  // 'collection' event_ledger row, with its own reference_type so the
+  // Transactions tab can tell it apart from a real wallet collection —
+  // there's no wallet_transactions row behind it, just whatever LMS reports.
+  async function fetchLmsPayments(contractNo, department) {
+    if (!contractNo) return []
+    var sessionRes = await supabase.auth.getSession()
+    var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
+    var res = await supabase.functions.invoke('lms-payment-collections', {
+      body: { contract_no: contractNo, department: department || '' },
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    })
+    if (res.error) return []
+    var rows = (res.data && res.data.data) || []
+    return rows.map(function (p) {
+      return {
+        id: 'lms:' + p.receive_id,
+        entry_type: 'collection',
+        direction: 'in',
+        payment_mode: String(p.pay_mode || '').toLowerCase().indexOf('cash') !== -1 ? 'cash' : 'bank',
+        amount_paise: p.net_amount_paise,
+        reference_type: 'lms_payment',
+        reference_id: p.receive_id,
+        description: p.remarks || ('LMS ' + (p.receive_type || 'payment')),
+        created_by: null,
+        created_at: p.date,
+        event_id: null,
+        _lmsEntryBy: p.entry_by || null,
+        _checkedBy: p.checked_by || null,
+        _checkedAt: p.checked_at || null,
+        _enteredBy: p.tally_entered_by || null,
+        _enteredAt: p.tally_entered_at || null,
+      }
+    })
+  }
+
   async function toggleExpenseCheck(expenseId) {
     if (checkingExpId) return
     setCheckingExpId(expenseId)
@@ -666,6 +715,41 @@ function EventLedger(props) {
       var wt = Object.assign({}, prev.row._wt, { tally_entered_by: nowEntered ? profile.id : null, tally_entered_at: nowEntered ? new Date().toISOString() : null })
       return Object.assign({}, prev, { row: Object.assign({}, prev.row, { _wt: wt }) })
     })
+  }
+
+  // LMS-sourced rows have no wallet_transactions/expenses row of their own —
+  // just whatever get_all_payment_collection returned — so their checked/
+  // entered state lives in its own tiny table, keyed by LMS's receive_id.
+  async function toggleLmsPaymentCheck(receiveId) {
+    if (checkingLmsId) return
+    setCheckingLmsId(receiveId)
+    var { data, error } = await supabase.rpc('fn_toggle_lms_payment_check', { p_receive_id: receiveId })
+    setCheckingLmsId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowChecked = !!data
+    setEntries(function (prev) { return prev.map(function (r) {
+      if (r.reference_type !== 'lms_payment' || r.reference_id !== receiveId) return r
+      return Object.assign({}, r, {
+        _checkedBy: nowChecked ? profile.id : null,
+        _checkedAt: nowChecked ? new Date().toISOString() : null,
+      })
+    }) })
+  }
+
+  async function toggleLmsPaymentEntered(receiveId) {
+    if (enteringLmsId) return
+    setEnteringLmsId(receiveId)
+    var { data, error } = await supabase.rpc('fn_toggle_lms_payment_entered', { p_receive_id: receiveId })
+    setEnteringLmsId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowEntered = !!data
+    setEntries(function (prev) { return prev.map(function (r) {
+      if (r.reference_type !== 'lms_payment' || r.reference_id !== receiveId) return r
+      return Object.assign({}, r, {
+        _enteredBy: nowEntered ? profile.id : null,
+        _enteredAt: nowEntered ? new Date().toISOString() : null,
+      })
+    }) })
   }
 
   async function loadPlateEvents(ids) {
@@ -838,12 +922,13 @@ function EventLedger(props) {
   // Who put the row there. A collection was taken by whoever holds the wallet,
   // which is not always whoever logged the ledger line, so the collector wins
   // when there is one.
-  function rowPerson(e) { return e._collectorName || e._creatorName || '' }
+  function rowPerson(e) { return e._collectorName || e._creatorName || e._lmsEntryBy || '' }
   function rowDate(e) { return e._entryDate || e.created_at }
   // null, not false, for the rows finance never checks — an LMS advance has no
   // check to be missing, so it should not answer an "unchecked" filter.
   function rowChecked(e) {
     if (e.entry_type === 'expense') return !!e._checkedBy
+    if (e.reference_type === 'lms_payment') return !!e._checkedBy
     if (e.entry_type === 'collection' && e._wt) return !!e._wt.checked_by
     return null
   }
@@ -996,16 +1081,24 @@ function EventLedger(props) {
         {rows.map(function (e) {
           var isExpRow = e.entry_type === 'expense' && !!e.reference_id
           var isCollRow = e.entry_type === 'collection' && !!e._wt
+          var isLmsRow = e.reference_type === 'lms_payment'
           var isClickable = isExpRow || isCollRow
           var person = rowPerson(e)
-          var on = isExpRow ? e._checkedBy : (isCollRow ? e._wt.checked_by : null)
-          var onEntered = isExpRow ? e._enteredBy : (isCollRow ? e._wt.tally_entered_by : null)
+          var on = isExpRow ? e._checkedBy : (isCollRow ? e._wt.checked_by : (isLmsRow ? e._checkedBy : null))
+          var onEntered = isExpRow ? e._enteredBy : (isCollRow ? e._wt.tally_entered_by : (isLmsRow ? e._enteredBy : null))
           return (
             <div key={e.id} onClick={function () { openRow(e) }}
               className={'px-4 py-3 ' + (isClickable ? 'cursor-pointer active:bg-indigo-50/60' : '')}>
               <div className="flex items-start justify-between gap-3">
-                <span className={'shrink-0 inline-flex items-center h-[22px] px-2 rounded-md text-[11px] font-bold ' + badgeClass(e.entry_type, e.direction)}>
-                  {entryLabel(e.entry_type)}
+                <span className="inline-flex items-center gap-1">
+                  <span className={'shrink-0 inline-flex items-center h-[22px] px-2 rounded-md text-[11px] font-bold ' + badgeClass(e.entry_type, e.direction)}>
+                    {entryLabel(e.entry_type)}
+                  </span>
+                  {isLmsRow && (
+                    <span title="Collected outside Ambria Ops, per LMS's own record" className="shrink-0 inline-flex items-center h-[22px] px-1.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-500">
+                      LMS
+                    </span>
+                  )}
                 </span>
                 {/* One figure, coloured by direction. In and Out were two
                     columns because a table needs them aligned; a card has one
@@ -1029,28 +1122,30 @@ function EventLedger(props) {
                 {person && <span className="whitespace-nowrap">{person}</span>}
               </div>
 
-              {(isExpRow || isCollRow) && (canMarkChecked || on || canMarkEntered || onEntered) && (
+              {(isExpRow || isCollRow || isLmsRow) && (canMarkChecked || on || canMarkEntered || onEntered) && (
                 <span className="mt-2 flex items-center gap-2" onClick={function (ev) { ev.stopPropagation() }}>
                   <EnteredMark
                     entered={!!onEntered}
-                    enteredAt={isExpRow ? e._enteredAt : e._wt.tally_entered_at}
+                    enteredAt={isExpRow ? e._enteredAt : (isLmsRow ? e._enteredAt : e._wt.tally_entered_at)}
                     canToggle={canMarkEntered}
                     canUnenter={onEntered === profile?.id || isSysAdmin}
-                    busy={isExpRow ? enteringExpId === Number(e.reference_id) : enteringTxnId === e.reference_id}
+                    busy={isExpRow ? enteringExpId === Number(e.reference_id) : (isLmsRow ? enteringLmsId === e.reference_id : enteringTxnId === e.reference_id)}
                     onToggle={function () {
                       if (isExpRow) toggleExpenseEntered(Number(e.reference_id))
+                      else if (isLmsRow) toggleLmsPaymentEntered(e.reference_id)
                       else toggleCollectionEntered(e.reference_id)
                     }}
                   />
                   <CheckedStamp
                     variant="stamp"
                     checked={!!on}
-                    checkedAt={isExpRow ? e._checkedAt : e._wt.checked_at}
+                    checkedAt={isExpRow ? e._checkedAt : (isLmsRow ? e._checkedAt : e._wt.checked_at)}
                     canToggle={canMarkChecked}
                     canUncheck={on === profile?.id || isSysAdmin}
-                    busy={isExpRow ? checkingExpId === Number(e.reference_id) : checkingTxnId === e.reference_id}
+                    busy={isExpRow ? checkingExpId === Number(e.reference_id) : (isLmsRow ? checkingLmsId === e.reference_id : checkingTxnId === e.reference_id)}
                     onToggle={function () {
                       if (isExpRow) toggleExpenseCheck(Number(e.reference_id))
+                      else if (isLmsRow) toggleLmsPaymentCheck(e.reference_id)
                       else toggleCollectionCheck(e.reference_id)
                     }}
                   />
@@ -1118,6 +1213,11 @@ function EventLedger(props) {
                       <span className={'shrink-0 inline-flex items-center h-[22px] px-2 rounded-md text-[11px] font-bold ' + badgeClass(e.entry_type, e.direction)}>
                         {entryLabel(e.entry_type)}
                       </span>
+                      {e.reference_type === 'lms_payment' && (
+                        <span title="Collected outside Ambria Ops, per LMS's own record" className="shrink-0 inline-flex items-center h-[22px] px-1.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-500">
+                          LMS
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="px-3 py-2.5 align-top text-[13px] text-slate-600 whitespace-nowrap">{e.payment_mode ? titleCase(e.payment_mode) : '—'}</td>
@@ -1135,32 +1235,35 @@ function EventLedger(props) {
                     {/* The verdict sits with the figure it is a verdict on. In
                         the Type cell it was a chip among chips. */}
                     {(function () {
-                      var on = isExpRow ? e._checkedBy : (isCollRow ? e._wt.checked_by : null)
-                      var onEntered = isExpRow ? e._enteredBy : (isCollRow ? e._wt.tally_entered_by : null)
-                      if (!isExpRow && !isCollRow) return null
+                      var isLmsRow = e.reference_type === 'lms_payment'
+                      var on = isExpRow ? e._checkedBy : (isCollRow ? e._wt.checked_by : (isLmsRow ? e._checkedBy : null))
+                      var onEntered = isExpRow ? e._enteredBy : (isCollRow ? e._wt.tally_entered_by : (isLmsRow ? e._enteredBy : null))
+                      if (!isExpRow && !isCollRow && !isLmsRow) return null
                       if ((!canMarkChecked && !on) && (!canMarkEntered && !onEntered)) return null
                       return (
                         <span className="mt-1 flex items-center justify-end gap-2" onClick={function (ev) { ev.stopPropagation() }}>
                           <EnteredMark
                             entered={!!onEntered}
-                            enteredAt={isExpRow ? e._enteredAt : e._wt.tally_entered_at}
+                            enteredAt={isExpRow ? e._enteredAt : (isLmsRow ? e._enteredAt : e._wt.tally_entered_at)}
                             canToggle={canMarkEntered}
                             canUnenter={onEntered === profile?.id || isSysAdmin}
-                            busy={isExpRow ? enteringExpId === Number(e.reference_id) : enteringTxnId === e.reference_id}
+                            busy={isExpRow ? enteringExpId === Number(e.reference_id) : (isLmsRow ? enteringLmsId === e.reference_id : enteringTxnId === e.reference_id)}
                             onToggle={function () {
                               if (isExpRow) toggleExpenseEntered(Number(e.reference_id))
+                              else if (isLmsRow) toggleLmsPaymentEntered(e.reference_id)
                               else toggleCollectionEntered(e.reference_id)
                             }}
                           />
                           <CheckedStamp
                             variant="stamp"
                             checked={!!on}
-                            checkedAt={isExpRow ? e._checkedAt : e._wt.checked_at}
+                            checkedAt={isExpRow ? e._checkedAt : (isLmsRow ? e._checkedAt : e._wt.checked_at)}
                             canToggle={canMarkChecked}
                             canUncheck={on === profile?.id || isSysAdmin}
-                            busy={isExpRow ? checkingExpId === Number(e.reference_id) : checkingTxnId === e.reference_id}
+                            busy={isExpRow ? checkingExpId === Number(e.reference_id) : (isLmsRow ? checkingLmsId === e.reference_id : checkingTxnId === e.reference_id)}
                             onToggle={function () {
                               if (isExpRow) toggleExpenseCheck(Number(e.reference_id))
+                              else if (isLmsRow) toggleLmsPaymentCheck(e.reference_id)
                               else toggleCollectionCheck(e.reference_id)
                             }}
                           />

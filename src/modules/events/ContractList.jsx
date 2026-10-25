@@ -61,36 +61,12 @@ function ContractList({ profile, deepLinkContractId }) {
   var [perPage, setPerPage] = useState(25)
   var [selected, setSelected] = useState(null)
   var [showFinancials, setShowFinancials] = useState(false)
-  var [lmsPayments, setLmsPayments] = useState(null)
-  var [lmsPaymentsLoading, setLmsPaymentsLoading] = useState(false)
-  var [lmsPaymentsError, setLmsPaymentsError] = useState('')
 
-  // What LMS itself has on record for this contract — someone can collect
-  // straight into LMS without ever touching Ambria Ops' wallet, so this is
-  // the only place that money would otherwise show up at all. Reloads
-  // whenever a different contract is opened; department is required since
-  // LMS numbers each department's contracts in its own sequence, so
-  // contract_no alone can match an unrelated department's records too.
+  // Reset the financials disclosure whenever a different contract is opened,
+  // so it doesn't stay expanded (showing the previous contract's figures for
+  // a flash) across a selection change.
   useEffect(function () {
     setShowFinancials(false)
-    setLmsPayments(null)
-    setLmsPaymentsError('')
-    if (!selected || !selected.contract_no) return
-    setLmsPaymentsLoading(true)
-    supabase.auth.getSession().then(function (sessionRes) {
-      var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
-      return supabase.functions.invoke('lms-payment-collections', {
-        body: { contract_no: selected.contract_no, department: selected.department || '' },
-        headers: token ? { Authorization: 'Bearer ' + token } : {},
-      })
-    }).then(function (res) {
-      if (res.error) throw new Error(res.error.message || 'Could not load LMS payment history')
-      setLmsPayments((res.data && res.data.data) || [])
-    }).catch(function (err) {
-      setLmsPaymentsError(err.message || 'Could not load LMS payment history')
-    }).finally(function () {
-      setLmsPaymentsLoading(false)
-    })
   }, [selected && selected.id])
 
   // Deep-link from a "new contract synced" notification — pins the view to
@@ -702,52 +678,11 @@ function ContractList({ profile, deepLinkContractId }) {
                   {showFinancials ? '− Hide financials' : '+ Show financials'}
                 </button>
                 {showFinancials && (
-                  <div className="mt-3 space-y-3">
-                    <div className="border border-gray-200 rounded-lg overflow-hidden">
-                      <p className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 border-b border-gray-200 text-[11px] font-bold uppercase tracking-wide text-gray-500">
-                        <Icon name="receipt" size={13} className="text-gray-400" />
-                        Past collections (LMS payment history)
-                        {lmsPayments && lmsPayments.length > 0 && (
-                          <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-gray-100 text-gray-500 text-[10px] font-bold">
-                            {lmsPayments.length}
-                          </span>
-                        )}
-                      </p>
-                      <div className="px-3 py-2">
-                        {lmsPaymentsLoading ? (
-                          <p className="text-xs text-gray-400">Checking LMS...</p>
-                        ) : lmsPaymentsError ? (
-                          <p className="text-xs text-red-600">{lmsPaymentsError}</p>
-                        ) : !lmsPayments || lmsPayments.length === 0 ? (
-                          <p className="text-xs text-gray-400">No payments on record in LMS for this contract.</p>
-                        ) : (
-                          <div className="space-y-1.5">
-                            {lmsPayments.map(function (p, pi) {
-                              return (
-                                <div key={pi} className="flex items-start justify-between gap-2 text-[11.5px] bg-white border border-gray-100 rounded-lg px-2.5 py-2">
-                                  <div className="min-w-0">
-                                    <div className="font-semibold text-gray-800">
-                                      {p.date ? formatDate(p.date) : '—'}
-                                      {p.pay_mode ? ' · ' + titleCase(p.pay_mode) : ''}
-                                      {p.receive_type ? ' · ' + p.receive_type : ''}
-                                    </div>
-                                    {p.remarks && <div className="text-gray-500 mt-0.5 truncate">{p.remarks}</div>}
-                                    <div className="text-gray-400 mt-0.5">
-                                      {p.entry_by ? 'Entered by ' + p.entry_by : ''}
-                                      {p.status && p.status !== 'Y' ? (p.entry_by ? ' · status ' : 'status ') + p.status : ''}
-                                      {p.order_no && p.order_no !== selected.contract_no && (
-                                        <span className="text-amber-600 font-semibold"> · order #{p.order_no} ⚠</span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <span className="shrink-0 font-bold text-gray-800 tabular-nums">{formatPaise(p.net_amount_paise)}</span>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                  <div className="mt-3">
+                    {/* EventLedger's own Transactions tab now folds in LMS's
+                        payment history alongside Ambria Ops' own wallet
+                        collections — one list, one place, markable the same
+                        way — so there's nothing left to render here. */}
                     <EventLedger profile={profile} eventId={selected.id} />
                   </div>
                 )}

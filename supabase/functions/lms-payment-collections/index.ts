@@ -99,6 +99,26 @@ serve(async (req) => {
       }
     })
 
+    // These rows now show up in EventLedger's own Transactions tab, where
+    // they can be marked Checked/Entered the same as a real wallet
+    // collection — that state lives in lms_payment_marks, keyed by receive_id.
+    const receiveIds = mapped.map(function (m: any) { return m.receive_id }).filter(Boolean)
+    if (receiveIds.length > 0) {
+      const { data: marks } = await authClient
+        .from("lms_payment_marks")
+        .select("receive_id, checked_by, checked_at, tally_entered_by, tally_entered_at")
+        .in("receive_id", receiveIds)
+      const markById: Record<string, any> = {}
+      ;(marks || []).forEach(function (m: any) { markById[m.receive_id] = m })
+      mapped.forEach(function (m: any) {
+        const mark = markById[m.receive_id]
+        m.checked_by = mark ? mark.checked_by : null
+        m.checked_at = mark ? mark.checked_at : null
+        m.tally_entered_by = mark ? mark.tally_entered_by : null
+        m.tally_entered_at = mark ? mark.tally_entered_at : null
+      })
+    }
+
     return new Response(
       JSON.stringify({ data: mapped }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
