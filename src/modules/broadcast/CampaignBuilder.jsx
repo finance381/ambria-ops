@@ -15,6 +15,19 @@ var MAPPABLE_FIELDS = [
 ]
 var SOURCE_OPTIONS = ['', 'lms', 'contract', 'csv', 'manual', 'inbound']
 
+// scheduled_at round-trips through this component as a datetime-local-shaped
+// string (YYYY-MM-DDTHH:mm) that new Date() parses as LOCAL time on save
+// (`new Date(scheduledAt).toISOString()`). Loading an existing campaign back
+// has to reverse that exact conversion -- naively substring-ing the stored
+// UTC string reuses its UTC digits as if they were already local, and if
+// that gets saved again, the real scheduled_at silently shifts earlier by a
+// full timezone offset (5.5h for IST) every edit-and-resave cycle.
+function toLocalDatetimeValue(isoString) {
+  var d = new Date(isoString)
+  var local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+  return local.toISOString().slice(0, 16)
+}
+
 // The steps are numbered because they are genuinely ordered — the audience
 // cannot be previewed before a template is chosen, and the variable step only
 // exists for some templates. The badge is what makes that order visible; the
@@ -143,7 +156,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
         setVenueIds((f.venue_ids || []).map(String))
         setSource(f.source || '')
         setMinLastSentDays(f.min_last_sent_days != null ? String(f.min_last_sent_days) : '')
-        setScheduledAt(c.scheduled_at ? c.scheduled_at.substring(0, 16) : '')
+        setScheduledAt(c.scheduled_at ? toLocalDatetimeValue(c.scheduled_at) : '')
         setScheduleLater(!!c.scheduled_at)
         setMapping(c.variable_mapping_json || {})
       })
