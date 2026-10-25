@@ -264,6 +264,10 @@ function EventLedger(props) {
   var [tab, setTab] = useState('overview')
   // Agreed Cash shown ×10. Display only, and gone on reload.
   var [cashX10, setCashX10] = useState(false)
+  // Separate from the Financials tile's own toggle — they used to share
+  // cashX10, so revealing the true cash figure in one tab silently changed
+  // what the other tab showed too, with nothing on screen explaining why.
+  var [txnCashX10, setTxnCashX10] = useState(false)
   // The transactions tab keeps its own view state: what is typed in it, how
   // it is narrowed, which way the dates run and which page it is on. All of
   // it is per-event, so selecting another event resets it rather than
@@ -748,9 +752,10 @@ function EventLedger(props) {
   }
   // Cash entries are logged at a tenth of the real amount — the same
   // convention the Financials tab's Agreed Cash tile already reveals via
-  // cashX10. Only cash; bank/other modes are already the real figure.
+  // cashX10, but kept as its own state (txnCashX10) rather than shared with
+  // it. Only cash; bank/other modes are already the real figure.
   function rowAmount(e) {
-    return e.payment_mode === 'cash' && cashX10 ? e.amount_paise * 10 : e.amount_paise
+    return e.payment_mode === 'cash' && txnCashX10 ? e.amount_paise * 10 : e.amount_paise
   }
 
   var txnModes = []
@@ -1537,9 +1542,9 @@ function EventLedger(props) {
         <div className="space-y-4">
           <div className="grid gap-3 grid-cols-2 @3xl:grid-cols-4">
             <MoneyTile
-              label={<>Agreed Cash<button type="button" aria-hidden="true" tabIndex={-1}
+              label={<>Agreed Cash<button type="button" title={cashX10 ? 'Showing true cash amount — click to hide' : 'Show true cash amount'}
                 onClick={function () { setCashX10(function (v) { return !v }) }}
-                className="ml-1.5 inline-block w-2.5 h-2.5 align-middle rounded-full bg-slate-200 opacity-25" /></>}
+                className={'ml-1.5 inline-block w-2.5 h-2.5 align-middle rounded-full transition-colors ' + (cashX10 ? 'bg-amber-400' : 'bg-slate-200 opacity-25 hover:opacity-50')} /></>}
               value={balanceLoading ? '—' : formatPoints(cashX10 ? agrCashP * 10 : agrCashP)}
               sub={
                 <div className="mt-2 space-y-0.5">
@@ -1677,10 +1682,13 @@ function EventLedger(props) {
           <div className="flex flex-wrap items-center gap-2">
             {/* The same subtle dot as Agreed Cash on the Financials tab —
                 cash amounts are logged at a tenth of the real figure, and
-                this is the one control that reveals the true one, here too. */}
-            <button type="button" aria-hidden="true" tabIndex={-1}
-              onClick={function () { setCashX10(function (v) { return !v }) }}
-              className="w-2.5 h-2.5 rounded-full bg-slate-200 opacity-25" />
+                this is the one control that reveals the true one, here too.
+                Its own state, so toggling it never changes what the
+                Financials tab shows — it lights up amber while on, since a
+                dot you can't tell is pressed is a dot you forget you pressed. */}
+            <button type="button" title={txnCashX10 ? 'Showing true cash amount — click to hide' : 'Show true cash amount'}
+              onClick={function () { setTxnCashX10(function (v) { return !v }) }}
+              className={'w-2.5 h-2.5 rounded-full transition-colors ' + (txnCashX10 ? 'bg-amber-400' : 'bg-slate-200 opacity-25 hover:opacity-50')} />
             {/* The search takes what is left of the row rather than a fixed
                 220: at 220 the three controls came to 422 against the 358 a
                 phone has, and Export sat over the edge. */}

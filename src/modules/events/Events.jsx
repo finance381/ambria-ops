@@ -104,6 +104,7 @@ function Events({ profile }) {
   var [departments, setDepartments] = useState([])
   var [page, setPage] = useState(1)
   var [perPage, setPerPage] = useState(24)
+  var [filtersOpen, setFiltersOpen] = useState(false)
   var [extraPlateSummary, setExtraPlateSummary] = useState(null)
   var [linkedProjects, setLinkedProjects] = useState([])
   var refData = useReferenceData()
@@ -308,6 +309,7 @@ function Events({ profile }) {
 
   var totalPages = Math.ceil(filtered.length / perPage)
   var paged = filtered.slice((page - 1) * perPage, page * perPage)
+  var eventsFilterCount = [venueFilter, deptFilter, dateFrom, dateTo].filter(Boolean).length
 
   if (loading) {
     return <p className="text-slate-500 text-[13px] text-center py-10">Loading events…</p>
@@ -333,8 +335,10 @@ function Events({ profile }) {
 
   return (
     <div className="space-y-4">
-      {/* Toolbar: search and the two filters on one line, the sync tools
-          and page size at its end; the counts and the last sync under it. */}
+      {/* Toolbar: search, a single Filters button holding venue/dept/dates,
+          the sync tools and page size at its end; the counts and the last
+          sync under it. Four controls spread across the row each said "All"
+          most of the time — the button now says how many are actually set. */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] p-3 space-y-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[220px]">
@@ -345,46 +349,14 @@ function Events({ profile }) {
               className={CTL + ' w-full pl-9 pr-3 placeholder:text-slate-400'}
               style={{ fontSize: '16px' }} />
           </div>
-          <div className="relative w-full sm:w-56">
-            <Icon name="mapPin" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <select value={venueFilter}
-              onChange={function (e) { setVenueFilter(e.target.value); setPage(1) }}
-              aria-label="Venue"
-              className={CTL + ' w-full pl-8 pr-8 appearance-none ' + (venueFilter ? '' : 'text-slate-500')}>
-              <option value="">All venues</option>
-              {venueNames.map(function (v) { return <option key={v} value={v}>{venueMap[v] ? (venueMap[v] + ' — ' + v) : v}</option> })}
-            </select>
-            <Icon name="chevronDown" size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          </div>
-          <div className="relative w-[calc(50%-4px)] sm:w-44">
-            <Icon name="tag" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <select value={deptFilter}
-              onChange={function (e) { setDeptFilter(e.target.value); setPage(1) }}
-              aria-label="Department"
-              className={CTL + ' w-full pl-8 pr-8 appearance-none ' + (deptFilter ? '' : 'text-slate-500')}>
-              <option value="">All depts</option>
-              {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
-            </select>
-            <Icon name="chevronDown" size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          </div>
-          <div className="flex items-stretch bg-white border border-slate-200 rounded-xl overflow-hidden w-full sm:w-auto">
-            <div className="flex-1 min-w-[108px]">
-              <EventDatePicker value={dateFrom} placeholder="From" collapsible includePast plain
-                onChange={function (v) { setDateFrom(v); setPage(1) }} />
-            </div>
-            <span aria-hidden="true" className="shrink-0 self-stretch my-2 w-px bg-slate-200" />
-            <div className="flex-1 min-w-[108px]">
-              <EventDatePicker value={dateTo} placeholder="To" collapsible includePast plain
-                onChange={function (v) { setDateTo(v); setPage(1) }} />
-            </div>
-            {(dateFrom || dateTo) && (
-              <button type="button" onClick={function () { setDateFrom(''); setDateTo(''); setPage(1) }}
-                aria-label="Clear dates"
-                className="shrink-0 px-2 text-slate-400 hover:text-slate-600">
-                <Icon name="close" size={14} />
-              </button>
+          <button type="button" onClick={function () { setFiltersOpen(!filtersOpen) }} aria-expanded={filtersOpen}
+            className={'relative h-10 px-3.5 rounded-xl border text-[13px] font-bold inline-flex items-center gap-1.5 whitespace-nowrap transition-colors ' +
+              (filtersOpen || eventsFilterCount > 0 ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')}>
+            <Icon name="filter" size={14} />Filters
+            {eventsFilterCount > 0 && (
+              <span data-notranslate className="px-1.5 rounded-md bg-indigo-600 text-white text-[11px] tabular-nums">{eventsFilterCount}</span>
             )}
-          </div>
+          </button>
           <span className="inline-flex items-center gap-2 ml-auto">
             <button onClick={function () { syncFromLMS(false) }} disabled={syncing}
               className="h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-[13px] font-bold text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1.5 disabled:opacity-60 whitespace-nowrap">
@@ -410,6 +382,57 @@ function Events({ profile }) {
             </span>
           </span>
         </div>
+
+        {filtersOpen && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 grid gap-2.5 sm:grid-cols-3">
+            <div className="relative">
+              <Icon name="mapPin" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <select value={venueFilter}
+                onChange={function (e) { setVenueFilter(e.target.value); setPage(1) }}
+                aria-label="Venue"
+                className={CTL + ' w-full pl-8 pr-8 appearance-none bg-white ' + (venueFilter ? '' : 'text-slate-500')}>
+                <option value="">All venues</option>
+                {venueNames.map(function (v) { return <option key={v} value={v}>{venueMap[v] ? (venueMap[v] + ' — ' + v) : v}</option> })}
+              </select>
+              <Icon name="chevronDown" size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
+            <div className="relative">
+              <Icon name="tag" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <select value={deptFilter}
+                onChange={function (e) { setDeptFilter(e.target.value); setPage(1) }}
+                aria-label="Department"
+                className={CTL + ' w-full pl-8 pr-8 appearance-none bg-white ' + (deptFilter ? '' : 'text-slate-500')}>
+                <option value="">All depts</option>
+                {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
+              </select>
+              <Icon name="chevronDown" size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
+            <div className="flex items-stretch bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <div className="flex-1 min-w-0">
+                <EventDatePicker value={dateFrom} placeholder="From" collapsible includePast plain
+                  onChange={function (v) { setDateFrom(v); setPage(1) }} />
+              </div>
+              <span aria-hidden="true" className="shrink-0 self-stretch my-2 w-px bg-slate-200" />
+              <div className="flex-1 min-w-0">
+                <EventDatePicker value={dateTo} placeholder="To" collapsible includePast plain
+                  onChange={function (v) { setDateTo(v); setPage(1) }} />
+              </div>
+              {(dateFrom || dateTo) && (
+                <button type="button" onClick={function () { setDateFrom(''); setDateTo(''); setPage(1) }}
+                  aria-label="Clear dates"
+                  className="shrink-0 px-2 text-slate-400 hover:text-slate-600">
+                  <Icon name="close" size={14} />
+                </button>
+              )}
+            </div>
+            {eventsFilterCount > 0 && (
+              <button type="button" onClick={function () { setVenueFilter(''); setDeptFilter(''); setDateFrom(''); setDateTo(''); setPage(1) }}
+                className="sm:col-span-3 justify-self-start inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12.5px] font-semibold text-slate-600 hover:bg-white hover:text-red-600 transition-colors">
+                <Icon name="refresh" size={13} />Clear filters
+              </button>
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-2 px-0.5">
           <span className="inline-flex items-center gap-1.5 text-[12.5px] text-slate-500">
             <span className="h-6 px-2 rounded-md bg-slate-100 inline-flex items-center"><b className="text-slate-800 tabular-nums">{filtered.length}</b>&nbsp;guests</span>
