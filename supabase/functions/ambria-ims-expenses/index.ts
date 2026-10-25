@@ -18,6 +18,16 @@
 // including LMS-resync-superseded duplicates -- expenses may be attached to
 // an id that a later resync marked lms_cancelled_at on, same lesson as
 // EventLedger.jsx's _buildContractGroup/contractBalance.js's pool.
+//
+// expense_allocations.department does NOT carry Ambria IMS's 7 department
+// names (Furniture/Floral/Structure/Tenting/Transport/Lighting/Fabric) -- it
+// only ever holds Venue/Catering/Decor/Department (the same LMS contract-type
+// vocabulary as events.department). The real per-department breakdown IMS
+// wants lives one level down, as a 3-letter prefix on expense_sub_types.name
+// for allocations booked under department = 'Decor' (confirmed against live
+// data: FRN-/FLR-/STR-/TNT-/TRN-/LGT-/FBR- prefixes cover exactly IMS's 7).
+// Anything else (ADD-, TRP-, KTM-, etc.) is Decor overhead that doesn't map
+// to one of the 7 and is surfaced with its raw sub-type name untouched.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
@@ -33,6 +43,19 @@ function json(b: unknown, s = 200) {
 function authOk(req: Request): boolean {
   const expected = Deno.env.get("AMBRIA_IMS_TO_OPS_SECRET") || ""
   return !!expected && (req.headers.get("Authorization") || "") === "Bearer " + expected
+}
+
+// expense_sub_types.name prefix (text before the first "-") -> Ambria IMS
+// department name, for allocations booked under expense_allocations.department
+// = 'Decor'. Confirmed against live data (see commit message / session notes).
+const DECOR_PREFIX_TO_DEPT: Record<string, string> = {
+  FRN: "Furniture",
+  FLR: "Floral",
+  STR: "Structure",
+  TNT: "Tenting",
+  TRN: "Transport",
+  LGT: "Lighting",
+  FBR: "Fabric",
 }
 
 serve(async (req) => {
@@ -68,12 +91,13 @@ serve(async (req) => {
   const expenseById: Record<string, any> = {}
   expenses.forEach((e: any) => { expenseById[e.id] = e })
 
-  let allocQuery = supa
+  // No department filter pushed into SQL here -- the real department for a
+  // 'Decor' allocation is only knowable after resolving its sub-type prefix
+  // below, so filtering happens in JS once that resolution is done.
+  const { data: allocations, error: allocErr } = await supa
     .from("expense_allocations")
     .select("expense_id, department, amount_paise, remarks, expense_sub_type_id")
     .in("expense_id", expenseIds)
-  if (department) allocQuery = allocQuery.eq("department", department)
-  const { data: allocations, error: allocErr } = await allocQuery
   if (allocErr) return json({ error: allocErr.message }, 500)
   if (!allocations || allocations.length === 0) return json([], 200)
 
@@ -89,14 +113,21 @@ serve(async (req) => {
 
   const result = allocations.map((a: any) => {
     const exp = expenseById[a.expense_id]
+    const subTypeName = subTypeNameById[a.expense_sub_type_id] || ""
+    const dashIdx = subTypeName.indexOf("-")
+    const prefix = dashIdx > 0 ? subTypeName.slice(0, dashIdx).trim() : ""
+    const suffix = dashIdx > 0 ? subTypeName.slice(dashIdx + 1).trim() : subTypeName
+    const resolvedDept = a.department === "Decor" && DECOR_PREFIX_TO_DEPT[prefix]
+      ? DECOR_PREFIX_TO_DEPT[prefix]
+      : a.department
     return {
-      department: a.department,
+      department: resolvedDept,
       amount: Math.round(Number(a.amount_paise) || 0) / 100,
-      label: a.remarks || subTypeNameById[a.expense_sub_type_id] || "Expense",
+      label: a.remarks || suffix || "Expense",
       date: exp ? exp.expense_date : null,
       loggedBy: exp ? (nameById[exp.user_id] || null) : null,
     }
-  })
+  }).filter((r: any) => !department || r.department === department)
 
   return json(result, 200)
 })
