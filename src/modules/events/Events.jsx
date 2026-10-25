@@ -100,6 +100,7 @@ function Events({ profile }) {
   var [deptFilter, setDeptFilter] = useState('')
   var [dateFrom, setDateFrom] = useState('')
   var [dateTo, setDateTo] = useState('')
+  var [tentativeFilter, setTentativeFilter] = useState('')
   var [showGroupLedger, setShowGroupLedger] = useState(false)
   var [departments, setDepartments] = useState([])
   var [page, setPage] = useState(1)
@@ -299,17 +300,20 @@ function Events({ profile }) {
     var matchVenue = !venueFilter || g.venues.includes(venueFilter) ||
       g.functions.some(function (f) { return f.venue_name === venueFilter })
     var matchDept = !deptFilter || g.functions.some(function (f) { return f.department === deptFilter })
+    var matchTentative = !tentativeFilter || (tentativeFilter === 'yes'
+      ? g.functions.some(function (f) { return f.is_tentative })
+      : g.functions.every(function (f) { return !f.is_tentative }))
     // A group spans date_start..date_end (its earliest to latest function) —
     // it matches when that span overlaps the picked range at all, so a
     // multi-day booking still shows up for a "From" that lands mid-event.
     var matchDate = (!dateFrom || !g.date_end || g.date_end >= dateFrom) &&
       (!dateTo || !g.date_start || g.date_start <= dateTo)
-    return matchSearch && matchVenue && matchDept && matchDate
+    return matchSearch && matchVenue && matchDept && matchTentative && matchDate
   })
 
   var totalPages = Math.ceil(filtered.length / perPage)
   var paged = filtered.slice((page - 1) * perPage, page * perPage)
-  var eventsFilterCount = [venueFilter, deptFilter, dateFrom, dateTo].filter(Boolean).length
+  var eventsFilterCount = [venueFilter, deptFilter, tentativeFilter, dateFrom, dateTo].filter(Boolean).length
 
   if (loading) {
     return <p className="text-slate-500 text-[13px] text-center py-10">Loading events…</p>
@@ -407,6 +411,18 @@ function Events({ profile }) {
               </select>
               <Icon name="chevronDown" size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
+            <div className="relative">
+              <Icon name="alert" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <select value={tentativeFilter}
+                onChange={function (e) { setTentativeFilter(e.target.value); setPage(1) }}
+                aria-label="Tentative"
+                className={CTL + ' w-full pl-8 pr-8 appearance-none bg-white ' + (tentativeFilter ? '' : 'text-slate-500')}>
+                <option value="">Tentative: all</option>
+                <option value="yes">Tentative only</option>
+                <option value="no">Confirmed only</option>
+              </select>
+              <Icon name="chevronDown" size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
             <div className="flex items-stretch bg-white border border-slate-200 rounded-xl overflow-hidden">
               <div className="flex-1 min-w-0">
                 <EventDatePicker value={dateFrom} placeholder="From" collapsible includePast plain
@@ -426,7 +442,7 @@ function Events({ profile }) {
               )}
             </div>
             {eventsFilterCount > 0 && (
-              <button type="button" onClick={function () { setVenueFilter(''); setDeptFilter(''); setDateFrom(''); setDateTo(''); setPage(1) }}
+              <button type="button" onClick={function () { setVenueFilter(''); setDeptFilter(''); setTentativeFilter(''); setDateFrom(''); setDateTo(''); setPage(1) }}
                 className="sm:col-span-3 justify-self-start inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12.5px] font-semibold text-slate-600 hover:bg-white hover:text-red-600 transition-colors">
                 <Icon name="refresh" size={13} />Clear filters
               </button>
