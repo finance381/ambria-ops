@@ -1642,7 +1642,7 @@ function EventLedger(props) {
 
       {tab === 'financials' && (
         <div className="space-y-4">
-          <div className="grid gap-3 grid-cols-2 @3xl:grid-cols-4">
+          <div className="grid gap-3 grid-cols-2 @3xl:grid-cols-5">
             <MoneyTile
               label={<>Agreed Cash<button type="button" title={cashX10 ? 'Showing true cash amount — click to hide' : 'Show true cash amount'}
                 onClick={function () { setCashX10(function (v) { return !v }) }}

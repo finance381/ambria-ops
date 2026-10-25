@@ -1344,17 +1344,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setCollectBalanceLoading(false)
 
     var evt = collectEvents.find(function (e) { return String(e.id) === String(fid) })
-    if (evt && evt.contract_no) loadLmsPayments(evt.contract_no)
+    if (evt && evt.contract_no) loadLmsPayments(evt.contract_no, evt.department)
   }
 
-  async function loadLmsPayments(contractNo) {
+  async function loadLmsPayments(contractNo, department) {
     setLmsPaymentsLoading(true)
     setLmsPaymentsError('')
     try {
       var sessionRes = await supabase.auth.getSession()
       var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
       var res = await supabase.functions.invoke('lms-payment-collections', {
-        body: { contract_no: contractNo },
+        body: { contract_no: contractNo, department: department || '' },
         headers: token ? { Authorization: 'Bearer ' + token } : {},
       })
       if (res.error) throw new Error(await edgeFnErrorMessage(res.error))
@@ -2741,6 +2741,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                                 <span>
                                   {p.entry_by ? 'Entered by ' + p.entry_by : ''}
                                   {p.status && p.status !== 'Y' ? (p.entry_by ? ' · status ' : 'status ') + p.status : ''}
+                                  {/* LMS's own order/contract number on this specific
+                                      payment row — shown so a mismatch against the
+                                      contract you're viewing is visible at a glance,
+                                      since contract_no collides across departments. */}
+                                  {p.order_no && p.order_no !== collectEvents.find(function (e) { return String(e.id) === String(collectEventId) })?.contract_no && (
+                                    <span className="text-amber-600 font-semibold"> · order #{p.order_no} ⚠</span>
+                                  )}
                                 </span>
                                 {p.receipt_url && (
                                   <a href={p.receipt_url} target="_blank" rel="noreferrer"

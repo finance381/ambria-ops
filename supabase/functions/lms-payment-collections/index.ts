@@ -33,6 +33,14 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}))
     const contractNo = (body.contract_no || "").toString().trim()
     if (!contractNo) throw new Error("Missing contract_no")
+    // LMS numbers each department's contracts in its own sequence (see
+    // sync-events: Venue/Decor/Catering/Entertainment each hit a separate
+    // get_*_contract_information_list endpoint) — contract_no is NOT unique
+    // across departments. Without a department filter, get_all_payment_collection
+    // matches pay_contractno against every department's records, so a Decor
+    // contract and an unrelated Venue contract sharing the same number both
+    // come back. Passed through from the caller's own events.department.
+    const department = (body.department || "").toString().trim()
 
     const lmsBase = Deno.env.get("LMS_API_BASE") || "https://gyv.inqcrm.in"
     const lmsUser = Deno.env.get("LMS_API_USER") || Deno.env.get("LMS_USER_ID") || "1"
@@ -59,7 +67,7 @@ serve(async (req) => {
         pay_from_date: lmsDate(fromDate),
         pay_pay_upto: lmsDate(uptoDate),
         pay_pay_mode: "",
-        pay_pay_dept: "",
+        pay_pay_dept: department,
         pay_pay_user: "",
         pay_guest_filter: "",
         pay_perpage: "",
