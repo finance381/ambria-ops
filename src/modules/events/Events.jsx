@@ -680,6 +680,7 @@ function Events({ profile }) {
             )}
             <div className="bg-gray-50 rounded-lg p-4 space-y-2">
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
+                {selectedFunction.client_name && <span><strong>Guest:</strong> {titleCase(selectedFunction.client_name)}</span>}
                 {selectedFunction.contract_no && <span><strong>Contract:</strong> #{selectedFunction.contract_no}</span>}
                 {(selectedFunction.function_date || selectedFunction.contract_date) && <span><strong>Event Date:</strong> {formatDate(selectedFunction.function_date || selectedFunction.contract_date)}</span>}
                 {selectedFunction.contract_type && <span><strong>Venue:</strong> {venueTypeLabel(selectedFunction.contract_type)}</span>}
