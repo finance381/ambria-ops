@@ -1077,7 +1077,7 @@ function EventLedger(props) {
           one meant dragging sideways and back, and comparing two meant doing
           that twice. The same seven columns become four lines: what and when,
           how much, what it was for, and who logged it. */}
-      <div className="sm:hidden divide-y divide-slate-100">
+      <div className="@3xl:hidden divide-y divide-slate-100">
         {rows.map(function (e) {
           var isExpRow = e.entry_type === 'expense' && !!e.reference_id
           var isCollRow = e.entry_type === 'collection' && !!e._wt
@@ -1156,7 +1156,7 @@ function EventLedger(props) {
         })}
       </div>
 
-      <div className="hidden sm:block overflow-x-auto ambria-thin-scroll">
+      <div className="hidden @3xl:block overflow-x-auto ambria-thin-scroll">
         {/* Left to itself the browser splits the table by content, and the
             short columns — a date, a chip, a word, two figures — each took a
             share of a very wide panel, putting a hand's width of nothing
@@ -1789,7 +1789,7 @@ function EventLedger(props) {
                   number anyone opens this for — what is still pending — off
                   the edge. Here each contract is three rows by two columns,
                   cash beside bank, and nothing is out of sight. */}
-              <div className="sm:hidden divide-y divide-slate-100">
+              <div className="@3xl:hidden divide-y divide-slate-100">
                 {contracts.map(function (c) {
                   var b = balancesByContract[c.id] || {}
                   var pcash = Number(b.pending_cash_paise || 0)
@@ -1835,7 +1835,7 @@ function EventLedger(props) {
                   )
                 })}
               </div>
-              <div className="hidden sm:block overflow-x-auto ambria-thin-scroll">
+              <div className="hidden @3xl:block overflow-x-auto ambria-thin-scroll">
                 <table className="w-full">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
