@@ -59,6 +59,13 @@ function classifyDate(val, seasonDates) {
   }
   return 2
 }
+// Calendar days between today and the event date (negative if already past).
+function daysUntil(val) {
+  var d = new Date(val + 'T00:00:00')
+  if (isNaN(d)) return null
+  var today = new Date(); today.setHours(0, 0, 0, 0)
+  return Math.round((d - today) / 86400000)
+}
 // Parses the month threshold a TTD tier's label encodes ("Full rate" -> no
 // threshold/never expires, "3 months" -> 3, "1 month" -> 1). Reading this off
 // the actual configured tiers (rather than hardcoding index positions for a
@@ -1434,6 +1441,13 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
     setEventDate(val)
     setTtdIdx(autoTtdIdx(val, ttdData))
     var c = classifyDate(val, seasonDates)
+    // A date this close in prices as Filler regardless of its calendar
+    // tagging — there's no realistic lead time left to book it at a
+    // King's Date/Perfect Comp rate. The calendar's own tag still shows
+    // separately as "(auto: ...)" next to the date, it just isn't what's
+    // applied.
+    var days = daysUntil(val)
+    if (days != null && days <= 45) c = 2
     if (c >= 0) setCatOverride(c)
   }
 
