@@ -97,6 +97,7 @@ function Inbox({ profile, inAdmin }) {
 
   var [conversations, setConversations] = useState([])
   var [loading, setLoading] = useState(true)
+  var [refreshing, setRefreshing] = useState(false)
   var [search, setSearch] = useState('')
   var [filterMode, setFilterMode] = useState('all')
   var [activeConv, setActiveConv] = useState(null)
@@ -130,7 +131,7 @@ function Inbox({ profile, inAdmin }) {
   // opening the tab fresh — re-sorts normally.
   function loadConversations(silent) {
     if (!silent) setLoading(true)
-    supabase.from('wa_conversations').select('*, wa_contacts(id, name, phone_e164, venue_affinity, opt_status)')
+    return supabase.from('wa_conversations').select('*, wa_contacts(id, name, phone_e164, venue_affinity, opt_status)')
       .order('last_message_at', { ascending: false }).limit(200)
       .then(function (res) {
         var rows = res.data || []
@@ -167,9 +168,20 @@ function Inbox({ profile, inAdmin }) {
 
   function loadMessages(conv) {
     setLoadingMsgs(true)
-    supabase.from('wa_messages').select('*, wa_templates(name)').eq('contact_id', conv.wa_contacts.id)
+    return supabase.from('wa_messages').select('*, wa_templates(name)').eq('contact_id', conv.wa_contacts.id)
       .order('created_at', { ascending: true }).limit(150)
       .then(function (res) { setMessages(res.data || []); setLoadingMsgs(false) })
+  }
+
+  // Manual escape hatch for the realtime subscription above occasionally
+  // missing a live update (reported: messages only showed up again after
+  // leaving and reopening the tab) — pulls both the list and, if open, the
+  // active thread fresh from the DB right now instead of waiting on it.
+  function refreshNow() {
+    if (refreshing) return
+    setRefreshing(true)
+    Promise.all([loadConversations(), activeConv ? loadMessages(activeConv) : null])
+      .then(function () { setRefreshing(false) })
   }
 
   // On a phone an open conversation is a step on the app's back stack, so
@@ -286,7 +298,15 @@ function Inbox({ profile, inAdmin }) {
     <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] gap-3 lg:h-full lg:min-h-0">
       <div className={CARD + ' flex-col overflow-hidden min-h-[420px] lg:min-h-0 md:flex ' + (activeConv ? 'hidden' : 'flex')}>
         <div className="shrink-0 p-2.5 space-y-2 border-b border-slate-200">
-          <SearchField value={search} onChange={setSearch} placeholder="Search name or phone..." />
+          <div className="flex items-center gap-1.5">
+            <div className="flex-1 min-w-0">
+              <SearchField value={search} onChange={setSearch} placeholder="Search name or phone..." />
+            </div>
+            <button type="button" onClick={refreshNow} disabled={refreshing} aria-label="Refresh"
+              className="shrink-0 w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 inline-flex items-center justify-center disabled:opacity-50">
+              <Icon name="refresh" size={15} className={refreshing ? 'animate-spin' : ''} />
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-1.5">
             {FILTER_MODES.map(function (m) {
               var on = filterMode === m

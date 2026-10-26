@@ -395,7 +395,7 @@ var MODULES = {
   broadcast: BroadcastHub,
 }
 
-function AdminShell({ profile, onSignOut }) {
+function AdminShell({ profile, onSignOut, initialNotifLink }) {
   var permsNew = profile.permsNew || []
   var visibleTabs = ADMIN_TABS.filter(function (t) { return tabAllowed(t, permsNew) })
 
@@ -439,6 +439,33 @@ function AdminShell({ profile, onSignOut }) {
       setDeepLinkContractId(link.slice('contracts:'.length))
     }
   }
+
+  // Runs once for a notification that opened a fresh tab (src/sw.js had no
+  // existing client to postMessage, so it put the link on the URL instead;
+  // App.jsx read it off window.location and handed it down as this prop).
+  // Stripped back out of the URL right after so a manual refresh of this tab
+  // later doesn't replay the same navigation.
+  useEffect(function () {
+    if (!initialNotifLink) return
+    navigateFromNotification(initialNotifLink)
+    var url = new URL(window.location.href)
+    url.searchParams.delete('notif')
+    window.history.replaceState(null, '', url.toString())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Covers the other case -- a tab was already open when the notification
+  // arrived, so src/sw.js focused it and postMessage'd the link directly
+  // instead of going through a URL reload at all.
+  useEffect(function () {
+    if (!navigator.serviceWorker) return
+    function onMessage(event) {
+      if (event.data && event.data.type === 'NOTIFICATION_CLICK') navigateFromNotification(event.data.link)
+    }
+    navigator.serviceWorker.addEventListener('message', onMessage)
+    return function () { navigator.serviceWorker.removeEventListener('message', onMessage) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Inventory's master sub-departments, listed under Inventory in the rail so
   // a sub-department is one click from the sidebar rather than a dropdown
