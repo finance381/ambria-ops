@@ -12,6 +12,7 @@ import { compressImage } from '../../lib/imageCompress'
 import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
 import CameraCapture from '../../components/ui/CameraCapture'
+import ImageCropper from '../../components/ui/ImageCropper'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { deptCls, deptInk, deptOrder } from '../../lib/ui'
@@ -333,6 +334,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   var [success, setSuccess] = useState('')
   var [zoomImg, setZoomImg] = useState('')
   var [cameraTarget, setCameraTarget] = useState(null) // entry idx currently capturing for, or null
+  var [cropTarget, setCropTarget] = useState(null) // { idx, rIdx, url } of the receipt being cropped, or null
   var [itemSearchKey, setItemSearchKey] = useState('')
   var [itemMatches, setItemMatches] = useState([])
   var itemSearchTimer = useRef(null)
@@ -781,6 +783,27 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         return Object.assign({}, e, {
           receiptFiles: e.receiptFiles.filter(function (_, j) { return j !== rIdx }),
           receiptPreviews: e.receiptPreviews.filter(function (_, j) { return j !== rIdx })
+        })
+      })
+    })
+  }
+
+  async function applyCropToReceipt(blob) {
+    if (!cropTarget) return
+    var target = cropTarget
+    setCropTarget(null)
+    var oldFile = entries[target.idx] && entries[target.idx].receiptFiles[target.rIdx]
+    var name = (oldFile && oldFile.name) || ('receipt_' + Date.now() + '.jpg')
+    var file = await compressImage(new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() }), 100)
+    var newUrl = URL.createObjectURL(file)
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== target.idx) return e
+        var oldUrl = e.receiptPreviews[target.rIdx]
+        if (oldUrl) URL.revokeObjectURL(oldUrl)
+        return Object.assign({}, e, {
+          receiptFiles: e.receiptFiles.map(function (f, j) { return j === target.rIdx ? file : f }),
+          receiptPreviews: e.receiptPreviews.map(function (u, j) { return j === target.rIdx ? newUrl : u })
         })
       })
     })
@@ -3384,6 +3407,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                 onClick={function () { setZoomImg(url) }}
                                 className="h-24 w-full rounded-lg border border-slate-200 object-cover cursor-pointer active:opacity-80" />
                             )}
+                            {!isPdf && (
+                              <button type="button" onClick={function () { setCropTarget({ idx: idx, rIdx: rIdx, url: url }) }}
+                                title="Crop" aria-label="Crop this receipt"
+                                className="absolute bottom-1 right-1 w-6 h-6 bg-black/60 backdrop-blur text-white rounded-md flex items-center justify-center hover:bg-black/75"><Icon name="crop" size={13} /></button>
+                            )}
                             <button type="button" onClick={function () { removeReceipt(idx, rIdx) }}
                               className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center shadow-sm hover:bg-red-600"><Icon name="close" size={12} /></button>
                           </div>
@@ -3638,6 +3666,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           onCapture={function (file) { addReceipts(cameraTarget, [file]); setCameraTarget(null) }}
           onClose={function () { setCameraTarget(null) }}
         />
+      )}
+
+      {cropTarget && (
+        <ImageCropper imageUrl={cropTarget.url} onCancel={function () { setCropTarget(null) }} onDone={applyCropToReceipt} />
       )}
     </div>
   )
