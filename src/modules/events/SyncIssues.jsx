@@ -4,13 +4,14 @@ import { formatDate } from '../../lib/format'
 import Icon from '../../components/ui/Icon'
 import { appConfirm } from '../../components/ui/AppDialog'
 
-// Every contract the stale sweep in sync-events/index.ts has auto-cancelled
-// because LMS's own list endpoint stopped returning it -- a confirmed
-// LMS-side gap (see that file's big comment), not a defect in our sync.
-// This screen is the "make sure it doesn't silently cost a week before
-// anyone notices" fix: every occurrence lands here and triggers a push to
+// Every contract that went missing from LMS's own list this sync, flagged
+// here instead of being auto-hidden -- absence alone can't tell a genuine
+// LMS cancellation apart from LMS's own confirmed listing-gap bug (see
+// sync-events/index.ts's big comment), so nothing on this list has actually
+// been touched yet. Every occurrence triggers a push to
 // lms_sync_notification_subscribers, instead of only a console.log nobody
-// reads.
+// reads -- which is how contract #00773 sat silently cancelled for 6 days
+// under the old all-or-nothing version of this logic.
 function SyncIssues() {
   var [rows, setRows] = useState([])
   var [loading, setLoading] = useState(true)
@@ -36,7 +37,7 @@ function SyncIssues() {
 
   async function resolve(id, action) {
     if (busyId) return
-    if (action === 'dismiss' && !(await appConfirm('Mark this as a genuine LMS cancellation (not a sync gap)? This will NOT restore the contract.'))) return
+    if (action === 'confirm_cancelled' && !(await appConfirm('Confirm this contract is genuinely cancelled in LMS? This will hide it from the app.'))) return
     setBusyId(id)
     var res = await supabase.rpc('fn_resolve_lms_sync_anomaly', { p_id: id, p_action: action })
     setBusyId(null)
@@ -57,10 +58,10 @@ function SyncIssues() {
             )}
           </h2>
           <p className="text-[12.5px] text-gray-500 mt-0.5 max-w-2xl">
-            Contracts auto-cancelled by the sync job because LMS's own list stopped returning them, even though
-            they're still live in LMS. <strong>Restore &amp; exempt</strong> if this looks like that known gap —
-            it brings the contract back and stops future syncs from re-cancelling it. <strong>Dismiss</strong> only
-            if you've checked and the contract really was cancelled in LMS.
+            Contracts that went missing from LMS's own list this sync — still fully visible and working in the app,
+            nothing has been hidden. <strong>Dismiss</strong> if this is a known blip (keeps the contract as-is and
+            stops future alerts for it). <strong>Confirm Cancelled</strong> only once you've checked in LMS and it
+            really is gone — that's the one action that hides it here too.
           </p>
         </div>
         <button type="button" onClick={function () { setShowResolved(!showResolved) }}
@@ -96,9 +97,9 @@ function SyncIssues() {
                     {r.venue_name ? r.venue_name + ' · ' : ''}{r.function_date ? formatDate(r.function_date) : ''}
                   </p>
                   <p className="text-[11px] text-slate-400 mt-1">
-                    Dropped out {formatDate(r.detected_at)}
+                    Missing from LMS's list since {formatDate(r.detected_at)}
                     {resolved && (
-                      <> · {r.resolution === 'restored' ? 'Restored & exempted' : 'Dismissed (confirmed cancelled)'} {formatDate(r.resolved_at)}</>
+                      <> · {r.resolution === 'confirm_cancelled' ? 'Confirmed cancelled — hidden' : 'Dismissed — left as-is, no more alerts'} {formatDate(r.resolved_at)}</>
                     )}
                   </p>
                 </div>
@@ -108,9 +109,9 @@ function SyncIssues() {
                       className="h-8 px-3 rounded-lg text-[12px] font-bold text-slate-600 border border-slate-200 bg-white hover:border-slate-300 disabled:opacity-50">
                       Dismiss
                     </button>
-                    <button type="button" disabled={busyId === r.id} onClick={function () { resolve(r.id, 'restore') }}
-                      className="h-8 px-3 rounded-lg text-[12px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50">
-                      {busyId === r.id ? 'Working...' : 'Restore & exempt'}
+                    <button type="button" disabled={busyId === r.id} onClick={function () { resolve(r.id, 'confirm_cancelled') }}
+                      className="h-8 px-3 rounded-lg text-[12px] font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50">
+                      {busyId === r.id ? 'Working...' : 'Confirm Cancelled'}
                     </button>
                   </div>
                 )}
