@@ -34,6 +34,7 @@ var RateCardEditor = lazyTab(function () { return import('../../modules/quote/Ra
 var Events = lazyTab(function () { return import('../../modules/events/Events') })
 var ContractList = lazyTab(function () { return import('../../modules/events/ContractList') })
 var ExtraPlateCollect = lazyTab(function () { return import('../../modules/events/ExtraPlateCollect') })
+var SyncIssues = lazyTab(function () { return import('../../modules/events/SyncIssues') })
 var AdminItems = lazyTab(function () { return import('../../modules/inventory/AdminItems') })
 var Categories = lazyTab(function () { return import('../../modules/categories/Categories') })
 var Users = lazyTab(function () { return import('../../modules/users/Users') })
@@ -147,6 +148,7 @@ var SUB_TAB_CONFIG = {
     { key: 'events',       label: 'Events',        icon: 'calendar', component: Events,            perm: 'events.list' },
     { key: 'contracts',    label: 'Contracts',     icon: 'fileText', component: ContractList,      perm: 'events.contracts' },
     { key: 'extra_plates', label: 'Extra Plates',  icon: 'utensils', component: ExtraPlateCollect, perm: 'events.extra_plate_collect' },
+    { key: 'sync_issues',  label: 'Sync Issues',   icon: 'refresh',  component: SyncIssues,        perm: 'events.sync_issues' },
   ],
   inventory: [
     // No Pending Review pill: pending inventory is reviewed under Reviews.
@@ -437,6 +439,8 @@ function AdminShell({ profile, onSignOut, initialNotifLink }) {
     } else if (link && link.indexOf('contracts:') === 0) {
       setActive('events'); setSubTab('contracts'); setDeepLinkExpense(null)
       setDeepLinkContractId(link.slice('contracts:'.length))
+    } else if (link === 'events:sync_issues') {
+      setActive('events'); setSubTab('sync_issues'); setDeepLinkExpense(null)
     }
   }
 

@@ -94,6 +94,8 @@ export var PERM_GROUPS = [
       note: 'F&B floor staff collecting extra plate revenue on event day' },
     { key: 'events.contracts',           label: 'Contracts',              scope: 'both',
       note: 'The raw per-contract list (balances, pax, venue rental/decor/entertainment breakdown) — separate from events.list so it can be restricted on its own' },
+    { key: 'events.sync_issues',         label: 'Sync Issues',            scope: 'desktop',
+      note: 'LMS contracts the sync job had to auto-cancel because LMS\'s own list stopped returning them — a known LMS-side gap, not something our sync can fix on its own' },
     { key: 'events.quote',               label: 'Quote Calculator',       scope: 'both' },
     { key: 'events.ratecard',            label: 'Rate Card Editor',       scope: 'both' },
   ]},

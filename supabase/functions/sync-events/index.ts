@@ -308,6 +308,52 @@ async function notifyNewContractsSynced(supa: any, SUPABASE_URL: string, SERVICE
   }
 }
 
+// Logs every stale-sweep cancellation to lms_sync_anomalies (durable history
+// of this specific known LMS-side gap — see the big comment above the sweep
+// itself) and notifies the same subscriber list as new-contract syncs, so an
+// admin finds out within minutes instead of someone noticing by accident
+// days later (as happened with contract #00773 -- cancelled, then missed by
+// every sync for 6 days before anyone looked at it). A contract that's
+// genuinely cancelled in LMS shows up here too; the admin screen is where
+// that gets told apart from an actual LMS listing gap and dismissed.
+async function notifyStaleAnomalies(supa: any, SUPABASE_URL: string, SERVICE_ROLE: string, staleRows: any[]) {
+  var insRes = await supa.from("lms_sync_anomalies").insert(staleRows.map(function (r: any) {
+    return {
+      event_id: r.id, lms_event_id: r.lms_event_id, contract_no: r.contract_no,
+      department: r.department, client_name: r.client_name, venue_name: r.venue_name,
+      function_date: r.function_date,
+    }
+  }))
+  if (insRes.error) { console.log("sync-events: lms_sync_anomalies insert failed: " + insRes.error.message); return }
+
+  var subsRes = await supa.from("lms_sync_notification_subscribers").select("user_id")
+  var userIds = (subsRes.data || []).map(function (r: any) { return r.user_id })
+  if (userIds.length === 0) return
+
+  var title = staleRows.length === 1 ? "A contract dropped out of LMS sync" : staleRows.length + " contracts dropped out of LMS sync"
+  var body = staleRows.length === 1
+    ? (staleRows[0].client_name || staleRows[0].contract_no || "A contract") + " (" + staleRows[0].department + ") — check Events → Sync Issues"
+    : "Check Events → Sync Issues to review them"
+  var link = "events:sync_issues"
+
+  for (var i = 0; i < userIds.length; i++) {
+    var uid = userIds[i]
+    var insNotif = await supa.from("notifications").insert({
+      user_id: uid, type: "lms_sync_anomaly", title: title, body: body, link: link,
+    })
+    if (insNotif.error) { console.log("sync-events: anomaly notification insert failed: " + insNotif.error.message); continue }
+    try {
+      await fetch(SUPABASE_URL + "/functions/v1/send-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + SERVICE_ROLE },
+        body: JSON.stringify({ user_id: uid, title: title, body: body, link: link }),
+      })
+    } catch (pushErr) {
+      console.log("sync-events: anomaly send-push call failed")
+    }
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -368,7 +414,7 @@ serve(async (req) => {
     var syncStartedAt = new Date().toISOString()
 
     async function syncDept(dep: typeof DEPARTMENTS[0]) {
-      var result = { synced: 0, fetched: 0, stale: 0, errors: [] as string[], newRows: [] as any[] }
+      var result = { synced: 0, fetched: 0, stale: 0, errors: [] as string[], newRows: [] as any[], staleAnomalies: [] as any[] }
       var allRows: any[] = []
       var page = 1
 
@@ -490,8 +536,9 @@ serve(async (req) => {
           .lt("synced_at", staleGraceCutoff)
           .is("lms_cancelled_at", null)
           .eq("lms_stale_exempt", false)
-          .select("id")
+          .select("id, lms_event_id, contract_no, department, client_name, venue_name, function_date")
         result.stale = (staleRows || []).length
+        result.staleAnomalies = staleRows || []
         if (result.stale > 0) {
           console.log(dep.name + ": " + result.stale + " rows cancelled in LMS, flagged")
         }
@@ -523,6 +570,19 @@ serve(async (req) => {
         await notifyNewContractsSynced(supabase, supabaseUrl, supabaseKey, allNewRows)
       } catch (notifyErr) {
         console.log("notifyNewContractsSynced failed:", (notifyErr as Error).message)
+      }
+    }
+
+    var allStaleAnomalies: any[] = []
+    for (var dj = 0; dj < deptResults.length; dj++) {
+      var rj = deptResults[dj]
+      if (rj.status === "fulfilled") allStaleAnomalies.push.apply(allStaleAnomalies, rj.value.staleAnomalies)
+    }
+    if (allStaleAnomalies.length > 0) {
+      try {
+        await notifyStaleAnomalies(supabase, supabaseUrl, supabaseKey, allStaleAnomalies)
+      } catch (notifyErr) {
+        console.log("notifyStaleAnomalies failed:", (notifyErr as Error).message)
       }
     }
     return new Response(JSON.stringify({
