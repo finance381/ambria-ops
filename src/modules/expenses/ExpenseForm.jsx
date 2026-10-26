@@ -17,6 +17,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { deptCls, deptInk, deptOrder } from '../../lib/ui'
 import { appConfirm } from '../../components/ui/AppDialog'
+import BottomSheet from '../../components/ui/BottomSheet'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -312,6 +313,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   var expenseTypes = refData.expenseTypes.filter(function (t) { return t.active })
   var expenseSubTypes = refData.expenseSubTypes.filter(function (t) { return t.active })
   var venues = refData.venues.filter(function (v) { return v.active }).slice().sort(byName)
+  var canCreateTentativeEvent = hasPerm(profile?.permsNew, 'events.list.create_tentative')
   var [departments, setDepartments] = useState([])
   var [subDepartments, setSubDepartments] = useState([])
   var [itemCategories, setItemCategories] = useState([])
@@ -335,6 +337,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   var [zoomImg, setZoomImg] = useState('')
   var [cameraTarget, setCameraTarget] = useState(null) // entry idx currently capturing for, or null
   var [cropTarget, setCropTarget] = useState(null) // { idx, rIdx, url } of the receipt being cropped, or null
+  var [tentativeModal, setTentativeModal] = useState(false)
+  var [tentativeGuestName, setTentativeGuestName] = useState('')
+  var [tentativeVenue, setTentativeVenue] = useState('')
+  var [tentativePax, setTentativePax] = useState('')
+  var [tentativeFunctionType, setTentativeFunctionType] = useState('')
+  var [tentativeSaving, setTentativeSaving] = useState(false)
+  var [eventTypeOptions, setEventTypeOptions] = useState([])
   var [itemSearchKey, setItemSearchKey] = useState('')
   var [itemMatches, setItemMatches] = useState([])
   var itemSearchTimer = useRef(null)
@@ -507,6 +516,40 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     else if (!rows.some(function (r) { return String(r.id) === eventId })) setEventId('')
   }
 
+  // Same tentative-event escape hatch WalletManager's Collect flow already
+  // offers when a real LMS contract for a booking hasn't synced in yet —
+  // gated behind the same permission, calling the same RPC, so a tentative
+  // event created from either screen behaves identically and merges into
+  // the real contract the same way once it syncs.
+  function openTentativeModal() {
+    setTentativeGuestName('')
+    setTentativeVenue('')
+    setTentativePax('')
+    setTentativeFunctionType('')
+    setTentativeModal(true)
+    if (eventTypeOptions.length === 0) {
+      supabase.from('quote_config').select('key, value').eq('key', 'event_types').maybeSingle()
+        .then(function (res) { setEventTypeOptions((res.data && res.data.value) || []) })
+    }
+  }
+
+  async function submitTentativeEvent() {
+    if (tentativeSaving || !eventDate || !tentativeGuestName.trim() || !tentativeVenue || !tentativeFunctionType) return
+    setTentativeSaving(true)
+    var { data: newId, error } = await supabase.rpc('fn_create_tentative_event', {
+      p_client_name: tentativeGuestName.trim(),
+      p_venue_id: Number(tentativeVenue),
+      p_function_date: eventDate,
+      p_pax: tentativePax ? Number(tentativePax) : null,
+      p_function_type: tentativeFunctionType,
+    })
+    if (error) { alert('Could not create event: ' + error.message); setTentativeSaving(false); return }
+    setTentativeSaving(false)
+    setTentativeModal(false)
+    await loadEventsByDate(eventDate)
+    if (newId != null) setEventId(String(newId))
+  }
+
   // The date-then-function picker the toggle reveals.
   //
   // A function because it has two homes. On a phone it belongs to the card
@@ -525,6 +568,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         onChange={function (dateStr) { setEventDate(dateStr); loadEventsByDate(dateStr) }} />
       {eventsLoading && <p className="text-[12px] text-slate-500">Loading events...</p>}
       {eventDate && !eventsLoading && events.length === 0 && <p className="text-[12px] text-slate-500">No events on this date</p>}
+      {eventDate && !eventsLoading && canCreateTentativeEvent && (
+        <button type="button" onClick={openTentativeModal}
+          className="w-full py-2 text-[12px] font-semibold text-indigo-600 border border-dashed border-indigo-300 rounded-lg hover:bg-indigo-50 transition-colors">
+          + Booking not in the list? Create tentative event
+        </button>
+      )}
       {/* A card list, not a <select>: one function needs THREE department
           colours on the same row, and a native option can only carry one
           (the iOS wheel ignores even that). Real markup gets the chips —
@@ -807,6 +856,66 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         })
       })
     })
+  }
+
+  function renderTentativeModal() {
+    if (!tentativeModal) return null
+    var canSubmitTentative = !tentativeSaving && tentativeGuestName.trim() && tentativeVenue && tentativeFunctionType
+    return (
+      <BottomSheet open={true} onClose={function () { setTentativeModal(false) }} title="Create Tentative Event">
+        <div className="space-y-4">
+          <p className="text-xs text-gray-500">
+            For a booking that hasn't been contracted in LMS yet. It'll get its own ledger right away —
+            once the real LMS event syncs in, an admin can merge this into it.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Guest Name</label>
+            <input type="text" value={tentativeGuestName}
+              onChange={function (e) { setTentativeGuestName(e.target.value) }}
+              placeholder="e.g. Himanshu Vats"
+              className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
+            <select value={tentativeVenue} onChange={function (e) { setTentativeVenue(e.target.value) }}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }}>
+              <option value="">Select venue...</option>
+              {venues.map(function (v) { return <option key={v.id} value={v.id}>{(v.code ? v.code + ' — ' : '') + v.name}</option> })}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Pax</label>
+              <input type="number" min="0" inputMode="numeric" value={tentativePax}
+                onChange={function (e) { setTentativePax(e.target.value) }}
+                placeholder="0"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                style={{ fontSize: '16px' }} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Function Type</label>
+              <select value={tentativeFunctionType} onChange={function (e) { setTentativeFunctionType(e.target.value) }}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                style={{ fontSize: '16px' }}>
+                <option value="">Select...</option>
+                {eventTypeOptions.map(function (t, i) { return <option key={t.label + i} value={t.label}>{(t.icon ? t.icon + ' ' : '') + t.label}</option> })}
+              </select>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400">Function date: {formatDate(eventDate)}</p>
+          <div className="flex gap-3 pt-2">
+            <button onClick={function () { setTentativeModal(false) }}
+              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
+            <button onClick={submitTentativeEvent} disabled={!canSubmitTentative}
+              className="flex-1 py-3 text-sm text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors font-semibold">
+              {tentativeSaving ? 'Creating...' : 'Create Event'}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
+    )
   }
 
   var mediaRecorders = useRef({})
@@ -3671,6 +3780,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       {cropTarget && (
         <ImageCropper imageUrl={cropTarget.url} onCancel={function () { setCropTarget(null) }} onDone={applyCropToReceipt} />
       )}
+
+      {renderTentativeModal()}
     </div>
   )
 }
