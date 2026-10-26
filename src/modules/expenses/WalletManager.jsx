@@ -505,6 +505,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [tentativeModal, setTentativeModal] = useState(false)
   var [tentativeGuestName, setTentativeGuestName] = useState('')
   var [tentativeVenue, setTentativeVenue] = useState('')
+  var [tentativeVenueOther, setTentativeVenueOther] = useState('')
   var [tentativePax, setTentativePax] = useState('')
   var [tentativeFunctionType, setTentativeFunctionType] = useState('')
   var [tentativeSaving, setTentativeSaving] = useState(false)
@@ -1368,6 +1369,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   function openTentativeModal() {
     setTentativeGuestName('')
     setTentativeVenue('')
+    setTentativeVenueOther('')
     setTentativePax('')
     setTentativeFunctionType('')
     setTentativeModal(true)
@@ -1378,14 +1380,18 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   }
 
   async function submitTentativeEvent() {
-    if (tentativeSaving || !collectDate || !tentativeGuestName.trim() || !tentativeVenue || !tentativeFunctionType) return
+    var venueIsOther = tentativeVenue === '__other__'
+    if (tentativeSaving || !collectDate || !tentativeGuestName.trim() || !tentativeFunctionType) return
+    if (!venueIsOther && !tentativeVenue) return
+    if (venueIsOther && !tentativeVenueOther.trim()) return
     setTentativeSaving(true)
     var { data: newId, error } = await supabase.rpc('fn_create_tentative_event', {
       p_client_name: tentativeGuestName.trim(),
-      p_venue_id: Number(tentativeVenue),
+      p_venue_id: venueIsOther ? null : Number(tentativeVenue),
       p_function_date: collectDate,
       p_pax: tentativePax ? Number(tentativePax) : null,
       p_function_type: tentativeFunctionType,
+      p_venue_name_other: venueIsOther ? tentativeVenueOther.trim() : null,
     })
     if (error) { alert('Could not create event: ' + error.message); setTentativeSaving(false); return }
     setTentativeSaving(false)
@@ -2906,7 +2912,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
   function renderTentativeModal() {
     if (!tentativeModal) return null
-    var canSubmitTentative = !tentativeSaving && tentativeGuestName.trim() && tentativeVenue && tentativeFunctionType
+    var tentativeVenueIsOther = tentativeVenue === '__other__'
+    var canSubmitTentative = !tentativeSaving && tentativeGuestName.trim() && tentativeFunctionType &&
+      (tentativeVenueIsOther ? tentativeVenueOther.trim() : tentativeVenue)
     return (
       <BottomSheet open={true} onClose={function () { setTentativeModal(false) }} title="Create Tentative Event">
         <div className="space-y-4">
@@ -2929,7 +2937,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               style={{ fontSize: '16px' }}>
               <option value="">Select venue...</option>
               {activeVenues.map(function (v) { return <option key={v.id} value={v.id}>{(v.code ? v.code + ' — ' : '') + v.name}</option> })}
+              <option value="__other__">Others</option>
             </select>
+            {tentativeVenueIsOther && (
+              <input type="text" value={tentativeVenueOther}
+                onChange={function (e) { setTentativeVenueOther(e.target.value) }}
+                placeholder="Enter venue name"
+                className="w-full mt-2 px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                style={{ fontSize: '16px' }} />
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
