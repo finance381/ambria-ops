@@ -435,7 +435,7 @@ function ContractList({ profile, deepLinkContractId }) {
                     {(c.venue_name || uniqueLocations.length > 0) && (
                       <span className="inline-flex items-center gap-1">
                         <Icon name="mapPin" size={12} className="text-slate-400" />
-                        {[c.venue_name, uniqueLocations.length === 1 ? uniqueLocations[0] : (uniqueLocations.length > 1 ? uniqueLocations.length + ' sub-venues' : null)].filter(Boolean).join(' · ')}
+                        {[c.venue_name ? (venueMap[c.venue_name] ? (venueMap[c.venue_name] + ' — ' + c.venue_name) : c.venue_name) : null, uniqueLocations.length === 1 ? uniqueLocations[0] : (uniqueLocations.length > 1 ? uniqueLocations.length + ' sub-venues' : null)].filter(Boolean).join(' · ')}
                       </span>
                     )}
                     {!multi && c.session && <span className="inline-flex items-center gap-1"><Icon name="clock" size={12} className="text-slate-400" />{c.session}</span>}
@@ -467,7 +467,7 @@ function ContractList({ profile, deepLinkContractId }) {
                   )}
                 </div>
                 <div className="hidden sm:block min-w-0">
-                  <span className="block text-[13px] text-slate-600 truncate">{c.venue_name || '—'}</span>
+                  <span className="block text-[13px] text-slate-600 truncate">{c.venue_name ? (venueMap[c.venue_name] ? (venueMap[c.venue_name] + ' — ' + c.venue_name) : c.venue_name) : '—'}</span>
                   {uniqueLocations.length === 1 && <span className="block text-[11px] text-slate-400 truncate">{uniqueLocations[0]}</span>}
                   {uniqueLocations.length > 1 && <span className="block text-[11px] text-slate-400 truncate">{uniqueLocations.length} sub-venues</span>}
                   {!multi && c.session && (
@@ -518,7 +518,8 @@ function ContractList({ profile, deepLinkContractId }) {
                   {multi ? (
                     <div className="sm:col-span-full mt-2 pt-2 border-t border-slate-100 space-y-1">
                       {rows.map(function (r) {
-                        var rVenueLine = (r.venue_name !== c.venue_name || r.location) ? [r.venue_name, r.location].filter(Boolean).join(' · ') : null
+                        var rVenueName = r.venue_name ? (venueMap[r.venue_name] ? (venueMap[r.venue_name] + ' — ' + r.venue_name) : r.venue_name) : null
+                        var rVenueLine = (r.venue_name !== c.venue_name || r.location) ? [rVenueName, r.location].filter(Boolean).join(' · ') : null
                         return (
                           <div key={r.id} role="button" tabIndex={0}
                             onClick={function (ev) { ev.stopPropagation(); setSelected(r) }}
@@ -644,7 +645,7 @@ function ContractList({ profile, deepLinkContractId }) {
                 ['Function date', selected.function_date ? formatDate(selected.function_date) : null],
                 ['Venue type', venueTypeLabel(selected.contract_type)],
                 ['Function type', selected.function_type],
-                ['Venue', selected.venue_name],
+                ['Venue', selected.venue_name ? (venueMap[selected.venue_name] ? (venueMap[selected.venue_name] + ' — ' + selected.venue_name) : selected.venue_name) : null],
                 ['Location', selected.location],
                 ['Address', selected.address],
                 ['Session', selected.session],

@@ -495,7 +495,7 @@ function Events({ profile }) {
 
               <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-slate-500">
                 <span className="inline-flex items-center gap-1"><Icon name="calendar" size={13} className="text-slate-400" />{dateRange}</span>
-                {group.venues.map(function (v) { return <span key={v} className="inline-flex items-center gap-1"><Icon name="building" size={13} className="text-slate-400" />{v}</span> })}
+                {group.venues.map(function (v) { return <span key={v} className="inline-flex items-center gap-1"><Icon name="building" size={13} className="text-slate-400" />{venueMap[v] ? (venueMap[v] + ' — ' + v) : v}</span> })}
                 {showLocation && <span className="inline-flex items-center gap-1"><Icon name="mapPin" size={13} className="text-slate-400" />{group.location}</span>}
               </p>
 
@@ -633,7 +633,7 @@ function Events({ profile }) {
                           </div>
                           <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-gray-500 mt-1">
                             <span>{formatDate(f.function_date || f.contract_date)}</span>
-                            {f.venue_name && <span>· {f.venue_name}</span>}
+                            {f.venue_name && <span>· {venueMap[f.venue_name] ? (venueMap[f.venue_name] + ' — ' + f.venue_name) : f.venue_name}</span>}
                             {f.session && <span>· {f.session}</span>}
                           </div>
                         </div>
@@ -688,7 +688,7 @@ function Events({ profile }) {
                 {selectedFunction.function_type && <span><strong>Function:</strong> {selectedFunction.function_type}</span>}
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
-                {selectedFunction.venue_name && <span><strong>Venue:</strong> {selectedFunction.venue_name}</span>}
+                {selectedFunction.venue_name && <span><strong>Venue:</strong> {venueMap[selectedFunction.venue_name] ? (venueMap[selectedFunction.venue_name] + ' — ' + selectedFunction.venue_name) : selectedFunction.venue_name}</span>}
                 {selectedFunction.location && <span><strong>Location:</strong> {selectedFunction.location}</span>}
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
