@@ -294,6 +294,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   var [isFunction, setIsFunction] = useState(!!(editExp && editExp.event_id))
   var [eventDate, setEventDate] = useState(editExp && editExp.event_id ? (editExp.expense_date || '') : '')
   var [eventId, setEventId] = useState(editExp && editExp.event_id ? String(editExp.event_id) : '')
+  // Other functions in the same contract this entry also covers — tags
+  // only, never a split of the amount (see FunctionPickerGrid).
+  var [extraEventIds, setExtraEventIds] = useState((editExp && editExp.extra_event_ids || []).map(String))
   var [events, setEvents] = useState([])
   var [allEventRows, setAllEventRows] = useState([])
   var [eventsLoading, setEventsLoading] = useState(false)
@@ -469,7 +472,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   }
 
   async function loadEventsByDate(dateStr) {
-    if (!dateStr) { setEvents([]); setAllEventRows([]); setEventId(''); return }
+    if (!dateStr) { setEvents([]); setAllEventRows([]); setEventId(''); setExtraEventIds([]); return }
     setEventsLoading(true)
     var pool = await loadFunctionPickerPool(dateStr)
     var rows = pool.dateRows
@@ -477,7 +480,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     setAllEventRows(pool.allRows)
     setEventsLoading(false)
     if (rows.length === 1) setEventId(String(rows[0].id))
-    else if (!pool.allRows.some(function (r) { return String(r.id) === eventId })) setEventId('')
+    else if (!pool.allRows.some(function (r) { return String(r.id) === eventId })) { setEventId(''); setExtraEventIds([]) }
   }
 
   // Same tentative-event escape hatch WalletManager's Collect flow already
@@ -551,7 +554,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           days) reads as one tile; opening it lists its functions with their
           own dates so the pick into a specific one stays deliberate. */}
       {allEventRows.length > 0 && (
-        <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={eventId} onPick={setEventId} wide={wide} />
+        <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={eventId} onPick={setEventId}
+          extraEventIds={extraEventIds} onExtraChange={setExtraEventIds} wide={wide} />
       )}
     </div>
     )
@@ -615,7 +619,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
 
   function toggleFunction(val) {
     setIsFunction(val)
-    if (!val) { setEventId(''); setEventDate(''); setEvents([]) }
+    if (!val) { setEventId(''); setExtraEventIds([]); setEventDate(''); setEvents([]) }
   }
 
   // ── Lookup data loader ──
@@ -1720,6 +1724,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           description: e0.description.trim(),
           expense_date: e0.expenseDate,
           event_id: eventId ? Number(eventId) : null,
+          extra_event_ids: extraEventIds.length > 0 ? extraEventIds.map(Number) : null,
           metadata: editMeta,
           vendor_name: editVendorLegacyName,
           travel_from: e0.fieldValues.travel_from || null,
@@ -1941,6 +1946,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
             expense_date: e.expenseDate,
             status: 'recorded',
             event_id: eventId ? Number(eventId) : null,
+            extra_event_ids: extraEventIds.length > 0 ? extraEventIds.map(Number) : null,
             metadata: meta,
             vendor_name: vendorLegacyName,
             travel_from: e.fieldValues.travel_from || null,

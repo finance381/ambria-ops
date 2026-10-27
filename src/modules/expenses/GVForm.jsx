@@ -73,6 +73,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
   var [isFunction, setIsFunction] = useState(!!exp.event_id)
   var [eventDate, setEventDate] = useState(exp.event_id ? (exp.expense_date || '') : '')
   var [eventId, setEventId] = useState(exp.event_id ? String(exp.event_id) : '')
+  var [extraEventIds, setExtraEventIds] = useState((exp.extra_event_ids || []).map(String))
   var [events, setEvents] = useState([])
   var [allEventRows, setAllEventRows] = useState([])
   var [eventsLoading, setEventsLoading] = useState(false)
@@ -189,7 +190,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
   }, [])
 
   async function loadEventsByDate(dateStr) {
-    if (!dateStr) { setEvents([]); setAllEventRows([]); setEventId(''); return }
+    if (!dateStr) { setEvents([]); setAllEventRows([]); setEventId(''); setExtraEventIds([]); return }
     setEventsLoading(true)
     var pool = await loadFunctionPickerPool(dateStr)
     var rows = pool.dateRows
@@ -197,12 +198,12 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
     setAllEventRows(pool.allRows)
     setEventsLoading(false)
     if (rows.length === 1) setEventId(String(rows[0].id))
-    else if (!pool.allRows.some(function (r) { return String(r.id) === eventId })) setEventId('')
+    else if (!pool.allRows.some(function (r) { return String(r.id) === eventId })) { setEventId(''); setExtraEventIds([]) }
   }
 
   function toggleFunction(val) {
     setIsFunction(val)
-    if (!val) { setEventId(''); setEventDate(''); setEvents([]); setAllEventRows([]) }
+    if (!val) { setEventId(''); setExtraEventIds([]); setEventDate(''); setEvents([]); setAllEventRows([]) }
   }
 
   function renderFunctionPicker() {
@@ -213,7 +214,8 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
         {eventsLoading && <p className="text-[12px] text-slate-500">Loading events...</p>}
         {eventDate && !eventsLoading && events.length === 0 && <p className="text-[12px] text-slate-500">No events on this date</p>}
         {allEventRows.length > 0 && (
-          <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={eventId} onPick={setEventId} />
+          <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={eventId} onPick={setEventId}
+            extraEventIds={extraEventIds} onExtraChange={setExtraEventIds} />
         )}
       </div>
     )
@@ -375,6 +377,16 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
       setError(rpcErr.message || 'Failed to raise JV')
       setSaving(false)
       return
+    }
+
+    // extra_event_ids is a plain tag, not one of the audited fields
+    // fn_create_gv controls — same direct-update precedent as the
+    // item_receipts append below — so it only needs updating here when the
+    // function pick itself changed.
+    if (eventChanged) {
+      try {
+        await supabase.from('expenses').update({ extra_event_ids: extraEventIds.length > 0 ? extraEventIds.map(Number) : null }).eq('id', exp.id)
+      } catch (_) {}
     }
 
     // Same item_receipts shape and item_receipt_status ExpenseForm.jsx writes

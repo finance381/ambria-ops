@@ -112,50 +112,93 @@ function ContractTile(props) {
   )
 }
 
-// buckets: output of buildContractBuckets(allRows). eventId/onPick behave
-// exactly as the old single-function picker did — picking a tile still only
-// ever commits one function's anchor id, same write shape as before. A
-// multi-function contract is a browsing step in front of that choice, not a
-// new kind of selection.
+// buckets: output of buildContractBuckets(allRows). eventId/onPick carry the
+// single anchor every write path already expects — any one function in a
+// contract rolls up to the same balance (fn_event_group_balance), so which
+// one anchors it never matters financially. extraEventIds/onExtraChange are
+// purely a traceability tag: more functions in the SAME open contract this
+// entry also covers (e.g. a decor cost that touched both the Mehndi and the
+// Reception setups) — optional, and only offered once a contract is open.
 function FunctionPickerGrid(props) {
   var buckets = props.buckets || []
   var eventId = props.eventId
   var onPick = props.onPick
+  var extraEventIds = props.extraEventIds || []
+  var onExtraChange = props.onExtraChange || function () {}
   var wide = props.wide
   var [openContractKey, setOpenContractKey] = useState(null)
   // Once a function is chosen the other cards have done their job. Keeping
   // them on screen pushed the amount, category and receipt fields a full
-  // phone-height down the form; the choice collapses to the one card that
-  // matters, with a way back beside it. Re-pressing that way back is the
-  // only thing that reopens browsing.
+  // phone-height down the form; the choice collapses to the picked cards,
+  // with a way back beside them. Re-pressing that way back is the only
+  // thing that reopens browsing.
   var [reopening, setReopening] = useState(false)
 
-  function pick(id) {
+  var selectedIds = eventId ? [eventId].concat(extraEventIds) : extraEventIds.slice()
+
+  function findFunc(id) {
+    var found = null
+    buckets.forEach(function (b) {
+      b.functions.forEach(function (f) {
+        if (f.contracts.some(function (c) { return String(c.id) === id })) found = f
+      })
+    })
+    return found
+  }
+
+  // Add or remove one function from the pick, inside whichever contract is
+  // open. The first one picked becomes the anchor (event_id); any picked
+  // after it are tags only (extraEventIds). Removing the anchor promotes
+  // the next tag to anchor, so there's never a tagged function floating
+  // without one.
+  function toggle(id) {
+    if (selectedIds.indexOf(id) !== -1) {
+      if (id === eventId) {
+        var rest = extraEventIds.slice()
+        var promoted = rest.shift()
+        onPick(promoted || '')
+        onExtraChange(rest)
+      } else {
+        onExtraChange(extraEventIds.filter(function (x) { return x !== id }))
+      }
+    } else if (!eventId) {
+      onPick(id)
+    } else {
+      onExtraChange(extraEventIds.concat([id]))
+    }
+  }
+
+  // A standalone function (no contract to tag siblings from) is still a
+  // plain single pick — choosing a different one replaces it outright.
+  function pickStandalone(id) {
     onPick(id)
+    onExtraChange([])
     setOpenContractKey(null)
     setReopening(false)
   }
 
-  var pickedFunc = null
-  buckets.forEach(function (b) {
-    b.functions.forEach(function (f) {
-      if (f.contracts.some(function (c) { return String(c.id) === eventId })) pickedFunc = f
-    })
-  })
+  var selectedFuncs = selectedIds.map(findFunc).filter(Boolean)
 
-  if (pickedFunc && !reopening) {
+  if (selectedFuncs.length > 0 && !reopening) {
     return (
       <div className="space-y-2">
         <div className={gridCls(wide)}>
-          {/* Pressing the picked tile again deselects it — the one way back
-              to no selection at all (not just a different one), which a
-              write-your-own-detail fallback field needs to be able to show. */}
-          <FunctionTile group={pickedFunc} selected={true} showDate={true} onClick={function () { pick('') }} />
+          {selectedFuncs.map(function (f) {
+            var id = String(f.contracts[0].id)
+            return (
+              /* Pressing a picked tile again removes it — the one way back
+                 to no selection at all (not just a different one), which a
+                 write-your-own-detail fallback field needs to be able to
+                 show. */
+              <FunctionTile key={f.key} group={f} selected={true} showDate={true}
+                onClick={function () { toggle(id) }} />
+            )
+          })}
         </div>
         {buckets.length > 1 && (
           <button type="button" onClick={function () { setReopening(true) }}
             className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 px-1">
-            Change function
+            {selectedFuncs.length > 1 ? 'Add or change functions' : 'Change function'}
           </button>
         )}
       </div>
@@ -165,9 +208,9 @@ function FunctionPickerGrid(props) {
   // Editing something already anchored inside a multi-function contract
   // should land straight on that contract's function list, not the
   // top-level tiles — same reason the single-function case lands straight
-  // on its own tile above.
+  // on its own tile(s) above.
   var activeBucket = buckets.find(function (b) {
-    return b.isContract && b.functions.some(function (f) { return f === pickedFunc })
+    return b.isContract && b.functions.some(function (f) { return selectedFuncs.indexOf(f) !== -1 })
   })
   var openKey = openContractKey || (activeBucket ? activeBucket.key : null)
   var openBucket = openKey ? buckets.find(function (b) { return b.key === openKey }) : null
@@ -175,16 +218,26 @@ function FunctionPickerGrid(props) {
   if (openBucket) {
     return (
       <div className="space-y-2">
-        <button type="button" onClick={function () { setOpenContractKey(null) }}
-          className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 px-1">
-          ← All functions for {openBucket.clientName}
-        </button>
+        <div className="flex items-center justify-between gap-2">
+          <button type="button" onClick={function () { setOpenContractKey(null); setReopening(false) }}
+            className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 px-1">
+            ← All functions for {openBucket.clientName}
+          </button>
+          {selectedFuncs.length > 0 && (
+            <button type="button" onClick={function () { setReopening(false) }}
+              className="text-[11px] font-bold text-emerald-600 hover:text-emerald-800 px-1">
+              Done ({selectedFuncs.length} picked)
+            </button>
+          )}
+        </div>
+        <p className="text-[10.5px] text-slate-500 px-1">Pick every function this applies to.</p>
         <div className={gridCls(wide)}>
           {openBucket.functions.map(function (f) {
-            var sel = f.contracts.some(function (c) { return String(c.id) === eventId })
+            var id = String(f.contracts[0].id)
+            var sel = selectedIds.indexOf(id) !== -1
             return (
               <FunctionTile key={f.key} group={f} selected={sel} showDate={true}
-                onClick={function () { pick(String(f.contracts[0].id)) }} />
+                onClick={function () { toggle(id) }} />
             )
           })}
         </div>
@@ -199,10 +252,11 @@ function FunctionPickerGrid(props) {
           return <ContractTile key={b.key} bucket={b} onClick={function () { setOpenContractKey(b.key) }} />
         }
         var f = b.functions[0]
-        var sel = f.contracts.some(function (c) { return String(c.id) === eventId })
+        var id = String(f.contracts[0].id)
+        var sel = id === eventId
         return (
           <FunctionTile key={f.key} group={f} selected={sel}
-            onClick={function () { pick(String(f.contracts[0].id)) }} />
+            onClick={function () { pickStandalone(id) }} />
         )
       })}
     </div>
