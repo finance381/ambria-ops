@@ -82,6 +82,7 @@ function Reviews({ profile, inAdmin }) {
   var [subVenues, setSubVenues] = useState([])
   var [subDepartments, setSubDepartments] = useState([])
   var [subDeptFilter, setSubDeptFilter] = useState('')
+  var [invFiltersOpen, setInvFiltersOpen] = useState(false)
   useEffect(function () {
     Promise.all([
       supabase.from('categories').select('id, name, sub_department_id').order('name'),
@@ -270,7 +271,8 @@ function Reviews({ profile, inAdmin }) {
       </div>
     )
   }
-  var anyInventoryFilterActive = !!(queueApi.categoryFilter || queueApi.subCategoryFilter || queueApi.venueFilter || queueApi.subVenueFilter || subDeptFilter || ageFilter || (showStatusFilter && queueApi.statusFilter !== 'pending'))
+  var activeInventoryFilterCount = [queueApi.categoryFilter, queueApi.subCategoryFilter, queueApi.venueFilter, queueApi.subVenueFilter, subDeptFilter, ageFilter, (showStatusFilter && queueApi.statusFilter !== 'pending') ? queueApi.statusFilter : ''].filter(Boolean).length
+  var anyInventoryFilterActive = activeInventoryFilterCount > 0
   function resetInventoryFilters() {
     queueApi.setCategoryFilter(''); queueApi.setSubCategoryFilter('')
     queueApi.setVenueFilter(''); queueApi.setSubVenueFilter('')
@@ -284,18 +286,31 @@ function Reviews({ profile, inAdmin }) {
         <input type="text" value={queueApi.search} onChange={function (ev) { queueApi.setSearch(ev.target.value) }}
           placeholder="Search item, submitter..."
           className="min-w-[220px] flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white" style={{ fontSize: '16px' }} />
+        <button type="button" onClick={function () { setInvFiltersOpen(!invFiltersOpen) }}
+          className={"inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg text-[13px] font-semibold border transition-colors " + (anyInventoryFilterActive ? "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50")}>
+          <Icon name="filter" size={14} />
+          Filters
+          {anyInventoryFilterActive && <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-600 text-white text-[11px] font-bold">{activeInventoryFilterCount}</span>}
+        </button>
         <label className="flex items-center gap-1.5 text-xs text-gray-600">
           <input type="checkbox" checked={queueApi.myTagsOnly} onChange={function (ev) { queueApi.setMyTagsOnly(ev.target.checked) }} />
           My tags only
         </label>
       </div>
+      {invFiltersOpen && (
       <div className="p-4 rounded-[20px] bg-white border border-gray-200 shadow-sm">
         <div className="flex items-center justify-between gap-3 mb-3.5">
           <p className="text-[16px] font-extrabold text-slate-900">Filter items</p>
-          <button type="button" onClick={resetInventoryFilters} disabled={!anyInventoryFilterActive}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-[13px] font-semibold text-red-600 hover:bg-red-50 disabled:text-slate-400 disabled:hover:bg-transparent disabled:cursor-default transition-colors">
-            <Icon name="refresh" size={13} />Reset all
-          </button>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={resetInventoryFilters} disabled={!anyInventoryFilterActive}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-[13px] font-semibold text-red-600 hover:bg-red-50 disabled:text-slate-400 disabled:hover:bg-transparent disabled:cursor-default transition-colors">
+              <Icon name="refresh" size={13} />Reset all
+            </button>
+            <button type="button" onClick={function () { setInvFiltersOpen(false) }}
+              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+              <Icon name="close" size={15} />
+            </button>
+          </div>
         </div>
         <div className="grid gap-3 md:grid-cols-3">
           {invFilterGroup('tag', 'Category', (
@@ -369,6 +384,7 @@ function Reviews({ profile, inAdmin }) {
           ))}
         </div>
       </div>
+      )}
     </div>
   )
 
