@@ -13,6 +13,7 @@ import { scrollToTopOf } from '../../lib/scrollToTop'
 import { useVoice } from '../../hooks/useVoice'
 import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
+import { loadFunctionPickerPool, buildDeptContractBuckets, computeContractBalance } from '../../lib/functionPicker'
 // Imported rather than read out of public/, for the same reasons PageBackdrop
 // gives: the base path is handled for us, and the content hash means a new
 // backdrop is never served from a stale cache. It was a 1.05MB PNG; as WebP at
@@ -471,7 +472,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [collectModal, setCollectModal] = useState(false)
   var [collectDate, setCollectDate] = useState('')
   var [collectEvents, setCollectEvents] = useState([])
+  var [collectAllEventRows, setCollectAllEventRows] = useState([])
   var [collectFunctionsLoading, setCollectFunctionsLoading] = useState(false)
+  // A contract running more than one date (see buildDeptContractBuckets)
+  // shows as one summary card; this is which one, if any, is opened to its
+  // date list.
+  var [collectOpenContractKey, setCollectOpenContractKey] = useState(null)
   var [collectEventId, setCollectEventId] = useState('')
   // Picking the event opens the balance and the rest of the form below the
   // fold of the sheet, so on a phone nothing appeared to happen. Run off the
@@ -1323,17 +1329,28 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setCollectDate(dateStr)
     setCollectEventId('')
     setCollectBalance(null)
-    if (!dateStr) { setCollectEvents([]); return }
+    setCollectOpenContractKey(null)
+    if (!dateStr) { setCollectEvents([]); setCollectAllEventRows([]); return }
     setCollectFunctionsLoading(true)
-    var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, location, client_name, session, contact_person, contact_number, secondary_contact, created_user_name, department, contract_no, is_tentative')
-      .eq('function_date', dateStr)
-      .is('merged_into_id', null)
-      .is('lms_cancelled_at', null)
-      .order('event_name')
-    setCollectEvents(data || [])
+    // contact_person/contact_number/secondary_contact/is_tentative aren't
+    // part of the shared picker pool's columns (every other "For a
+    // function?" picker has no use for them) — fetched here too, keyed by
+    // id, and merged onto the pooled rows below.
+    var pool = await loadFunctionPickerPool(dateStr)
+    var { data: contactData } = pool.allRows.length > 0
+      ? await supabase.from('events')
+          .select('id, contact_person, contact_number, secondary_contact, is_tentative')
+          .in('id', pool.allRows.map(function (r) { return r.id }))
+      : { data: [] }
+    var contactById = {}
+    ;(contactData || []).forEach(function (r) { contactById[r.id] = r })
+    function withContact(r) { return Object.assign({}, r, contactById[r.id] || {}) }
+    var dateRows = pool.dateRows.map(withContact)
+    var allRows = pool.allRows.map(withContact)
+    setCollectEvents(dateRows)
+    setCollectAllEventRows(allRows)
     setCollectFunctionsLoading(false)
-    if (data && data.length === 1) { selectCollectFunction(String(data[0].id)) }
+    if (dateRows.length === 1) { selectCollectFunction(String(dateRows[0].id)) }
   }
 
   async function selectCollectFunction(fid) {
@@ -1343,18 +1360,36 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setLmsPaymentsError('')
     setLmsPaymentsOpen(false)
     if (!fid) return
+    var evt = collectAllEventRows.find(function (e) { return String(e.id) === String(fid) })
+    // Collecting against a multi-function contract (same department, pooled
+    // across dates — see buildDeptContractBuckets) has to show the whole
+    // contract's pending balance, not just this one function's: a collector
+    // working off this screen only ever sees the figure shown here, and a
+    // per-function balance would quietly under- or over-collect against
+    // what the guest actually still owes across the whole booking.
+    var bucket = buildDeptContractBuckets(collectAllEventRows).find(function (b) {
+      return b.functions.some(function (f) { return String(f.id) === String(fid) })
+    })
+    if (bucket && bucket.isContract) {
+      setCollectBalanceLoading(true)
+      var lmsRows = evt && evt.contract_no ? await loadLmsPayments(evt.contract_no, evt.department) : []
+      var result = await computeContractBalance(bucket.functions, lmsRows)
+      setCollectBalance(result.balance)
+      setCollectBalanceLoading(false)
+      return
+    }
     setCollectBalanceLoading(true)
     var { data, error } = await supabase.rpc('fn_event_balance', { p_event_id: Number(fid) })
     if (!error && data && data.length > 0) { setCollectBalance(data[0]) }
     setCollectBalanceLoading(false)
 
-    var evt = collectEvents.find(function (e) { return String(e.id) === String(fid) })
     if (evt && evt.contract_no) loadLmsPayments(evt.contract_no, evt.department)
   }
 
   async function loadLmsPayments(contractNo, department) {
     setLmsPaymentsLoading(true)
     setLmsPaymentsError('')
+    var rows = []
     try {
       var sessionRes = await supabase.auth.getSession()
       var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
@@ -1363,11 +1398,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         headers: token ? { Authorization: 'Bearer ' + token } : {},
       })
       if (res.error) throw new Error(await edgeFnErrorMessage(res.error))
-      setLmsPayments((res.data && res.data.data) || [])
+      rows = (res.data && res.data.data) || []
+      setLmsPayments(rows)
     } catch (err) {
       setLmsPaymentsError(err.message || 'Could not load LMS payment history')
     }
     setLmsPaymentsLoading(false)
+    return rows
   }
 
   function openTentativeModal() {
@@ -2046,7 +2083,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       var { error: upErr } = await supabase.storage.from('receipts').upload(imagePath, cF, { upsert: true })
       if (upErr) { alert('Receipt upload failed: ' + upErr.message); setCollectSaving(false); return }
     }
-    var evtName = (collectEvents.find(function (e) { return String(e.id) === collectEventId }) || {}).event_name || ''
+    var evtName = (collectAllEventRows.find(function (e) { return String(e.id) === collectEventId }) || {}).event_name || ''
     var desc = (collectDesc.trim() || 'Collection') + ' — ' + evtName
     var { data, error } = await supabase.rpc('fn_wallet_collect', {
       p_event_id: Number(collectEventId),
@@ -2579,61 +2616,100 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   + Booking not in the list? Create tentative event
                 </button>
               )}
-              {collectEvents.length > 0 && (
-                <div className="space-y-1.5">
-                  {collectEvents.map(function (ev) {
-                    var selected = String(ev.id) === collectEventId
-                    return (
-                      <div key={ev.id} role="button" tabIndex={0}
-                        onClick={function () { selectCollectFunction(String(ev.id)) }}
-                        onKeyDown={function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectCollectFunction(String(ev.id)) } }}
-                        className={"w-full text-left px-3 py-2.5 rounded-xl border transition-colors cursor-pointer " +
-                          (selected ? "border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50" : "border-slate-200 hover:border-slate-300 bg-white")}>
-                        <div className={"text-[13px] font-bold " + (selected ? "text-indigo-900" : "text-slate-900")}>
-                          {ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '')}
-                        </div>
-                        <div className={"text-[12px] " + (selected ? "text-indigo-700" : "text-slate-500")}>
-                          {[ev.venue_name, ev.location].filter(Boolean).join(' · ')}{ev.session ? ' · ' + ev.session : ''}
-                        </div>
-                        {(ev.department || ev.contract_no) && (
-                          <div className="flex items-center gap-1.5 mt-1">
-                            <DeptChip name={ev.department} />
-                            {ev.contract_no && (
-                              <span className="text-[10px] font-mono text-gray-500">#{ev.contract_no}</span>
-                            )}
-                          </div>
-                        )}
-                        {ev.created_user_name && (
-                          <div className={"text-[11px] mt-0.5 " + (selected ? "text-blue-600" : "text-gray-400")}>
-                            Contract by {ev.created_user_name}
-                          </div>
-                        )}
-                        {(ev.contact_number || ev.secondary_contact) && (
-                          <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs">
-                            {ev.contact_person && <span className="text-gray-500">{ev.contact_person}:</span>}
-                            {ev.contact_number && (
-                              <a href={"tel:" + String(ev.contact_number).replace(/[^0-9+]/g, '')}
-                                onClick={function (e) { e.stopPropagation() }}
-                                className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium">
-                                <Icon name="phone" size={13} className="shrink-0" />
-                                {ev.contact_number}
-                              </a>
-                            )}
-                            {ev.secondary_contact && (
-                              <a href={"tel:" + String(ev.secondary_contact).replace(/[^0-9+]/g, '')}
-                                onClick={function (e) { e.stopPropagation() }}
-                                className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800">
-                                <Icon name="phone" size={13} className="shrink-0" />
-                                {ev.secondary_contact}
-                              </a>
-                            )}
-                          </div>
-                        )}
+              {collectAllEventRows.length > 0 && (function () {
+                var buckets = buildDeptContractBuckets(collectAllEventRows)
+                function renderFunctionCard(ev, showDate) {
+                  var selected = String(ev.id) === collectEventId
+                  return (
+                    <div key={ev.id} role="button" tabIndex={0}
+                      onClick={function () { selectCollectFunction(String(ev.id)) }}
+                      onKeyDown={function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectCollectFunction(String(ev.id)) } }}
+                      className={"w-full text-left px-3 py-2.5 rounded-xl border transition-colors cursor-pointer " +
+                        (selected ? "border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50" : "border-slate-200 hover:border-slate-300 bg-white")}>
+                      <div className={"text-[13px] font-bold " + (selected ? "text-indigo-900" : "text-slate-900")}>
+                        {ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '')}
                       </div>
-                    )
-                  })}
-                </div>
-              )}
+                      <div className={"text-[12px] " + (selected ? "text-indigo-700" : "text-slate-500")}>
+                        {[showDate ? formatDate(ev.function_date) : null, ev.venue_name, ev.location].filter(Boolean).join(' · ')}{ev.session ? ' · ' + ev.session : ''}
+                      </div>
+                      {(ev.department || ev.contract_no) && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <DeptChip name={ev.department} />
+                          {ev.contract_no && (
+                            <span className="text-[10px] font-mono text-gray-500">#{ev.contract_no}</span>
+                          )}
+                        </div>
+                      )}
+                      {ev.created_user_name && (
+                        <div className={"text-[11px] mt-0.5 " + (selected ? "text-blue-600" : "text-gray-400")}>
+                          Contract by {ev.created_user_name}
+                        </div>
+                      )}
+                      {(ev.contact_number || ev.secondary_contact) && (
+                        <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs">
+                          {ev.contact_person && <span className="text-gray-500">{ev.contact_person}:</span>}
+                          {ev.contact_number && (
+                            <a href={"tel:" + String(ev.contact_number).replace(/[^0-9+]/g, '')}
+                              onClick={function (e) { e.stopPropagation() }}
+                              className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium">
+                              <Icon name="phone" size={13} className="shrink-0" />
+                              {ev.contact_number}
+                            </a>
+                          )}
+                          {ev.secondary_contact && (
+                            <a href={"tel:" + String(ev.secondary_contact).replace(/[^0-9+]/g, '')}
+                              onClick={function (e) { e.stopPropagation() }}
+                              className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800">
+                              <Icon name="phone" size={13} className="shrink-0" />
+                              {ev.secondary_contact}
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                }
+                var activeBucket = buckets.find(function (b) {
+                  return b.isContract && b.functions.some(function (f) { return String(f.id) === collectEventId })
+                })
+                var openKey = collectOpenContractKey || (activeBucket ? activeBucket.key : null)
+                var openBucket = openKey ? buckets.find(function (b) { return b.key === openKey }) : null
+                if (openBucket) {
+                  return (
+                    <div className="space-y-1.5">
+                      <button type="button" onClick={function () { setCollectOpenContractKey(null) }}
+                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 px-1">
+                        ← All dates for {openBucket.clientName}
+                      </button>
+                      {openBucket.functions.map(function (f) { return renderFunctionCard(f, true) })}
+                    </div>
+                  )
+                }
+                return (
+                  <div className="space-y-1.5">
+                    {buckets.map(function (b) {
+                      if (!b.isContract) return renderFunctionCard(b.functions[0], false)
+                      return (
+                        <div key={b.key} role="button" tabIndex={0}
+                          onClick={function () { setCollectOpenContractKey(b.key) }}
+                          onKeyDown={function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setCollectOpenContractKey(b.key) } }}
+                          className="w-full text-left px-3 py-2.5 rounded-xl border border-slate-200 hover:border-slate-300 bg-white transition-colors cursor-pointer">
+                          <div className="flex items-start justify-between gap-1.5">
+                            <div className="text-[13px] font-bold text-slate-900">{b.clientName}</div>
+                            <span className="shrink-0 text-[9px] font-extrabold uppercase tracking-[0.05em] leading-none px-1.5 py-[3px] rounded bg-indigo-100 text-indigo-600">
+                              {b.functions.length} dates
+                            </span>
+                          </div>
+                          <div className="text-[12px] text-slate-500">{b.venueName}</div>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <DeptChip name={b.department} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
             </div>
           )}
 
@@ -2753,7 +2829,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                                       payment row — shown so a mismatch against the
                                       contract you're viewing is visible at a glance,
                                       since contract_no collides across departments. */}
-                                  {p.order_no && p.order_no !== collectEvents.find(function (e) { return String(e.id) === String(collectEventId) })?.contract_no && (
+                                  {p.order_no && p.order_no !== collectAllEventRows.find(function (e) { return String(e.id) === String(collectEventId) })?.contract_no && (
                                     <span className="text-amber-600 font-semibold"> · order #{p.order_no} ⚠</span>
                                   )}
                                 </span>

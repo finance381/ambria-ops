@@ -16,7 +16,9 @@ import CameraCapture from '../../components/ui/CameraCapture'
 import ImageCropper from '../../components/ui/ImageCropper'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
-import { deptCls, deptInk, deptOrder } from '../../lib/ui'
+import { deptInk } from '../../lib/ui'
+import { buildContractBuckets, loadFunctionPickerPool } from '../../lib/functionPicker'
+import FunctionPickerGrid from '../../components/ui/FunctionPickerGrid'
 import { appConfirm } from '../../components/ui/AppDialog'
 import BottomSheet from '../../components/ui/BottomSheet'
 
@@ -58,44 +60,6 @@ function PanelHead({ icon, sub, right, children }) {
       {right}
     </div>
   )
-}
-
-// One evening at one venue is booked as up to four contracts — one per
-// department — and every one of them carries the same client, venue and
-// session. Listed flat, or grouped under department headers, the picker repeats
-// "ENGAGEMENT — Rao Yashvardhan · Ambria Pushpanjali" once per department and
-// the operator scrolls past four near-identical lines to find the right one.
-//
-// So the picker lists each function once and hangs its contracts off it as
-// department chips — the function reads once, and the departments read as
-// colours on a single row.
-//
-// Not a silent merge: event_id lands on the expense row, so which contract the
-// cost is tagged to has to stay a deliberate tap.
-function funcKeyOf(r) {
-  return [r.client_name || '', r.venue_name || '', r.session || '', (r.event_name || '').trim().toLowerCase()].join('|')
-}
-
-function groupFunctions(rows) {
-  var byKey = {}
-  var order = []
-  for (var i = 0; i < rows.length; i++) {
-    var r = rows[i]
-    var k = funcKeyOf(r)
-    if (!byKey[k]) {
-      byKey[k] = {
-        key: k,
-        label: r.event_name + (r.client_name ? ' — ' + r.client_name : '') + ' · ' + (r.venue_name || '') + (r.session ? ' · ' + r.session : ''),
-        contracts: [],
-      }
-      order.push(k)
-    }
-    byKey[k].contracts.push(r)
-  }
-  order.forEach(function (k) {
-    byKey[k].contracts.sort(function (a, b) { return deptOrder(a.department) - deptOrder(b.department) })
-  })
-  return order.map(function (k) { return byKey[k] })
 }
 
 function makeEntry() {
@@ -331,6 +295,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   var [eventDate, setEventDate] = useState(editExp && editExp.event_id ? (editExp.expense_date || '') : '')
   var [eventId, setEventId] = useState(editExp && editExp.event_id ? String(editExp.event_id) : '')
   var [events, setEvents] = useState([])
+  var [allEventRows, setAllEventRows] = useState([])
   var [eventsLoading, setEventsLoading] = useState(false)
   var voice = useVoice()
   var [error, setError] = useState('')
@@ -504,18 +469,15 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   }
 
   async function loadEventsByDate(dateStr) {
-    if (!dateStr) { setEvents([]); setEventId(''); return }
+    if (!dateStr) { setEvents([]); setAllEventRows([]); setEventId(''); return }
     setEventsLoading(true)
-    var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, contract_type, venue_name, location, session, client_name, department, contract_no, created_user_name')
-      .eq('function_date', dateStr)
-      .is('lms_cancelled_at', null)
-      .order('event_name')
-    var rows = data || []
+    var pool = await loadFunctionPickerPool(dateStr)
+    var rows = pool.dateRows
     setEvents(rows)
+    setAllEventRows(pool.allRows)
     setEventsLoading(false)
     if (rows.length === 1) setEventId(String(rows[0].id))
-    else if (!rows.some(function (r) { return String(r.id) === eventId })) setEventId('')
+    else if (!pool.allRows.some(function (r) { return String(r.id) === eventId })) setEventId('')
   }
 
   // Same tentative-event escape hatch WalletManager's Collect flow already
@@ -584,103 +546,13 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       {/* A card list, not a <select>: one function needs THREE department
           colours on the same row, and a native option can only carry one
           (the iOS wheel ignores even that). Real markup gets the chips —
-          and it matches the Extra Plates and Wallet function pickers. */}
-      {events.length > 0 && (function () {
-        var groups = groupFunctions(events)
-        // Once a function is chosen the other cards have done their job.
-        // Keeping them on screen pushed the amount, category and receipt
-        // fields a full phone-height down the form; the choice collapses
-        // to the one card that matters, with a way back beside it.
-        var picked = eventId ? groups.filter(function (g) {
-          return g.contracts.some(function (c) { return String(c.id) === eventId })
-        }) : null
-        var shown = (picked && picked.length === 1) ? picked : groups
-        return (
-        /* ═══ a grid of tiles, not a stack of bars ═════════════════════════
-           Full-width rows spent the whole column on one function and pushed
-           the amount and receipt fields a screen down. Four across, and the
-           fifth starts a new row.
-
-           A grid rather than a scrolling row: the count is whatever the date
-           returns, and a row hides everything past the fourth tile behind a
-           gesture — with six bookings you could not tell there were six.
-
-           Column count is gated on the wide flag, not on lg alone. The phone shell is
-           a 540px column inside whatever viewport the laptop happens to have,
-           so a bare lg:grid-cols-4 fires inside it and hands the phone four
-           120px tiles. */
-        <div className="space-y-2">
-        <div className={"grid gap-2 grid-cols-1 sm:grid-cols-2" + (wide ? " lg:grid-cols-4" : "")}>
-          {shown.map(function (g) {
-            var head = g.contracts[0]
-            var sel = g.contracts.filter(function (c) { return String(c.id) === eventId })[0] || null
-            return (
-              /* The tile picks the function, nothing finer. event_id takes the
-                 first contract in running order (Venue → Decor → Catering →
-                 Entertainment); the cost's own department is set per-allocation
-                 further down the form, so the contract row this hangs off does
-                 not need to be chosen here. */
-              <button key={g.key} type="button" onClick={function () { setEventId(String(head.id)) }}
-                className={"text-left rounded-xl border px-2.5 py-2 transition-all duration-150 " +
-                  (sel
-                    ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
-                    : "border-slate-200 bg-white hover:border-indigo-300 hover:shadow-[0_2px_8px_rgba(15,23,42,0.06)]")}>
-                <span className="flex items-start justify-between gap-1.5">
-                  <span className={"min-w-0 flex-1 block text-[11px] font-bold uppercase tracking-[0.03em] leading-snug truncate " +
-                    (sel ? "text-indigo-900" : "text-slate-900")}>
-                    {head.event_name}
-                  </span>
-                  {/* Which departments this evening is booked under — read only,
-                      and never wrapped: a second row of chips is what made these
-                      tall in the first place. */}
-                  <span className="shrink-0 flex flex-nowrap items-center gap-1">
-                    {g.contracts.map(function (c) {
-                      return (
-                        /* 10px is the floor the rest of the form uses, so the chip
-                           shrinks by losing padding and its border rather than its
-                           type. The border was a second edge inside a tile that
-                           already has one. */
-                        <span key={c.id}
-                          className={"text-[10px] font-bold uppercase tracking-[0.03em] leading-none px-1.5 py-[3px] rounded " + deptCls(c.department)}>
-                          {c.department}
-                        </span>
-                      )
-                    })}
-                  </span>
-                </span>
-                {head.client_name && (
-                  <span className={"block text-[11px] leading-snug truncate " + (sel ? "text-indigo-800" : "text-slate-700")}>
-                    {head.client_name}
-                  </span>
-                )}
-                {/* Venue and session stay. They are half of what tells two
-                    bookings on the same evening apart — funcKeyOf groups on
-                    them — so a tile without them can be a twin of the one
-                    beside it. Sub-venue (location) only shown when it adds
-                    information — LMS leaves it blank for most departments
-                    and it's often just a restatement of venue_name itself. */}
-                <span className={"block text-[10px] leading-snug truncate " + (sel ? "text-indigo-600" : "text-slate-500")}>
-                  {[head.venue_name, (head.location && head.location !== head.venue_name) ? head.location : null, head.session]
-                    .filter(Boolean).join(' · ')}
-                </span>
-                {head.created_user_name && (
-                  <span className={"block text-[10px] leading-snug truncate " + (sel ? "text-indigo-500" : "text-slate-400")}>
-                    By {head.created_user_name}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-          {shown !== groups && groups.length > 1 && (
-            <button type="button" onClick={function () { setEventId('') }}
-              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 px-1">
-              Change function
-            </button>
-          )}
-        </div>
-        )
-      })()}
+          and it matches the Extra Plates and Wallet function pickers. A
+          contract running more than one function (same day or different
+          days) reads as one tile; opening it lists its functions with their
+          own dates so the pick into a specific one stays deliberate. */}
+      {allEventRows.length > 0 && (
+        <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={eventId} onPick={setEventId} wide={wide} />
+      )}
     </div>
     )
   }
