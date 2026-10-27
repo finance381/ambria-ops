@@ -64,7 +64,7 @@ function shortDate(iso) {
 function emptyHeader() {
   // Every new sheet starts on a date: then a booking from that day, or a
   // written detail when it isn't one.
-  return { is_function: true, function_date: '', event_id: '', venue_id: '', sub_venue_id: '', event_detail: '', sheet_code: '' }
+  return { is_function: true, function_date: '', event_id: '', extra_event_ids: [], venue_id: '', sub_venue_id: '', event_detail: '', sheet_code: '' }
 }
 
 // The list's groups (kind is the key's first letter):
@@ -312,7 +312,7 @@ function DecorVarCost({ profile, inAdmin }) {
   async function loadList() {
     setListErr('')
     var q = supabase.from('decor_var_costs')
-      .select('id, serial_no, sheet_code, is_function, function_date, venue_id, sub_venue_id, event_detail, event_id, status, total_paise, created_at, submitted_at, created_by, profiles:created_by(name), event:event_id(event_name, client_name, session, venue_name, catering, created_user_name), decor_var_cost_entries(entry_date, amount_paise)')
+      .select('id, serial_no, sheet_code, is_function, function_date, venue_id, sub_venue_id, event_detail, event_id, extra_event_ids, status, total_paise, created_at, submitted_at, created_by, profiles:created_by(name), event:event_id(event_name, client_name, session, venue_name, catering, created_user_name), decor_var_cost_entries(entry_date, amount_paise)')
       .order('created_at', { ascending: false })
       .limit(300)
     if (scope === 'mine') q = q.eq('created_by', profile.id)
@@ -378,6 +378,7 @@ function DecorVarCost({ profile, inAdmin }) {
       h.is_function = true
       h.function_date = f.function_date || ''
       h.event_id = f.event_id ? String(f.event_id) : ''
+      h.extra_event_ids = (f.extra_event_ids || []).map(String)
       h.venue_id = f.venue_id ? String(f.venue_id) : ''
       h.sub_venue_id = f.sub_venue_id ? String(f.sub_venue_id) : ''
       if (g.kind === 'u') h.event_detail = (f.event_detail || '').trim()
@@ -408,6 +409,7 @@ function DecorVarCost({ profile, inAdmin }) {
       is_function: !!c.is_function,
       function_date: c.function_date || '',
       event_id: c.event_id ? String(c.event_id) : '',
+      extra_event_ids: (c.extra_event_ids || []).map(String),
       venue_id: c.venue_id ? String(c.venue_id) : '',
       sub_venue_id: c.sub_venue_id ? String(c.sub_venue_id) : '',
       event_detail: c.event_detail || '',
@@ -471,6 +473,7 @@ function DecorVarCost({ profile, inAdmin }) {
       is_function: !!h.is_function,
       function_date: h.is_function ? (h.function_date || null) : null,
       event_id: h.is_function && h.event_id ? Number(h.event_id) : null,
+      extra_event_ids: (h.is_function && h.event_id && Array.isArray(h.extra_event_ids)) ? h.extra_event_ids.map(Number) : [],
       venue_id: h.is_function && h.venue_id ? Number(h.venue_id) : null,
       sub_venue_id: h.is_function && h.sub_venue_id ? Number(h.sub_venue_id) : null,
       // Not for a function, or a function that is not among the bookings.
@@ -1084,7 +1087,7 @@ function DecorVarCost({ profile, inAdmin }) {
     var subs = hdr.venue_id ? venueSubs(hdr.venue_id) : []
     var fnDone = hdr.is_function ? !!hdr.function_date : true
     function pickFunctionById(id) {
-      if (!id) { setH({ event_id: '' }); return }
+      if (!id) { setH({ event_id: '', extra_event_ids: [] }); return }
       var row = allEventRows.find(function (r) { return String(r.id) === id })
       if (row) pickFunction(row)
     }
@@ -1144,12 +1147,13 @@ function DecorVarCost({ profile, inAdmin }) {
               <div>
                 {stepLabel(1, 'Date', !!hdr.function_date)}
                 <EventDatePicker value={hdr.function_date} collapsible includePast placeholder="Pick the date"
-                  onChange={function (d) { setH({ function_date: d, event_id: '' }); loadEventsByDate(d) }} />
+                  onChange={function (d) { setH({ function_date: d, event_id: '', extra_event_ids: [] }); loadEventsByDate(d) }} />
                 {eventsLoading && <p className="mt-2 text-[12.5px] text-slate-500">Loading functions…</p>}
                 {hdr.function_date && !eventsLoading && allEventRows.length > 0 && (
                   <div className="mt-2.5">
                     <p className="text-[11.5px] font-semibold text-slate-500 mb-1.5">Pick the function this sheet is for</p>
-                    <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={hdr.event_id} onPick={pickFunctionById} wide={wide} />
+                    <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={hdr.event_id} onPick={pickFunctionById}
+                      extraEventIds={hdr.extra_event_ids || []} onExtraChange={function (ids) { setH({ extra_event_ids: ids }) }} wide={wide} />
                   </div>
                 )}
                 {hdr.function_date && !eventsLoading && !hdr.event_id && (
