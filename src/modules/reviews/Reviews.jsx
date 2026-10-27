@@ -69,15 +69,18 @@ function Reviews({ profile, inAdmin }) {
   var [categories, setCategories] = useState([])
   var [subCategories, setSubCategories] = useState([])
   var [departments, setDepartments] = useState([])
+  var [subVenues, setSubVenues] = useState([])
   useEffect(function () {
     Promise.all([
       supabase.from('categories').select('id, name').order('name'),
       supabase.from('sub_categories').select('id, name, category_id').order('name'),
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
+      supabase.from('sub_venues').select('id, name, venue_id').eq('active', true).order('name'),
     ]).then(function (res) {
       setCategories(res[0].data || [])
       setSubCategories(res[1].data || [])
       setDepartments(res[2].data || [])
+      setSubVenues(res[3].data || [])
     })
   }, [])
 
@@ -89,6 +92,9 @@ function Reviews({ profile, inAdmin }) {
   }, [])
 
   var queueApi = useReviewQueue(profile)
+  var subVenueOptions = subVenues.filter(function (sv) {
+    return !queueApi.venueFilter || String(sv.venue_id) === String(queueApi.venueFilter)
+  })
   var [selectMode, setSelectMode] = useState(false)
   var [openItem, setOpenItem] = useState(null)
   var [bulkConfirm, setBulkConfirm] = useState(null) // 'approve' | 'reject'
@@ -190,6 +196,12 @@ function Reviews({ profile, inAdmin }) {
             className="px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white" style={{ fontSize: '16px' }}>
             <option value="">All venues</option>
             {(refData.venues || []).map(function (v) { return <option key={v.id} value={v.id}>{v.code ? v.code + ' — ' + v.name : v.name}</option> })}
+          </select>
+          <select value={queueApi.subVenueFilter} onChange={function (ev) { queueApi.setSubVenueFilter(ev.target.value) }}
+            disabled={subVenueOptions.length === 0}
+            className="px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white disabled:opacity-50" style={{ fontSize: '16px' }}>
+            <option value="">All sub-venues</option>
+            {subVenueOptions.map(function (sv) { return <option key={sv.id} value={String(sv.id)}>{sv.name}</option> })}
           </select>
           <select value={ageFilter} onChange={function (ev) { setAgeFilter(ev.target.value) }}
             className="px-2 py-1.5 text-xs border border-gray-200 rounded-md bg-white" style={{ fontSize: '16px' }}>

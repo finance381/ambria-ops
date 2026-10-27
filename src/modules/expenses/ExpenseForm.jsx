@@ -506,7 +506,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     if (!dateStr) { setEvents([]); setEventId(''); return }
     setEventsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, contract_type, venue_name, session, client_name, department, contract_no, created_user_name')
+      .select('id, event_name, function_date, contract_type, venue_name, location, session, client_name, department, contract_no, created_user_name')
       .eq('function_date', dateStr)
       .is('lms_cancelled_at', null)
       .order('event_name')
@@ -655,10 +655,18 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                 {/* Venue and session stay. They are half of what tells two
                     bookings on the same evening apart — funcKeyOf groups on
                     them — so a tile without them can be a twin of the one
-                    beside it. */}
+                    beside it. Sub-venue (location) only shown when it adds
+                    information — LMS leaves it blank for most departments
+                    and it's often just a restatement of venue_name itself. */}
                 <span className={"block text-[10px] leading-snug truncate " + (sel ? "text-indigo-600" : "text-slate-500")}>
-                  {(head.venue_name || '') + (head.session ? ' · ' + head.session : '')}
+                  {[head.venue_name, (head.location && head.location !== head.venue_name) ? head.location : null, head.session]
+                    .filter(Boolean).join(' · ')}
                 </span>
+                {head.created_user_name && (
+                  <span className={"block text-[10px] leading-snug truncate " + (sel ? "text-indigo-500" : "text-slate-400")}>
+                    By {head.created_user_name}
+                  </span>
+                )}
               </button>
             )
           })}

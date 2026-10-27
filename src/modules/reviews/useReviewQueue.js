@@ -60,7 +60,12 @@ function useReviewQueue(profile) {
   var [selection, setSelection] = useState(function () { return new Set() })
   var [loading, setLoading] = useState(true)
   var [error, setError] = useState('')
-  var [venueFilter, setVenueFilter] = useState('')
+  var [venueFilter, setVenueFilterRaw] = useState('')
+  var [subVenueFilter, setSubVenueFilter] = useState('')
+  // Sub-venue cascades off venue -- changing the venue invalidates whatever
+  // sub-venue was picked under the old one (same reset Reviews.jsx already
+  // does by hand for category -> sub-category).
+  function setVenueFilter(v) { setVenueFilterRaw(v); setSubVenueFilter('') }
   var [myTagsOnly, setMyTagsOnly] = useState(true)
   var [search, setSearch] = useState('')
   var [categoryFilter, setCategoryFilter] = useState('')
@@ -73,6 +78,7 @@ function useReviewQueue(profile) {
   function setDomain(d) {
     setSelection(new Set())
     setSearch(''); setCategoryFilter(''); setSubCategoryFilter(''); setDepartmentFilter(''); setStatusFilter('pending')
+    setVenueFilterRaw(''); setSubVenueFilter('')
     setDomainRaw(d)
   }
 
@@ -124,14 +130,16 @@ function useReviewQueue(profile) {
           tags: { category_id: r.category_id, sub_category_id: r.sub_category_id, department: r.department, expense_type_id: r.expense_type_id, expense_sub_type_id: r.expense_sub_type_id, image_path: r.image_path },
           submitted_by: r[cfg.submittedByCol],
           submitted_at: r.created_at,
-          venue_id: null,
+          venue_ids: null,
+          sub_venue_ids: null,
           status: statusFilter,
           priority: 'normal',
         }
       })
     }
 
-    if (venueFilter) rows = rows.filter(function (r) { return String(r.venue_id) === String(venueFilter) })
+    if (venueFilter) rows = rows.filter(function (r) { return (r.venue_ids || []).map(String).indexOf(venueFilter) !== -1 })
+    if (subVenueFilter) rows = rows.filter(function (r) { return (r.sub_venue_ids || []).map(String).indexOf(subVenueFilter) !== -1 })
     if (myTagsOnly) rows = rows.filter(function (r) { return matchesMyTags(r, domain, profile && profile.review_scopes) })
     if (categoryFilter) rows = rows.filter(function (r) { return String((r.tags || {}).category_id) === categoryFilter })
     if (subCategoryFilter) rows = rows.filter(function (r) { return String((r.tags || {}).sub_category_id) === subCategoryFilter })
@@ -156,7 +164,7 @@ function useReviewQueue(profile) {
   useEffect(function () {
     refresh()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [domain, venueFilter, myTagsOnly, categoryFilter, subCategoryFilter, departmentFilter, statusFilter, search])
+  }, [domain, venueFilter, subVenueFilter, myTagsOnly, categoryFilter, subCategoryFilter, departmentFilter, statusFilter, search])
 
   async function loadCounts() {
     var res = await supabase.from('v_review_queue').select('domain')
@@ -194,6 +202,7 @@ function useReviewQueue(profile) {
     pending: { loading: loading, error: error },
     counts: counts,
     venueFilter: venueFilter, setVenueFilter: setVenueFilter,
+    subVenueFilter: subVenueFilter, setSubVenueFilter: setSubVenueFilter,
     myTagsOnly: myTagsOnly, setMyTagsOnly: setMyTagsOnly,
     search: search, setSearch: setSearch,
     categoryFilter: categoryFilter, setCategoryFilter: setCategoryFilter,
