@@ -1811,6 +1811,25 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           })
         }
         var keepPaths = existingReceipts.filter(function (p) { return removedReceipts.indexOf(p) === -1 })
+        // Same resolution as the create path below (search "Resolve legacy
+        // vendor_name column") — without it, editing a saved expense wrote
+        // the raw vendor ID string (e.g. "73") into vendor_name instead of
+        // the vendor's actual name, since the lookup field's key happens to
+        // be named "vendor_name" too and metadata stores it as an ID.
+        var editVendorLegacyName = null
+        var editSubTypeRow = expenseSubTypes.find(function (s) { return s.id === Number(e0.expenseSubTypeId) })
+        if (editSubTypeRow && editSubTypeRow.extra_fields) {
+          var editVendorField = editSubTypeRow.extra_fields.find(function (f) {
+            return f.type === 'lookup' && f.source === 'vendors'
+          })
+          if (editVendorField) {
+            var editVId = e0.fieldValues[editVendorField.key]
+            if (editVId) {
+              var editVRow = (lookupCache.vendors || []).find(function (v) { return String(v.id) === String(editVId) })
+              if (editVRow) editVendorLegacyName = editVRow.name
+            }
+          }
+        }
         var _editSplit = getEntrySplit(e0)
         var editPayload = {
           expense_type_id: Number(e0.expenseTypeId),
@@ -1828,7 +1847,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           expense_date: e0.expenseDate,
           event_id: eventId ? Number(eventId) : null,
           metadata: editMeta,
-          vendor_name: e0.fieldValues.vendor_name || null,
+          vendor_name: editVendorLegacyName,
           travel_from: e0.fieldValues.travel_from || null,
           travel_to: e0.fieldValues.travel_to || null,
           travel_mode: e0.fieldValues.travel_mode || null,
