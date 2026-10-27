@@ -474,10 +474,6 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [collectEvents, setCollectEvents] = useState([])
   var [collectAllEventRows, setCollectAllEventRows] = useState([])
   var [collectFunctionsLoading, setCollectFunctionsLoading] = useState(false)
-  // A contract running more than one date (see buildDeptContractBuckets)
-  // shows as one summary card; this is which one, if any, is opened to its
-  // date list.
-  var [collectOpenContractKey, setCollectOpenContractKey] = useState(null)
   var [collectEventId, setCollectEventId] = useState('')
   // Picking the event opens the balance and the rest of the form below the
   // fold of the sheet, so on a phone nothing appeared to happen. Run off the
@@ -1329,7 +1325,6 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setCollectDate(dateStr)
     setCollectEventId('')
     setCollectBalance(null)
-    setCollectOpenContractKey(null)
     if (!dateStr) { setCollectEvents([]); setCollectAllEventRows([]); return }
     setCollectFunctionsLoading(true)
     // contact_person/contact_number/secondary_contact/is_tentative aren't
@@ -2669,38 +2664,32 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     </div>
                   )
                 }
-                var activeBucket = buckets.find(function (b) {
-                  return b.isContract && b.functions.some(function (f) { return String(f.id) === collectEventId })
-                })
-                var openKey = collectOpenContractKey || (activeBucket ? activeBucket.key : null)
-                var openBucket = openKey ? buckets.find(function (b) { return b.key === openKey }) : null
-                if (openBucket) {
-                  return (
-                    <div className="space-y-1.5">
-                      <button type="button" onClick={function () { setCollectOpenContractKey(null) }}
-                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 px-1">
-                        ← All dates for {openBucket.clientName}
-                      </button>
-                      {openBucket.functions.map(function (f) { return renderFunctionCard(f, true) })}
-                    </div>
-                  )
-                }
+                // A contract is selectable in one tap, same as a plain
+                // function — collecting against it doesn't need the guest's
+                // specific date, since the balance shown is already the
+                // whole contract's (see selectCollectFunction). It anchors
+                // to the earliest function in the pool; which one just
+                // names the collection in the receipt description, nothing
+                // financial depends on it.
                 return (
                   <div className="space-y-1.5">
                     {buckets.map(function (b) {
                       if (!b.isContract) return renderFunctionCard(b.functions[0], false)
+                      var anchorId = String(b.functions[0].id)
+                      var selected = b.functions.some(function (f) { return String(f.id) === collectEventId })
                       return (
                         <div key={b.key} role="button" tabIndex={0}
-                          onClick={function () { setCollectOpenContractKey(b.key) }}
-                          onKeyDown={function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setCollectOpenContractKey(b.key) } }}
-                          className="w-full text-left px-3 py-2.5 rounded-xl border border-slate-200 hover:border-slate-300 bg-white transition-colors cursor-pointer">
+                          onClick={function () { selectCollectFunction(anchorId) }}
+                          onKeyDown={function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectCollectFunction(anchorId) } }}
+                          className={"w-full text-left px-3 py-2.5 rounded-xl border transition-colors cursor-pointer " +
+                            (selected ? "border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50" : "border-slate-200 hover:border-slate-300 bg-white")}>
                           <div className="flex items-start justify-between gap-1.5">
-                            <div className="text-[13px] font-bold text-slate-900">{b.clientName}</div>
+                            <div className={"text-[13px] font-bold " + (selected ? "text-indigo-900" : "text-slate-900")}>{b.clientName}</div>
                             <span className="shrink-0 text-[9px] font-extrabold uppercase tracking-[0.05em] leading-none px-1.5 py-[3px] rounded bg-indigo-100 text-indigo-600">
                               {b.functions.length} dates
                             </span>
                           </div>
-                          <div className="text-[12px] text-slate-500">{b.venueName}</div>
+                          <div className={"text-[12px] " + (selected ? "text-indigo-700" : "text-slate-500")}>{b.venueName}</div>
                           <div className="flex items-center gap-1.5 mt-1">
                             <DeptChip name={b.department} />
                           </div>

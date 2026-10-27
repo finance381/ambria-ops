@@ -249,7 +249,13 @@ function FunctionPickerGrid(props) {
     <div className={gridCls(wide)}>
       {buckets.map(function (b) {
         if (b.isContract) {
-          return <ContractTile key={b.key} bucket={b} onClick={function () { setOpenContractKey(b.key) }} />
+          // reopening has to go true here too, not just from "Add or change
+          // functions" below — otherwise the very first pick inside this
+          // contract sets selectedFuncs.length to 1 while reopening is still
+          // false from its initial state, and the collapse branch above
+          // swallows the list after a single tap instead of staying open
+          // for more.
+          return <ContractTile key={b.key} bucket={b} onClick={function () { setOpenContractKey(b.key); setReopening(true) }} />
         }
         var f = b.functions[0]
         var id = String(f.contracts[0].id)
