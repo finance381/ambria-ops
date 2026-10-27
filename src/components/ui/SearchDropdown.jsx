@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useId } from 'react'
 import Icon from './Icon'
-import { registerVoiceStop } from '../../lib/voiceRegistry'
+import { useVoice } from '../../hooks/useVoice'
 
 // inlineVoice: the microphone sits inside the field at its right edge instead
 // of in a box of its own beside it — for a form that wants one box per field.
@@ -14,12 +14,11 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
   var [query, setQuery] = useState('')
   var [open, setOpen] = useState(false)
   var [hlIdx, setHlIdx] = useState(-1)
-  var [listening, setListening] = useState(false)
+  var voice = useVoice(voiceLang)
+  var transcriptRef = useRef('')
   var containerRef = useRef(null)
   var inputRef = useRef(null)
   var listRef = useRef(null)
-  var recognitionRef = useRef(null)
-  var voiceUnregisterRef = useRef(null)
 
   var isFocused = useRef(false)
   // isDirty is a stronger signal than isFocused: it stays true while the user's typed
@@ -132,56 +131,14 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
     }
   }
 
-  function unregisterVoice() {
-    if (voiceUnregisterRef.current) { voiceUnregisterRef.current(); voiceUnregisterRef.current = null }
-  }
-
   function startVoice() {
-    var SR = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SR) { alert('Speech not supported'); return }
-
-    if (recognitionRef.current) {
-      recognitionRef.current.stop()
-      recognitionRef.current = null
-      unregisterVoice()
-      return
-    }
-
-    var recognition = new SR()
-    recognition.lang = voiceLang || 'en-IN'
-    recognition.interimResults = false
-    // Without this, Chrome ends the whole session at the first pause in
-    // speech — a longer vendor/item name spoken with any hesitation got cut
-    // to whatever was said before the pause (same bug fixed in useVoice.js).
-    recognition.continuous = true
-    var fullTranscript = ''
-
-    recognition.onresult = function (ev) {
-      for (var i = ev.resultIndex; i < ev.results.length; i++) {
-        if (ev.results[i].isFinal) fullTranscript += ev.results[i][0].transcript
-      }
-      if (!fullTranscript) return
-      setQuery(fullTranscript)
+    if (voice.listening) { voice.stop(); return }
+    transcriptRef.current = ''
+    voice.start(function (text) {
+      transcriptRef.current = transcriptRef.current ? transcriptRef.current + ' ' + text : text
+      setQuery(transcriptRef.current)
       if (value) onChange('')
       setOpen(true)
-    }
-    recognition.onend = function () {
-      setListening(false)
-      recognitionRef.current = null
-      unregisterVoice()
-    }
-    recognition.onerror = function () {
-      setListening(false)
-      recognitionRef.current = null
-      unregisterVoice()
-    }
-
-    recognitionRef.current = recognition
-    setListening(true)
-    recognition.start()
-    voiceUnregisterRef.current = registerVoiceStop(function () {
-      if (recognitionRef.current) { try { recognitionRef.current.stop() } catch (_) {} ; recognitionRef.current = null }
-      setListening(false)
     })
   }
 
@@ -255,8 +212,8 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
                 type="button"
                 onClick={startVoice}
                 className={"absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-lg transition-colors " +
-                  (listening ? "bg-red-500 text-white animate-pulse" : "text-slate-400 hover:bg-slate-100 hover:text-indigo-600")}
-                aria-label={listening ? 'Stop voice input' : 'Voice input'}
+                  (voice.listening ? "bg-red-500 text-white animate-pulse" : "text-slate-400 hover:bg-slate-100 hover:text-indigo-600")}
+                aria-label={voice.listening ? 'Stop voice input' : 'Voice input'}
                 title="Voice input"
               >
                 <Icon name="mic" size={16} />
@@ -272,11 +229,11 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
               onClick={startVoice}
               className={
                 "w-11 shrink-0 rounded-xl border flex items-center justify-center transition-colors " +
-                (listening
+                (voice.listening
                   ? "bg-red-500 border-red-500 text-white animate-pulse"
                   : "bg-white border-slate-300 text-slate-500 hover:border-indigo-400 hover:text-indigo-600")
               }
-              aria-label={listening ? 'Stop voice input' : 'Voice input'}
+              aria-label={voice.listening ? 'Stop voice input' : 'Voice input'}
               title="Voice input"
             >
               <Icon name="mic" className="w-[18px] h-[18px]" />

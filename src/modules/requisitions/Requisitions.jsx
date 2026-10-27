@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
-import { stopAllVoice, registerVoiceStop } from '../../lib/voiceRegistry'
+import { stopAllVoice } from '../../lib/voiceRegistry'
+import { useVoice } from '../../hooks/useVoice'
 import { titleCase, formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { useRealtime } from '../../lib/useRealtime'
@@ -700,13 +701,13 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     var arr = editReq.expense_alloc_json
     return arr.length > 1 || arr.some(function (a) { return !!a.venue_id })
   })
-  var [listening, setListening] = useState(false)
+  var voice = useVoice('en-IN')
   var searchContainerRef = useRef(null)
-  var recognitionRef = useRef(null)
-  var unregisterDictationRef = useRef(null)
 
   var isEditing = !!editReq
-  var SpeechRec = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null
+  // toggleDictation's mic button is hidden entirely on a browser with no
+  // speech API, rather than shown and alerting on click.
+  var speechSupported = typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition)
 
   function emptyCartItem() {
     return { mode: 'existing', item_id: null, item_name: '', category_id: '', qty: '1', unit: 'Pieces', notes: '', _source: 'new', search: '', estimated_cost: '', allocations: [{ venue_id: '', qty: '' }], showAllocations: false }
@@ -756,39 +757,14 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     }
   }, [])
 
-  // Stop dictation on unmount
-  useEffect(function () {
-    return function () { if (recognitionRef.current) { try { recognitionRef.current.stop() } catch (_) {} } }
-  }, [])
-
   function toggleDictation() {
-    if (!SpeechRec) return
-    if (listening) {
-      if (recognitionRef.current) { try { recognitionRef.current.stop() } catch (_) {} }
-      return
-    }
-    var rec = new SpeechRec()
-    rec.lang = 'en-IN'
-    rec.interimResults = false
-    rec.continuous = true
-    rec.onresult = function (e) {
-      var txt = ''
-      for (var i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) txt += e.results[i][0].transcript
-      }
-      if (txt.trim()) {
-        setPurpose(function (prev) {
-          var next = (prev ? prev + ' ' : '') + txt.trim()
-          return next.slice(0, 500)
-        })
-      }
-    }
-    rec.onerror = function () { setListening(false); unregisterDictationRef.current && unregisterDictationRef.current(); unregisterDictationRef.current = null }
-    rec.onend = function () { setListening(false); recognitionRef.current = null; unregisterDictationRef.current && unregisterDictationRef.current(); unregisterDictationRef.current = null }
-    recognitionRef.current = rec
-    rec.start()
-    setListening(true)
-    unregisterDictationRef.current = registerVoiceStop(function () { rec.stop() })
+    if (voice.listening) { voice.stop(); return }
+    voice.start(function (text) {
+      setPurpose(function (prev) {
+        var next = (prev ? prev + ' ' : '') + text.trim()
+        return next.slice(0, 500)
+      })
+    })
   }
 
   async function loadLookups() {
@@ -1288,11 +1264,11 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
               rows="2" maxLength="500" placeholder="e.g. Monthly stationery restock, new workstation setup..."
               className={"w-full px-3 py-2 pr-11 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none " + (errors.purpose ? "border-red-300" : "border-gray-300")}
               style={{ fontSize: '16px' }} />
-            {SpeechRec && (
+            {speechSupported && (
               <button type="button" onClick={toggleDictation}
-                title={listening ? 'Stop' : 'Dictate'}
-                className={"absolute right-2 bottom-2 w-8 h-8 rounded-full flex items-center justify-center text-sm transition-colors " + (listening ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-500 hover:bg-gray-200")}>
-                {listening ? '■' : '🎤'}
+                title={voice.listening ? 'Stop' : 'Dictate'}
+                className={"absolute right-2 bottom-2 w-8 h-8 rounded-full flex items-center justify-center text-sm transition-colors " + (voice.listening ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-500 hover:bg-gray-200")}>
+                {voice.listening ? '■' : '🎤'}
               </button>
             )}
           </div>

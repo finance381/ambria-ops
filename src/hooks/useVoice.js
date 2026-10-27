@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { registerVoiceStop } from '../lib/voiceRegistry'
 
 // Read straight from the same key i18n persists, rather than through useLang:
@@ -26,7 +26,13 @@ export function useVoice(lang) {
     unregister()
   }
 
-  function start(onResult) {
+  // Every consumer used to roll its own SpeechRecognition setup — four copies
+  // of the same continuous/error/registry logic, so the pause-cutoff bug had
+  // to be fixed four times. This is the one place that ever constructs a
+  // recognizer now; a caller juggling more than one field (different language
+  // per field, say) passes langOverride per start() call instead of needing
+  // its own instance.
+  function start(onResult, langOverride) {
     var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
       alert('Voice input is not supported in this browser. Chrome or Edge on Android and desktop support it; Firefox does not.')
@@ -48,7 +54,7 @@ export function useVoice(lang) {
     callbackRef.current = onResult
 
     var recognition = new SpeechRecognition()
-    recognition.lang = lang || preferredLang()
+    recognition.lang = langOverride || lang || preferredLang()
     recognition.interimResults = false
     recognition.maxAlternatives = 1
     // Without this, Chrome treats the very first pause in speech as the end
@@ -111,6 +117,14 @@ export function useVoice(lang) {
       alert('Could not start voice input: ' + (err && err.message ? err.message : 'unknown error'))
     }
   }
+
+  // A component unmounting mid-dictation (navigating away, closing a modal)
+  // used to leave Requisitions.jsx's own recognizer running until the browser
+  // eventually ended it on its own — every consumer now gets this for free.
+  useEffect(function () {
+    return stop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return { listening: listening, start: start, stop: stop }
 }
