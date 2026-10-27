@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
 import { stopAllVoice } from '../../lib/voiceRegistry'
-import { formatDate, formatPoints, formatPointsPlain, titleCase } from '../../lib/format'
+import { formatDate, formatPoints, formatPointsPlain } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { prepUpload, isVoiceNotePath, getReceiptUrl } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
@@ -496,7 +496,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [lmsPayments, setLmsPayments] = useState(null)
   var [lmsPaymentsLoading, setLmsPaymentsLoading] = useState(false)
   var [lmsPaymentsError, setLmsPaymentsError] = useState('')
-  var [lmsPaymentsOpen, setLmsPaymentsOpen] = useState(false)
+  // The combined LMS + Ambria Ops collection history for whichever
+  // event_id(s) are in play (the whole pooled contract when one is open) —
+  // same idea as the Event Financials screen's merged Transactions list,
+  // scaled down for this sheet. lmsPayments above stays the raw LMS fetch,
+  // kept only because computeContractBalance needs it in that shape.
+  var [collectHistory, setCollectHistory] = useState(null)
+  var [collectHistoryLoading, setCollectHistoryLoading] = useState(false)
+  var [collectHistoryError, setCollectHistoryError] = useState('')
+  var [collectHistoryOpen, setCollectHistoryOpen] = useState(false)
   var [showActualCash, setShowActualCash] = useState(false)
   var [collectAmount, setCollectAmount] = useState('')
   var [collectDesc, setCollectDesc] = useState('')
@@ -1353,7 +1361,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setCollectBalance(null)
     setLmsPayments(null)
     setLmsPaymentsError('')
-    setLmsPaymentsOpen(false)
+    setCollectHistory(null)
+    setCollectHistoryError('')
+    setCollectHistoryOpen(false)
     if (!fid) return
     var evt = collectAllEventRows.find(function (e) { return String(e.id) === String(fid) })
     // Collecting against a multi-function contract (same department, pooled
@@ -1361,16 +1371,20 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     // contract's pending balance, not just this one function's: a collector
     // working off this screen only ever sees the figure shown here, and a
     // per-function balance would quietly under- or over-collect against
-    // what the guest actually still owes across the whole booking.
+    // what the guest actually still owes across the whole booking. The
+    // collection history below is pooled the same way, for the same reason.
     var bucket = buildDeptContractBuckets(collectAllEventRows).find(function (b) {
       return b.functions.some(function (f) { return String(f.id) === String(fid) })
     })
+    var historyIds = bucket ? bucket.functions.map(function (f) { return f.id }) : [Number(fid)]
+
     if (bucket && bucket.isContract) {
       setCollectBalanceLoading(true)
       var lmsRows = evt && evt.contract_no ? await loadLmsPayments(evt.contract_no, evt.department) : []
       var result = await computeContractBalance(bucket.functions, lmsRows)
       setCollectBalance(result.balance)
       setCollectBalanceLoading(false)
+      loadCollectHistory(historyIds, lmsRows)
       return
     }
     setCollectBalanceLoading(true)
@@ -1378,7 +1392,79 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!error && data && data.length > 0) { setCollectBalance(data[0]) }
     setCollectBalanceLoading(false)
 
-    if (evt && evt.contract_no) loadLmsPayments(evt.contract_no, evt.department)
+    if (evt && evt.contract_no) {
+      var lmsRows2 = await loadLmsPayments(evt.contract_no, evt.department)
+      loadCollectHistory(historyIds, lmsRows2)
+    }
+  }
+
+  // Ambria Ops' own collection rows for the event_id(s) in play — merged
+  // with lmsRows (already fetched for the balance calc) into one
+  // chronological list, same idea as Event Financials' combined
+  // Transactions tab, scaled down for this sheet.
+  async function loadOpsCollections(ids) {
+    if (!ids || ids.length === 0) return []
+    var { data } = await supabase.from('event_ledger')
+      .select('id, payment_mode, amount_paise, reference_id, description, created_by, created_at')
+      .eq('entry_type', 'collection')
+      .in('event_id', ids.map(Number))
+      .order('created_at', { ascending: false })
+    var rows = data || []
+    if (rows.length === 0) return []
+    var txnIds = []
+    rows.forEach(function (r) { if (r.reference_id && txnIds.indexOf(r.reference_id) === -1) txnIds.push(r.reference_id) })
+    var creatorIds = []
+    rows.forEach(function (r) { if (r.created_by && creatorIds.indexOf(r.created_by) === -1) creatorIds.push(r.created_by) })
+    var wtById = {}
+    if (txnIds.length > 0) {
+      var { data: wtRows } = await supabase.from('wallet_transactions').select('id, received_image_path').in('id', txnIds)
+      ;(wtRows || []).forEach(function (w) { wtById[w.id] = w })
+    }
+    var nameById = {}
+    if (creatorIds.length > 0) {
+      var { data: profRows } = await supabase.from('profiles').select('id, name').in('id', creatorIds)
+      ;(profRows || []).forEach(function (p) { nameById[p.id] = p.name || null })
+    }
+    return rows.map(function (r) {
+      var wt = r.reference_id ? wtById[r.reference_id] : null
+      return {
+        key: 'ops:' + r.id,
+        date: r.created_at,
+        isCash: r.payment_mode === 'cash',
+        amount_paise: r.amount_paise,
+        description: r.description,
+        source: 'ops',
+        enteredBy: nameById[r.created_by] || null,
+        receiptUrl: wt && wt.received_image_path ? getReceiptUrl(wt.received_image_path) : null,
+        orderNo: null,
+      }
+    })
+  }
+
+  async function loadCollectHistory(ids, lmsRows) {
+    setCollectHistoryLoading(true)
+    setCollectHistoryError('')
+    try {
+      var opsRows = await loadOpsCollections(ids)
+      var lmsNormalized = (lmsRows || []).map(function (p) {
+        var isCash = p.pay_mode && String(p.pay_mode).toLowerCase().indexOf('cash') !== -1
+        return {
+          key: 'lms:' + p.receive_id,
+          date: p.date,
+          isCash: isCash,
+          amount_paise: p.net_amount_paise,
+          description: p.remarks || ('LMS ' + (p.receive_type || 'payment')),
+          source: 'lms',
+          enteredBy: p.entry_by || null,
+          receiptUrl: p.receipt_url || null,
+          orderNo: p.order_no || null,
+        }
+      })
+      setCollectHistory(opsRows.concat(lmsNormalized).sort(function (a, b) { return new Date(b.date || 0) - new Date(a.date || 0) }))
+    } catch (err) {
+      setCollectHistoryError(err.message || 'Could not load collection history')
+    }
+    setCollectHistoryLoading(false)
   }
 
   async function loadLmsPayments(contractNo, department) {
@@ -2763,67 +2849,62 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </div>
           )}
 
-          {/* What LMS itself has on record for this contract — the figures
-              above only ever reflect collections logged through Ambria Ops'
-              own wallet, so a payment someone entered straight into LMS
-              (cash handed to a different department, a bank transfer logged
-              by the LMS team) would otherwise be invisible here. */}
+          {/* Every collection against this contract, LMS and Ambria Ops
+              together — same merged history Event Financials shows, so
+              whoever's collecting can see what's already come in before
+              asking for more, not just what the Pending Balance above nets
+              out to. */}
           {collectEventId && (
             <div className="border border-slate-200 rounded-lg overflow-hidden">
-              <button type="button" onClick={function () { setLmsPaymentsOpen(!lmsPaymentsOpen) }}
+              <button type="button" onClick={function () { setCollectHistoryOpen(!collectHistoryOpen) }}
                 className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white hover:bg-slate-50 transition-colors">
                 <span className="flex items-center gap-1.5 text-[11.5px] font-bold text-slate-600">
                   <Icon name="receipt" size={13} className="text-slate-400" />
-                  LMS payment history
-                  {lmsPayments && lmsPayments.length > 0 && (
+                  Contract collection history
+                  {collectHistory && collectHistory.length > 0 && (
                     <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold">
-                      {lmsPayments.length}
+                      {collectHistory.length}
                     </span>
                   )}
                 </span>
-                <Icon name={lmsPaymentsOpen ? 'chevronDown' : 'chevronRight'} size={13} className="text-slate-400" />
+                <Icon name={collectHistoryOpen ? 'chevronDown' : 'chevronRight'} size={13} className="text-slate-400" />
               </button>
-              {lmsPaymentsOpen && (
+              {collectHistoryOpen && (
                 <div className="px-3 py-2 border-t border-slate-100 bg-slate-50/60">
-                  {lmsPaymentsLoading ? (
-                    <p className="text-xs text-gray-400">Checking LMS...</p>
-                  ) : lmsPaymentsError ? (
-                    <p className="text-xs text-red-600">{lmsPaymentsError}</p>
-                  ) : !lmsPayments || lmsPayments.length === 0 ? (
-                    <p className="text-xs text-gray-400">No payments on record in LMS for this contract.</p>
+                  {collectHistoryLoading ? (
+                    <p className="text-xs text-gray-400">Loading collection history...</p>
+                  ) : collectHistoryError ? (
+                    <p className="text-xs text-red-600">{collectHistoryError}</p>
+                  ) : !collectHistory || collectHistory.length === 0 ? (
+                    <p className="text-xs text-gray-400">No collections on record for this contract yet.</p>
                   ) : (
                     <div className="space-y-1.5">
-                      {lmsPayments.map(function (p, pi) {
-                        // LMS itself reports cash payments at 1/10th of the real
-                        // amount (the same quirk the Pending Balance "Cash ×10"
-                        // dot above works around) — bank entries are unaffected.
-                        // Shares that same toggle rather than always-correcting,
-                        // so this still matches what LMS's own screen shows by
-                        // default.
-                        var pIsCash = p.pay_mode && String(p.pay_mode).toLowerCase().indexOf('cash') !== -1
+                      {collectHistory.map(function (p) {
                         return (
-                          <div key={pi} className="flex items-start justify-between gap-2 text-[11.5px] bg-white border border-slate-100 rounded-lg px-2.5 py-2">
+                          <div key={p.key} className="flex items-start justify-between gap-2 text-[11.5px] bg-white border border-slate-100 rounded-lg px-2.5 py-2">
                             <div className="min-w-0">
                               <div className="font-semibold text-slate-800">
                                 {p.date ? formatDate(p.date) : '—'}
-                                {p.pay_mode ? ' · ' + titleCase(p.pay_mode) : ''}
-                                {p.receive_type ? ' · ' + p.receive_type : ''}
+                                {' · '}{p.isCash ? 'Cash' : 'Bank'}
+                                {' · '}
+                                <span className={p.source === 'lms' ? 'text-amber-700' : 'text-emerald-700'}>
+                                  {p.source === 'lms' ? 'LMS' : 'Ambria Ops'}
+                                </span>
                               </div>
-                              <DescriptionNote text={p.remarks} label="Remarks" className="mt-1" />
+                              <DescriptionNote text={p.description} label="Remarks" className="mt-1" />
                               <div className="text-slate-400 mt-0.5 flex items-center gap-2">
                                 <span>
-                                  {p.entry_by ? 'Entered by ' + p.entry_by : ''}
-                                  {p.status && p.status !== 'Y' ? (p.entry_by ? ' · status ' : 'status ') + p.status : ''}
+                                  {p.enteredBy ? 'Entered by ' + p.enteredBy : ''}
                                   {/* LMS's own order/contract number on this specific
                                       payment row — shown so a mismatch against the
                                       contract you're viewing is visible at a glance,
                                       since contract_no collides across departments. */}
-                                  {p.order_no && p.order_no !== collectAllEventRows.find(function (e) { return String(e.id) === String(collectEventId) })?.contract_no && (
-                                    <span className="text-amber-600 font-semibold"> · order #{p.order_no} ⚠</span>
+                                  {p.orderNo && p.orderNo !== collectAllEventRows.find(function (e) { return String(e.id) === String(collectEventId) })?.contract_no && (
+                                    <span className="text-amber-600 font-semibold"> · order #{p.orderNo} ⚠</span>
                                   )}
                                 </span>
-                                {p.receipt_url && (
-                                  <a href={p.receipt_url} target="_blank" rel="noreferrer"
+                                {p.receiptUrl && (
+                                  <a href={p.receiptUrl} target="_blank" rel="noreferrer"
                                     onClick={function (ev) { ev.stopPropagation() }}
                                     className="text-indigo-600 hover:text-indigo-800 font-semibold shrink-0">
                                     View receipt ↗
@@ -2832,7 +2913,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                               </div>
                             </div>
                             <div className="shrink-0 font-bold text-slate-800 tabular-nums" data-notranslate>
-                              {formatPoints(p.net_amount_paise * (pIsCash && showActualCash ? 10 : 1))}
+                              {/* LMS reports cash at 1/10th the real amount (the same
+                                  quirk the Pending Balance "Cash ×10" dot works
+                                  around) — Ambria Ops' own cash rows are unaffected. */}
+                              {formatPoints(p.amount_paise * (p.source === 'lms' && p.isCash && showActualCash ? 10 : 1))}
                             </div>
                           </div>
                         )
