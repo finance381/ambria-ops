@@ -1,6 +1,7 @@
 import { supabase } from '../../../lib/supabase'
 import { formatDate, formatPoints } from '../../../lib/format'
 import PaymentProofThumbs from '../../../components/ledger/PaymentProofThumbs'
+import DescriptionNote from '../../../components/ui/DescriptionNote'
 
 // Read-only audit domain, same reasoning as adapters/expense.jsx — payments are
 // already final the instant pay_vendor runs, there's no pending state to review.
@@ -69,7 +70,7 @@ function renderDetailBody(row) {
         <div><p className="text-[10px] font-bold text-gray-400 uppercase">Type</p><p className="text-gray-900">{row.ref_type === 'vendor_deduction' ? 'Deduction' : 'Payment'}</p></div>
         <div><p className="text-[10px] font-bold text-gray-400 uppercase">Date</p><p className="text-gray-900">{row.entry_date ? formatDate(row.entry_date) : '—'}</p></div>
       </div>
-      {row.description && <p className="text-sm text-gray-700">{row.description}</p>}
+      <DescriptionNote text={row.description} truncate={false} />
       {row.metadata && (row.metadata.payment_images || row.metadata.deduction_image) && (
         <div>
           <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Proof</p>

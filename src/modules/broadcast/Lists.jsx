@@ -7,6 +7,7 @@ import Icon from '../../components/ui/Icon'
 import SearchField from '../../components/ui/SearchField'
 import { CTRL, TEXTAREA, BTN_GHOST, BTN_PRIMARY, BTN_DANGER, TH, TD, CARD, Chip, Labeled, Notice, EmptyState, CHIP_INFO, CHIP_NEUTRAL, TagsInput, useTagSuggestions } from './ui'
 import { appConfirm } from '../../components/ui/AppDialog'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 
 var SOURCE_OPTIONS = ['', 'lms', 'contract', 'csv', 'manual', 'inbound']
 
@@ -330,7 +331,7 @@ function Lists({ profile }) {
                   <tr key={l.id} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50 transition-colors">
                     <td className={TD + ' font-semibold text-slate-900'}>
                       {l.name}
-                      {l.description && <span className="block text-[11px] font-normal text-slate-400 mt-0.5">{l.description}</span>}
+                      <DescriptionNote text={l.description} label="Description" className="mt-0.5" />
                     </td>
                     <td className={TD}><Chip tone={l.type === 'static' ? CHIP_NEUTRAL : CHIP_INFO}>{l.type}</Chip></td>
                     <td className={TD + ' text-slate-600'}>

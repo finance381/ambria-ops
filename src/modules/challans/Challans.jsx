@@ -8,6 +8,7 @@ import { generateChallanPdf } from '../../lib/pdf'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import CameraCapture from '../../components/ui/CameraCapture'
 import { appConfirm } from '../../components/ui/AppDialog'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 
 var TYPE_LABELS = {
   event_dispatch: 'Event Dispatch',
@@ -1062,7 +1063,7 @@ function Challans({ profile }) {
             {activeChallan.dispatched_at && <div><strong className="text-gray-500">Dispatched:</strong> {formatDate(activeChallan.dispatched_at)}</div>}
             {activeChallan.received_at && <div><strong className="text-gray-500">Received:</strong> {formatDate(activeChallan.received_at)}</div>}
           </div>
-          {activeChallan.notes && <p className="text-xs text-gray-400 mt-2">{activeChallan.notes}</p>}
+          <DescriptionNote text={activeChallan.notes} label="Notes" className="mt-2" />
         </div>
 
         {/* Action buttons */}

@@ -9,6 +9,7 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import EnteredMark from '../../components/ui/EnteredMark'
 import ReverseDialog from '../../components/ui/ReverseDialog'
 import { appConfirm } from '../../components/ui/AppDialog'
@@ -825,9 +826,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                             <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">New item</span>
                           )}
                         </div>
-                        {it.notes && (
-                          <p className="text-[11px] text-slate-500 italic mt-0.5 truncate">"{it.notes}"</p>
-                        )}
+                        <DescriptionNote text={it.notes} label="Notes" className="mt-1" />
                       </div>
                       {subtotal > 0 && <span className="text-sm font-bold text-slate-900 shrink-0">{formatPoints(subtotal)}</span>}
                     </div>
@@ -893,9 +892,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                       </span>
                     )}
                   </div>
-                  {a.remarks && (
-                    <p className="mt-2 border-l-2 border-slate-200 pl-2.5 text-[12.5px] leading-snug text-slate-600">{a.remarks}</p>
-                  )}
+                  <DescriptionNote text={a.remarks} label="Remarks" truncate={false} className="mt-2" />
                 </div>
               )
             })}
@@ -992,7 +989,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                                     {r.venue_id && (
                                       <p className="text-[10px] text-slate-500">Venue #{r.venue_id}{r.sub_venue_id ? ' › SV#' + r.sub_venue_id : ''}</p>
                                     )}
-                                    {r.remarks && <p className="text-[10px] text-slate-500 italic">"{r.remarks}"</p>}
+                                    <DescriptionNote text={r.remarks} label="Remarks" truncate={false} className="mt-1" />
                                   </div>
                                 )
                               })}

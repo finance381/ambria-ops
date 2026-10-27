@@ -4,6 +4,7 @@ import { logActivity } from '../../lib/logger'
 import { filterVisibleVendors } from '../../lib/vendorGating'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchDropdown from '../../components/ui/SearchDropdown'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import VoiceInput from '../../components/ui/VoiceInput'
 
 function imagePublicUrl(path) {
@@ -1276,7 +1277,7 @@ function Vendors({ profile }) {
                         </span>
                       )}
                     </div>
-                    {v.notes && <p className="text-[11px] text-gray-400 truncate mt-0.5">{v.notes}</p>}
+                    <DescriptionNote text={v.notes} label="Notes" className="mt-0.5" />
                   </div>
                   {/* Status pill inline with name on mobile */}
                   <span className={"lg:hidden shrink-0 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full " +

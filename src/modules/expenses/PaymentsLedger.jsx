@@ -6,6 +6,7 @@ import { useRealtime } from '../../lib/useRealtime'
 import { scrollToTopOf } from '../../lib/scrollToTop'
 import { hasPerm } from '../../lib/permissions'
 import SearchField from '../../components/ui/SearchField'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { CARD } from '../../lib/ui'
@@ -969,7 +970,7 @@ function PaymentsLedger({ profile }) {
                         {isIn ? '+ ' : '\u2212 '}{pts(r.amount_paise || 0)}
                       </span>
                     </div>
-                    {r.description && <p className="mt-0.5 text-[12.5px] font-medium text-slate-600 leading-snug break-words">{r.description}</p>}
+                    <DescriptionNote text={r.description} truncate={false} className="mt-1" />
                     {r.source === 'collection' && r._eventInfo && (function () {
                       var ei = r._eventInfo
                       var bits = [ei.function_date ? formatDate(ei.function_date) : null, ei.client_name, venueLabelWithCode(ei.venue_name), ei.location, ei.session].filter(Boolean)
@@ -1075,9 +1076,7 @@ function PaymentsLedger({ profile }) {
                             chips rather than a hole inside the sentence. */}
                         <div className="min-w-0">
                           <p className="font-display text-[13px] font-bold text-slate-900 leading-snug break-words">{r.party_name}</p>
-                          {r.description && (
-                            <p className="mt-0.5 text-[12px] text-slate-500 leading-snug break-words">{r.description}</p>
-                          )}
+                          <DescriptionNote text={r.description} truncate={false} className="mt-1" />
                           {/* Event Collection / Extra Plate Collection rows: the
                               event name alone (already the row's headline) doesn't
                               say who the guest was, when the function actually

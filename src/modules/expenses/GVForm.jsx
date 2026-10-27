@@ -6,6 +6,7 @@ import { isPrivilegedRole } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import Icon from '../../components/ui/Icon'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import { deptCls, deptOrder } from '../../lib/ui'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
@@ -520,7 +521,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
           <button onClick={onCancel} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 mb-2">← Cancel</button>
           <h2 className="text-lg font-bold text-gray-900">Raise Journal Voucher</h2>
           <p className="text-xs text-gray-500">Adjust expense #{exp.id} · {formatPoints(exp.amount_paise)}</p>
-          {exp.description && <p className="text-xs text-gray-400 mt-0.5 truncate max-w-md">{exp.description}</p>}
+          <DescriptionNote text={exp.description} className="mt-1 max-w-md" />
         </div>
       </div>
 

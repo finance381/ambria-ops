@@ -1,6 +1,7 @@
 import { supabase } from '../../../lib/supabase'
 import { formatDate, formatPoints } from '../../../lib/format'
 import { getReceiptUrl, isVoiceNotePath } from '../../../lib/uploadHelper'
+import DescriptionNote from '../../../components/ui/DescriptionNote'
 
 // Read-only audit domain — no review_status, no approve/reject. Not part of
 // v_review_queue, so this adapter owns its own list fetch (recent window,
@@ -69,7 +70,7 @@ function renderDetailBody(row) {
         <div><p className="text-[10px] font-bold text-gray-400 uppercase">Submitted by</p><p className="text-gray-900">{row.profiles ? row.profiles.name : '—'}</p></div>
         <div><p className="text-[10px] font-bold text-gray-400 uppercase">Date</p><p className="text-gray-900">{row.created_at ? formatDate(row.created_at) : '—'}</p></div>
       </div>
-      {row.description && <p className="text-sm text-gray-700">{row.description}</p>}
+      <DescriptionNote text={row.description} truncate={false} />
       {row._receipts && row._receipts.length > 0 && (
         <div className="space-y-2">
           {row._receipts.map(function (r, i) {

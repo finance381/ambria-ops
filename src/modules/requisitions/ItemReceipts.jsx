@@ -6,6 +6,7 @@ import { useRealtime } from '../../lib/useRealtime'
 import { hasPerm } from '../../lib/permissions'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal'
 import Modal from '../../components/ui/Modal'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import InventoryForm from '../inventory/InventoryForm'
 
 var PAGE_SIZE = 20
@@ -203,7 +204,7 @@ function ItemReceipts({ profile, onCountChange }) {
               )}
               {ir.notes && <span className="text-[11px] text-gray-400 truncate">{ir.notes}</span>}
             </div>
-            {r.description && <p className="text-[11px] text-gray-400 truncate mt-1">Expense: {r.description}</p>}
+            <DescriptionNote text={r.description} label="Expense" className="mt-1" />
           </div>
         )
       })}
@@ -364,8 +365,7 @@ function ReceiveModal({ receipt, profile, onClose, onDone, onOpenExpense }) {
           </div>
           {receipt.description && (
             <div className="mt-2 pt-2 border-t border-gray-200">
-              <p className="text-[11px] text-gray-400 uppercase">Description</p>
-              <p className="text-xs text-gray-700 mt-0.5">{receipt.description}</p>
+              <DescriptionNote text={receipt.description} label="Description" truncate={false} className="" />
             </div>
           )}
           {onOpenExpense && (

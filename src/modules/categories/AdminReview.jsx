@@ -4,6 +4,7 @@ import { titleCase, formatDate } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { useRealtime } from '../../lib/useRealtime'
 import Modal from '../../components/ui/Modal'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import InventoryForm from '../inventory/InventoryForm'
 import VoiceInput from '../../components/ui/VoiceInput'
 
@@ -380,9 +381,7 @@ function AdminReview({ profile }) {
                   {item.dimensions.filter(function (d) { return d.qty }).map(function (d) { return d.qty + ' ' + d.unit }).join(' × ')}
                 </p>
               )}
-              {item.description && (
-                <p className="text-[12px] text-gray-400 mt-1.5 line-clamp-2">{item.description}</p>
-              )}
+              <DescriptionNote text={item.description} label="Description" className="mt-1.5" />
             </div>
 
             {/* Submitter + Dept approval */}

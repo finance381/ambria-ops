@@ -7,6 +7,7 @@ import EventCalendar from '../../components/ui/EventCalendar'
 import { venueColor } from '../../lib/venueColors'
 import ImageLightbox from '../../components/ui/ImageLightbox'
 import Icon from '../../components/ui/Icon'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import { hasPerm } from '../../lib/permissions'
 import { scrollToTopOf } from '../../lib/scrollToTop'
 import eventBg from '../../assets/event-bg.webp'
@@ -1130,9 +1131,7 @@ function EventLedger(props) {
                 </span>
               </div>
 
-              {e.description && (
-                <p className="mt-1.5 text-[13px] text-slate-700 leading-snug">{e.description}</p>
-              )}
+              <DescriptionNote text={e.description} truncate={false} />
 
               <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px] text-slate-500">
                 <span data-notranslate className="font-semibold text-slate-600 whitespace-nowrap">{formatDate(rowDate(e))}</span>

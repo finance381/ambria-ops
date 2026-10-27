@@ -5,6 +5,7 @@ import { formatDate, formatPoints, formatPointsPlain, titleCase } from '../../li
 import { logActivity } from '../../lib/logger'
 import { prepUpload, isVoiceNotePath, getReceiptUrl } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import BottomSheet from '../../components/ui/BottomSheet'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { scrollToTopOf } from '../../lib/scrollToTop'
@@ -1790,12 +1791,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               <p className="font-medium text-gray-800">{formatDate(t.created_at)}</p>
             </div>
           </div>
-          {t.description && (
-            <div>
-              <p className="text-[10px] uppercase text-gray-500 mb-0.5">Description</p>
-              <p className="text-sm text-gray-800">{t.description}</p>
-            </div>
-          )}
+          <DescriptionNote text={t.description} truncate={false} />
           {detailTarget.imgUrl && (
             <div>
               <p className="text-[10px] uppercase text-gray-500 mb-1">Receipt Image</p>
@@ -2742,7 +2738,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                                 {p.pay_mode ? ' · ' + titleCase(p.pay_mode) : ''}
                                 {p.receive_type ? ' · ' + p.receive_type : ''}
                               </div>
-                              {p.remarks && <div className="text-slate-500 mt-0.5 truncate">{p.remarks}</div>}
+                              <DescriptionNote text={p.remarks} label="Remarks" className="mt-1" />
                               <div className="text-slate-400 mt-0.5 flex items-center gap-2">
                                 <span>
                                   {p.entry_by ? 'Entered by ' + p.entry_by : ''}
@@ -4247,15 +4243,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 place (From → To, the type › sub-type, or the function
                 details) already carries the structured facts; this is just
                 whatever free text came with it. */}
-            {isTransferRow && transferCleanDesc && (
-              <p className="text-[12.5px] text-slate-500 mt-0.5 truncate">{transferCleanDesc}</p>
-            )}
-            {isExpRow && expTypeNameForTitle && t.description && (
-              <p className="text-[12.5px] text-slate-500 mt-0.5 truncate">{t.description}</p>
-            )}
-            {collTitleBits.length > 0 && t.description && (
-              <p className="text-[12.5px] text-slate-500 mt-0.5 truncate">{t.description}</p>
-            )}
+            {isTransferRow && <DescriptionNote text={transferCleanDesc} className="mt-1" />}
+            {isExpRow && expTypeNameForTitle && <DescriptionNote text={t.description} className="mt-1" />}
+            {collTitleBits.length > 0 && <DescriptionNote text={t.description} className="mt-1" />}
             {isCancelled && t.cancelled_reason && (
               <p className="text-[10px] text-rose-600 italic mt-0.5">Reason: {t.cancelled_reason}</p>
             )}

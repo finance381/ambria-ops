@@ -18,6 +18,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import CameraCapture from '../../components/ui/CameraCapture'
 import { appConfirm } from '../../components/ui/AppDialog'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -2208,8 +2209,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
             )}
             {req.purpose && (
               <div className="border-t border-gray-100 pt-3">
-                <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Purpose</span>
-                <p className="text-sm text-gray-800 mt-1">{req.purpose}</p>
+                <DescriptionNote text={req.purpose} label="Purpose" truncate={false} className="" />
               </div>
             )}
           </div>
@@ -2302,9 +2302,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
                   {li.estimated_cost_paise && <p className="text-[11px] text-gray-400">~₹{(li.estimated_cost_paise / 100).toLocaleString('en-IN')}</p>}
                 </div>
               </div>
-              {li.notes && (
-                <p className="text-[11px] text-gray-500 mt-1">{li.notes}</p>
-              )}
+              <DescriptionNote text={li.notes} label="Notes" className="mt-1" />
 
               {/* Stock availability + fulfillment choice — admin approval view */}
               {canAdminApprove && !stockLoading && li._source !== 'new' && li.item_id && (function () {

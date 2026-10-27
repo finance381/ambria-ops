@@ -8,6 +8,7 @@ import { pushBack, goBack } from '../../lib/backNav'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import Icon from '../../components/ui/Icon'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import Modal from '../../components/ui/Modal'
 import { appConfirm } from '../../components/ui/AppDialog'
 import { buildDecorVarCostXlsx, deliverFile, exportFileName } from '../../lib/decorVarCostExport'
@@ -1832,7 +1833,7 @@ function DecorVarCost({ profile, inAdmin }) {
                   <div className="min-w-0 flex-1">
                     <p className="font-display text-[14px] font-bold tracking-[-0.01em] text-slate-900">{shortDate(e.entry_date)}{isFn ? ' · Function' : ''}</p>
                     <p className="text-[12.5px] font-medium text-slate-500">{n + (n === 1 ? ' row' : ' rows')} · <span data-notranslate className="font-bold text-slate-800 tabular-nums">{formatPoints(e.amount_paise)}</span></p>
-                    {e.remark && <p className="mt-0.5 text-[13px] font-medium text-slate-600 italic break-words">{e.remark}</p>}
+                    <DescriptionNote text={e.remark} label="Remarks" truncate={false} className="mt-1" />
                   </div>
                   <Icon name={dayOpen ? 'chevronUp' : 'chevronDown'} size={16} className="shrink-0 text-slate-400" />
                   </button>

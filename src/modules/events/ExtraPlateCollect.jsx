@@ -11,6 +11,7 @@ import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
 import CameraCapture from '../../components/ui/CameraCapture'
 import Icon from '../../components/ui/Icon'
 import Modal from '../../components/ui/Modal'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import platesBg from '../../assets/extra-plates-bg.webp'
 
 var BANK_SUB_MODES = [
@@ -1837,7 +1838,7 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
                                   {isIssue ? 'Issue' : isWaste ? 'Returned (waste)' : 'Collection'}
                                 </span>
                                 {isCancelled && <p className="text-[11.5px] font-semibold text-red-600">Cancelled{r.cancelled_reason ? ' — ' + r.cancelled_reason : ''}</p>}
-                                {!isCancelled && r.notes && <p className="text-[11.5px] italic text-slate-500 max-w-[240px] break-words">{r.notes}</p>}
+                                {!isCancelled && <DescriptionNote text={r.notes} label="Notes" className="mt-1" />}
                               </td>
                               <td className={TD + ' text-right tabular-nums font-semibold'}>
                                 {isIssue ? (r.plates_count > 0 ? '+' : '') + r.plates_count : isWaste ? r.plates_returned + ' back' : r.extras_charged + (r.plates_returned > 0 ? ' (' + r.plates_returned + ' back)' : '')}
@@ -2228,7 +2229,7 @@ function renderHistoryRow(r, profile, isAdmin, openCancel, opts) {
             {' · ' + (r.payment_mode === 'cash' ? 'Cash' : 'Bank' + (SUB_MODE_LABEL[r.payment_sub_mode] ? ' (' + SUB_MODE_LABEL[r.payment_sub_mode] + ')' : ''))}
           </p>
         )}
-        {r.notes && <p className="text-[12.5px] text-slate-500 italic mt-0.5 break-words">"{r.notes}"</p>}
+        <DescriptionNote text={r.notes} label="Notes" className="mt-0.5" />
         {isCancelled && (
           <p className="mt-0.5 text-[12.5px] font-semibold text-red-600">Cancelled{r.cancelled_reason ? ' — ' + r.cancelled_reason : ''}</p>
         )}

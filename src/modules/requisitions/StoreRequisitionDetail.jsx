@@ -4,6 +4,7 @@ import { formatDate, formatPoints, formatPointsPlain } from '../../lib/format'
 import { computePlateSummary } from '../../lib/plateInfo'
 import { cateringMenuLabel } from '../../lib/constants'
 import Icon from '../../components/ui/Icon'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 
 // Read-only drill-in from the Store Requisition list — picked Variant B
 // (dense table + a side detail panel) over an expandable-row list after
@@ -245,9 +246,7 @@ function StoreRequisitionDetail({ id, onBack }) {
                   <p className="shrink-0 text-base font-bold text-indigo-600 tabular-nums">{formatPointsPlain(selected.rowTotal)}</p>
                 </div>
 
-                {selected.remarks && (
-                  <p className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-2">{selected.remarks}</p>
-                )}
+                <DescriptionNote text={selected.remarks} label="Remarks" truncate={false} className="" />
 
                 {selected.items.length > 0 && (
                   <div>

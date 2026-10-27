@@ -15,6 +15,7 @@ import { hasPerm } from '../../lib/permissions'
 import { filterVisibleVendors } from '../../lib/vendorGating'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { appConfirm } from '../../components/ui/AppDialog'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 
 var PO_STATUS_LABELS = {
   draft: 'Draft',
@@ -1022,7 +1023,7 @@ function Purchase({ profile, mode }) {
                       {po.profiles?.name || '—'}
                       {assigneeName ? ' · 🛒 ' + assigneeName : ' · Unassigned'}
                     </p>
-                    {po.notes && <p className="text-[11px] text-gray-400 mt-0.5 truncate">{po.notes}</p>}
+                    <DescriptionNote text={po.notes} label="Notes" className="mt-0.5" />
                   </div>
                 )
               })}
@@ -1100,7 +1101,7 @@ function Purchase({ profile, mode }) {
                       {po.profiles?.name || '—'}
                       {assigneeName ? ' · 🛒 ' + assigneeName : ' · Unassigned'}
                     </p>
-                    {po.notes && <p className="text-[11px] text-gray-400 mt-0.5 truncate">{po.notes}</p>}
+                    <DescriptionNote text={po.notes} label="Notes" className="mt-0.5" />
                   </div>
                 )
               })}

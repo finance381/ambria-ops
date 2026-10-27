@@ -13,6 +13,7 @@ import Icon from '../../components/ui/Icon'
 import SearchField from '../../components/ui/SearchField'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import EnteredMark from '../../components/ui/EnteredMark'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import { hasPerm } from '../../lib/permissions'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
@@ -821,9 +822,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
                         return typeName ? typeName + (subTypeName ? ' › ' + subTypeName : '') : 'Expense'
                       })()}
                     </p>
-                    {exp.description && (
-                      <p className="text-[12.5px] text-slate-600 leading-snug mt-1 truncate">{exp.description}</p>
-                    )}
+                    <DescriptionNote text={exp.description} />
                     {(function () {
                       var chips = extraFieldChips(exp)
                       var hasVendor = !!exp.vendor_name
