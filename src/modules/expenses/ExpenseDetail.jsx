@@ -749,7 +749,13 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         {exp.expense_types?.name && (
           <Row label="Type" value={exp.expense_types.name + (exp.expense_sub_types?.name ? ' › ' + exp.expense_sub_types.name : '')} />
         )}
-        {exp.vendor_name && <Row label="Vendor" value={exp.vendor_name} />}
+        {/* exp.vendor_name is the resolved form of whatever the sub-type's own
+            vendor lookup extra field holds (see ExpenseForm.jsx's vendorLegacyName) —
+            a sub-type with one of those already shows it below via the extra_fields
+            loop, under its own real label, so showing the generic "Vendor" row too
+            would just repeat the exact same value twice. */}
+        {exp.vendor_name && !(exp.expense_sub_types?.extra_fields || []).some(function (f) { return f.type === 'lookup' && f.source === 'vendors' }) &&
+          <Row label="Vendor" value={exp.vendor_name} />}
         {/* Split-payment purchases put part of the bill on vendor credit
             rather than debiting the wallet in full — worth showing here,
             not just in the vendor ledger, since the headline Total alone
