@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
+import { stopAllVoice } from '../../lib/voiceRegistry'
 import { logActivity } from '../../lib/logger'
 import { formatPoints, formatDate } from '../../lib/format'
 import SearchDropdown from '../../components/ui/SearchDropdown'
@@ -1713,6 +1714,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   async function handleSubmit() {
     if (saving || submitLockRef.current) return
     submitLockRef.current = true
+    stopAllVoice()
     try {
     setError('')
     setSuccess('')

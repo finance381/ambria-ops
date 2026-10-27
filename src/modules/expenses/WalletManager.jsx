@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
+import { stopAllVoice } from '../../lib/voiceRegistry'
 import { formatDate, formatPoints, formatPointsPlain, titleCase } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { prepUpload, isVoiceNotePath, getReceiptUrl } from '../../lib/uploadHelper'
@@ -991,6 +992,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       alert('Receipt image is required when issuing points.')
       return
     }
+    stopAllVoice()
     setIssueSaving(true)
     var amountRupees = Math.round(Number(issueAmount) * 100)
     var rpcName = issueType === 'debit' ? 'deduct_money' : 'issue_money'
@@ -1112,6 +1114,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
   async function initiateTransfer() {
     if (transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0 || !transferDate) return
+    stopAllVoice()
     setTransferSaving(true)
     var amountRupees = Math.round(Number(transferAmount) * 100)
     var imagePath = null
@@ -1457,6 +1460,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (cancelSaving || !cancelTarget) return
     var reason = cancelReason.trim()
     if (reason.length < 3) { alert('Reason required (min 3 chars)'); return }
+    stopAllVoice()
     setCancelSaving(true)
     var t = cancelTarget.txn
     var kind = cancelTarget.kind
@@ -2030,6 +2034,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!collectTxnDate) { alert('Select the collection date'); return }
     if (collectMode === 'bank' && !collectImage) { alert('Receipt photo is required for bank collections'); return }
     if (collectMode === 'bank' && !collectBankPaymentType) { alert('Select a payment type'); return }
+    stopAllVoice()
     setCollectSaving(true)
     var amountRupees = Math.round(Number(collectAmount) * 100)
     var imagePath = null
@@ -2079,6 +2084,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   async function runBulkIssue() {
     var userIds = Object.keys(bulkSelected).filter(function (k) { return bulkSelected[k] })
     if (bulkSaving || !userIds.length || !bulkAmount || Number(bulkAmount) <= 0) return
+    stopAllVoice()
     setBulkSaving(true)
     var amountRupees = Math.round(Number(bulkAmount) * 100)
     var desc = bulkDesc.trim() || 'Bulk points issued by admin'

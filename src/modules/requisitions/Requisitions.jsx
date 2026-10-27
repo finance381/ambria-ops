@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
+import { stopAllVoice } from '../../lib/voiceRegistry'
 import { titleCase, formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { useRealtime } from '../../lib/useRealtime'
@@ -1015,6 +1016,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   async function handleSubmit() {
     if (saving) return
     if (!validate()) return
+    stopAllVoice()
     setSaving(true)
 
     try {
@@ -2005,6 +2007,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
 
   async function reject() {
     if (!rejectReason.trim()) return
+    stopAllVoice()
     setSaving(true)
     var { error } = await supabase.from('requisitions').update({
       status: 'rejected',
@@ -2119,6 +2122,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
 
   async function deleteReq() {
     if (saving) return
+    stopAllVoice()
     setSaving(true)
     var { error } = await supabase.from('requisitions').update({
       status: 'deleted',

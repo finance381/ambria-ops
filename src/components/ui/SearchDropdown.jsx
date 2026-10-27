@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useId } from 'react'
 import Icon from './Icon'
+import { registerVoiceStop } from '../../lib/voiceRegistry'
 
 // inlineVoice: the microphone sits inside the field at its right edge instead
 // of in a box of its own beside it — for a form that wants one box per field.
@@ -18,6 +19,7 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
   var inputRef = useRef(null)
   var listRef = useRef(null)
   var recognitionRef = useRef(null)
+  var voiceUnregisterRef = useRef(null)
 
   var isFocused = useRef(false)
   // isDirty is a stronger signal than isFocused: it stays true while the user's typed
@@ -130,6 +132,10 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
     }
   }
 
+  function unregisterVoice() {
+    if (voiceUnregisterRef.current) { voiceUnregisterRef.current(); voiceUnregisterRef.current = null }
+  }
+
   function startVoice() {
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SR) { alert('Speech not supported'); return }
@@ -137,6 +143,7 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
     if (recognitionRef.current) {
       recognitionRef.current.stop()
       recognitionRef.current = null
+      unregisterVoice()
       return
     }
 
@@ -151,19 +158,26 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
       setOpen(true)
       setListening(false)
       recognitionRef.current = null
+      unregisterVoice()
     }
     recognition.onend = function () {
       setListening(false)
       recognitionRef.current = null
+      unregisterVoice()
     }
     recognition.onerror = function () {
       setListening(false)
       recognitionRef.current = null
+      unregisterVoice()
     }
 
     recognitionRef.current = recognition
     setListening(true)
     recognition.start()
+    voiceUnregisterRef.current = registerVoiceStop(function () {
+      if (recognitionRef.current) { try { recognitionRef.current.stop() } catch (_) {} ; recognitionRef.current = null }
+      setListening(false)
+    })
   }
 
   // Scroll highlighted item into view

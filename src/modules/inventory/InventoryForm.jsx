@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase, getImageUrl } from '../../lib/supabase'
+import { stopAllVoice } from '../../lib/voiceRegistry'
 import { prepUpload } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import Icon from '../../components/ui/Icon'
@@ -567,7 +568,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   }
 
   async function handleSubmit(e) {
-    e.preventDefault(); if (saving) return; if (!validate()) return; setSaving(true)
+    e.preventDefault(); if (saving) return; if (!validate()) return; stopAllVoice(); setSaving(true)
     var effectiveName = resolvedNameRef.current || name.trim()
     var hindiName = nameHindi.trim()
     if (effectiveName && !hindiName) {

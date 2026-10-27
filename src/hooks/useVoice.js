@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { registerVoiceStop } from '../lib/voiceRegistry'
 
 // Read straight from the same key i18n persists, rather than through useLang:
 // VoiceInput is mounted in places that sit outside the language provider, and a
@@ -11,12 +12,18 @@ export function useVoice(lang) {
   var [listening, setListening] = useState(false)
   var recognitionRef = useRef(null)
   var callbackRef = useRef(null)
+  var unregisterRef = useRef(null)
+
+  function unregister() {
+    if (unregisterRef.current) { unregisterRef.current(); unregisterRef.current = null }
+  }
 
   function stop() {
     var r = recognitionRef.current
     recognitionRef.current = null
     if (r) { try { r.stop() } catch (_) {} }
     setListening(false)
+    unregister()
   }
 
   function start(onResult) {
@@ -55,6 +62,7 @@ export function useVoice(lang) {
     recognition.onerror = function (event) {
       recognitionRef.current = null
       setListening(false)
+      unregister()
       var code = event && event.error
       // 'aborted' is the user tapping stop, which needs no announcement. But
       // 'no-speech' must be reported: silently swallowing it is indistinguishable
@@ -79,12 +87,14 @@ export function useVoice(lang) {
     recognition.onend = function () {
       recognitionRef.current = null
       setListening(false)
+      unregister()
     }
 
     recognitionRef.current = recognition
     try {
       recognition.start()
       setListening(true)
+      unregisterRef.current = registerVoiceStop(stop)
     } catch (err) {
       recognitionRef.current = null
       setListening(false)
