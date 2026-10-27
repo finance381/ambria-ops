@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase, getImageUrl } from '../../lib/supabase'
-import { stopAllVoice } from '../../lib/voiceRegistry'
+import { stopAllVoice, registerVoiceStop } from '../../lib/voiceRegistry'
 import { prepUpload } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import Icon from '../../components/ui/Icon'
@@ -130,6 +130,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   var [cameraOpen, setCameraOpen] = useState(false)
   var [listeningField, setListeningField] = useState(null)
   var recognitionRef = useRef(null)
+  var unregisterSpeechRef = useRef(null)
   var [saving, setSaving] = useState(false)
   var [errors, setErrors] = useState({})
   var itemSearchTimer = useRef(null)
@@ -503,11 +504,25 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
 
   function startSpeech(fieldId) {
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { alert('Speech not supported'); return }
-    if (recognitionRef.current) { recognitionRef.current.stop(); recognitionRef.current = null; setListeningField(null); return }
+    if (recognitionRef.current) { recognitionRef.current.stop(); recognitionRef.current = null; setListeningField(null); unregisterSpeechRef.current && unregisterSpeechRef.current(); unregisterSpeechRef.current = null; return }
     var recognition = new SR(); recognition.lang = fieldId === 'nameHindi' ? 'hi-IN' : 'en-IN'; recognition.interimResults = false
-    recognition.onresult = function (ev) { var transcript = ev.results[0][0].transcript; if (fieldId === 'description') { setDescription(function (prev) { return prev ? prev + ' ' + transcript : transcript }) } else if (fieldId === 'nameHindi') { setNameHindi(function (prev) { return prev ? prev + ' ' + transcript : transcript }) }; setListeningField(null); recognitionRef.current = null }
-    recognition.onend = function () { setListeningField(null); recognitionRef.current = null }; recognition.onerror = function () { setListeningField(null); recognitionRef.current = null }
+    // continuous: without it, Chrome ends the whole session at the first
+    // pause in speech and everything said after is never captured — the
+    // same cutoff bug fixed in useVoice.js. Each pause-delimited chunk still
+    // arrives as its own onresult call, so onresult must only append, not
+    // treat the session as finished.
+    recognition.continuous = true
+    recognition.onresult = function (ev) {
+      var transcript = ''
+      for (var i = ev.resultIndex; i < ev.results.length; i++) { transcript += ev.results[i][0].transcript }
+      if (!transcript) return
+      if (fieldId === 'description') { setDescription(function (prev) { return prev ? prev + ' ' + transcript : transcript }) }
+      else if (fieldId === 'nameHindi') { setNameHindi(function (prev) { return prev ? prev + ' ' + transcript : transcript }) }
+    }
+    function cleanup() { setListeningField(null); recognitionRef.current = null; unregisterSpeechRef.current && unregisterSpeechRef.current(); unregisterSpeechRef.current = null }
+    recognition.onend = cleanup; recognition.onerror = cleanup
     recognitionRef.current = recognition; setListeningField(fieldId); recognition.start()
+    unregisterSpeechRef.current = registerVoiceStop(function () { recognition.stop() })
   }
 
   async function uploadImage(itemId, prefix) {

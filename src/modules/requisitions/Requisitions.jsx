@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
-import { stopAllVoice } from '../../lib/voiceRegistry'
+import { stopAllVoice, registerVoiceStop } from '../../lib/voiceRegistry'
 import { titleCase, formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { useRealtime } from '../../lib/useRealtime'
@@ -703,6 +703,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [listening, setListening] = useState(false)
   var searchContainerRef = useRef(null)
   var recognitionRef = useRef(null)
+  var unregisterDictationRef = useRef(null)
 
   var isEditing = !!editReq
   var SpeechRec = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null
@@ -782,11 +783,12 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         })
       }
     }
-    rec.onerror = function () { setListening(false) }
-    rec.onend = function () { setListening(false); recognitionRef.current = null }
+    rec.onerror = function () { setListening(false); unregisterDictationRef.current && unregisterDictationRef.current(); unregisterDictationRef.current = null }
+    rec.onend = function () { setListening(false); recognitionRef.current = null; unregisterDictationRef.current && unregisterDictationRef.current(); unregisterDictationRef.current = null }
     recognitionRef.current = rec
     rec.start()
     setListening(true)
+    unregisterDictationRef.current = registerVoiceStop(function () { rec.stop() })
   }
 
   async function loadLookups() {

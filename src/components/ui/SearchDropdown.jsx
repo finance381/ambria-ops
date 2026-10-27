@@ -150,15 +150,20 @@ function SearchDropdown({ items, value, onChange, onAdd, onInputChange, placehol
     var recognition = new SR()
     recognition.lang = voiceLang || 'en-IN'
     recognition.interimResults = false
+    // Without this, Chrome ends the whole session at the first pause in
+    // speech — a longer vendor/item name spoken with any hesitation got cut
+    // to whatever was said before the pause (same bug fixed in useVoice.js).
+    recognition.continuous = true
+    var fullTranscript = ''
 
     recognition.onresult = function (ev) {
-      var transcript = ev.results[0][0].transcript
-      setQuery(transcript)
+      for (var i = ev.resultIndex; i < ev.results.length; i++) {
+        if (ev.results[i].isFinal) fullTranscript += ev.results[i][0].transcript
+      }
+      if (!fullTranscript) return
+      setQuery(fullTranscript)
       if (value) onChange('')
       setOpen(true)
-      setListening(false)
-      recognitionRef.current = null
-      unregisterVoice()
     }
     recognition.onend = function () {
       setListening(false)
