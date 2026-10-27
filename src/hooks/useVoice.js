@@ -51,10 +51,20 @@ export function useVoice(lang) {
     recognition.lang = lang || preferredLang()
     recognition.interimResults = false
     recognition.maxAlternatives = 1
+    // Without this, Chrome treats the very first pause in speech as the end
+    // of the whole utterance and tears the session down right there — a
+    // dictation that runs 9 seconds with a breath around second 3 only ever
+    // captured that first 3 seconds, with everything said after going to a
+    // closed recognizer. continuous keeps the session open across pauses;
+    // each pause-delimited chunk still arrives as its own onresult call.
+    recognition.continuous = true
 
     recognition.onresult = function (event) {
-      var transcript = event.results[0][0].transcript
-      if (callbackRef.current) callbackRef.current(transcript)
+      var transcript = ''
+      for (var i = event.resultIndex; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript
+      }
+      if (transcript && callbackRef.current) callbackRef.current(transcript)
     }
 
     // Every error used to be swallowed here, so a blocked microphone
