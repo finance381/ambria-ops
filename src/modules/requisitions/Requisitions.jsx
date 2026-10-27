@@ -827,7 +827,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     if (!dateStr) { setEvents([]); setEventId(''); return }
     setEventsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, contract_date, function_date, contract_type, venue_name, session, client_name')
+      .select('id, event_name, contract_date, function_date, contract_type, venue_name, location, session, client_name, created_user_name')
       .eq('function_date', dateStr)
       .is('lms_cancelled_at', null)
       .order('event_name')
@@ -1315,7 +1315,10 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                 style={{ fontSize: '16px' }}>
                 <option value="">Select event...</option>
-                {events.map(function (ev) { return <option key={ev.id} value={String(ev.id)}>{ev.event_name + ' · ' + (ev.venue_name || '')}</option> })}
+                {events.map(function (ev) {
+                  var venueBit = (ev.venue_name || '') + ((ev.location && ev.location !== ev.venue_name) ? ' / ' + ev.location : '')
+                  return <option key={ev.id} value={String(ev.id)}>{ev.event_name + ' · ' + venueBit}</option>
+                })}
               </select>
             )}
             {(function () {
@@ -1328,8 +1331,10 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                     {sel.function_date && <span>📅 {sel.function_date}</span>}
                     {sel.contract_type && <span>🎉 {sel.contract_type}</span>}
                     {sel.venue_name && <span>📍 {sel.venue_name}</span>}
+                    {sel.location && sel.location !== sel.venue_name && <span>📍 {sel.location}</span>}
                     {sel.session && <span>🕐 {sel.session}</span>}
                     {sel.client_name && <span>👤 {sel.client_name}</span>}
+                    {sel.created_user_name && <span>💼 By {sel.created_user_name}</span>}
                   </div>
                 </div>
               )

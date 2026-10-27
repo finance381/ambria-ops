@@ -185,7 +185,7 @@ function CostTransfers({ profile, inAdmin }) {
   // function?" on now fetches the months around today in one query and files
   // them by date, so a date in that window answers at once; a date outside it
   // is fetched on its own the old way, and remembered too.
-  var EVENT_COLS = 'id, event_name, function_date, contract_type, venue_name, session, client_name, department, contract_no, created_user_name'
+  var EVENT_COLS = 'id, event_name, function_date, contract_type, venue_name, location, session, client_name, department, contract_no, created_user_name'
   var eventsByDateRef = useRef({})
   var prefetchedRef = useRef(false)
 
@@ -1064,7 +1064,7 @@ function CostTransfers({ profile, inAdmin }) {
             {isFunction && (function () {
               var sel = eventId ? formEvents.find(function (ev) { return String(ev.id) === eventId }) : null
               function metaOf(ev) {
-                return [ev.venue_name, ev.department, ev.session, ev.contract_no ? '#' + ev.contract_no : null, ev.created_user_name ? 'by ' + ev.created_user_name : null].filter(Boolean)
+                return [ev.venue_name, (ev.location && ev.location !== ev.venue_name) ? ev.location : null, ev.department, ev.session, ev.contract_no ? '#' + ev.contract_no : null, ev.created_user_name ? 'by ' + ev.created_user_name : null].filter(Boolean)
               }
 
               // Picked: one line naming it, and Change.

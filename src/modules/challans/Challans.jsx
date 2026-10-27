@@ -187,7 +187,7 @@ function Challans({ profile }) {
     if (!date) { setDateEvents([]); return }
     setDateEventsLoading(true)
     var { data } = await supabase.from('events_safe')
-      .select('id, contract_date, function_date, client_name, venue_name, event_name, contract_no')
+      .select('id, contract_date, function_date, client_name, venue_name, location, event_name, contract_no, created_user_name')
       .eq('function_date', date)
       .order('event_name')
     setDateEvents(data || [])
@@ -936,8 +936,9 @@ function Challans({ profile }) {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                       <option value="">Select event...</option>
                       {dateEvents.map(function (ev) {
+                        var venueBit = (ev.venue_name || '') + ((ev.location && ev.location !== ev.venue_name) ? ' / ' + ev.location : '')
                         return <option key={ev.id} value={ev.id}>
-                          {(ev.client_name || '') + ' — ' + (ev.venue_name || '') + ' — ' + (ev.event_name || '') + (ev.contract_no ? ' #' + ev.contract_no : '')}
+                          {(ev.client_name || '') + ' — ' + venueBit + ' — ' + (ev.event_name || '') + (ev.contract_no ? ' #' + ev.contract_no : '') + (ev.created_user_name ? ' (by ' + ev.created_user_name + ')' : '')}
                         </option>
                       })}
                     </select>

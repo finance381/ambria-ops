@@ -370,7 +370,7 @@ function DecorVarCost({ profile, inAdmin }) {
     if (!dateStr) { setEvents([]); return }
     setEventsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, session, client_name, department')
+      .select('id, event_name, function_date, venue_name, location, session, client_name, department, created_user_name')
       .eq('function_date', dateStr)
       .is('lms_cancelled_at', null)
       .order('event_name')
@@ -1183,7 +1183,12 @@ function DecorVarCost({ profile, inAdmin }) {
                               </span>
                             </span>
                             {head.client_name && <span className={'block text-[11.5px] leading-snug truncate ' + (sel ? 'text-indigo-800' : 'text-slate-700')}>{head.client_name}</span>}
-                            <span className={'block text-[10.5px] leading-snug truncate ' + (sel ? 'text-indigo-600' : 'text-slate-500')}>{(head.venue_name || '') + (head.session ? ' · ' + head.session : '')}</span>
+                            <span className={'block text-[10.5px] leading-snug truncate ' + (sel ? 'text-indigo-600' : 'text-slate-500')}>
+                              {[head.venue_name, (head.location && head.location !== head.venue_name) ? head.location : null, head.session].filter(Boolean).join(' · ')}
+                            </span>
+                            {head.created_user_name && (
+                              <span className={'block text-[10.5px] leading-snug truncate ' + (sel ? 'text-indigo-500' : 'text-slate-400')}>By {head.created_user_name}</span>
+                            )}
                           </button>
                         )
                       })}

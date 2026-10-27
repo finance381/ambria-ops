@@ -497,7 +497,7 @@ export function LinkedEventSection({ formApi, readOnly }) {
     setEventDate(dateStr)
     if (!dateStr) { setEvents([]); return }
     setEventsLoading(true)
-    supabase.from('events').select('id, event_name, client_name, function_date').eq('function_date', dateStr).is('lms_cancelled_at', null).order('event_name')
+    supabase.from('events').select('id, event_name, client_name, function_date, venue_name, location, created_user_name').eq('function_date', dateStr).is('lms_cancelled_at', null).order('event_name')
       .then(function (res) { setEvents(res.data || []); setEventsLoading(false) })
   }
 
@@ -516,7 +516,10 @@ export function LinkedEventSection({ formApi, readOnly }) {
               setSelectedEvent(events.find(function (e) { return String(e.id) === id }) || null)
             }} className={fieldCls()} style={{ fontSize: '16px' }}>
               <option value="">No linked event</option>
-              {events.map(function (e) { return <option key={e.id} value={e.id}>{e.event_name}{e.client_name ? ' — ' + e.client_name : ''}</option> })}
+              {events.map(function (e) {
+                var venueBit = (e.venue_name || '') + ((e.location && e.location !== e.venue_name) ? ' / ' + e.location : '')
+                return <option key={e.id} value={e.id}>{e.event_name}{e.client_name ? ' — ' + e.client_name : ''}{venueBit ? ' — ' + venueBit : ''}</option>
+              })}
             </select>
           )}
         </>
@@ -525,6 +528,12 @@ export function LinkedEventSection({ formApi, readOnly }) {
         <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-1">
           <p className="text-sm font-bold text-indigo-800">{selectedEvent.event_name}</p>
           <p className="text-xs text-indigo-600">{selectedEvent.client_name}{selectedEvent.function_date ? ' · ' + formatDate(selectedEvent.function_date) : ''}</p>
+          {(selectedEvent.venue_name || selectedEvent.location) && (
+            <p className="text-xs text-indigo-600">
+              {[selectedEvent.venue_name, (selectedEvent.location && selectedEvent.location !== selectedEvent.venue_name) ? selectedEvent.location : null].filter(Boolean).join(' · ')}
+            </p>
+          )}
+          {selectedEvent.created_user_name && <p className="text-xs text-indigo-500">By {selectedEvent.created_user_name}</p>}
           <p className="text-[11px] text-amber-700 font-medium">⚠ Postings on this project's ledger will mirror to this event's ledger.</p>
         </div>
       )}
