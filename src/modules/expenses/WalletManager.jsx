@@ -13,7 +13,7 @@ import { scrollToTopOf } from '../../lib/scrollToTop'
 import { useVoice } from '../../hooks/useVoice'
 import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
-import { loadFunctionPickerPool, buildDeptContractBuckets, computeContractBalance } from '../../lib/functionPicker'
+import { loadFunctionPickerPool, buildDeptContractBuckets, computeContractBalance, loadFullContractPool } from '../../lib/functionPicker'
 // Imported rather than read out of public/, for the same reasons PageBackdrop
 // gives: the base path is handled for us, and the content hash means a new
 // backdrop is never served from a stale cache. It was a 1.05MB PNG; as WebP at
@@ -1389,10 +1389,20 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     // This used to call a separate, single-event fn_event_balance RPC for
     // the solo case, which could disagree with it: a function Event
     // Financials showed as fully settled could still show pending here.
-    var bucket = buildDeptContractBuckets(collectAllEventRows).find(function (b) {
-      return b.functions.some(function (f) { return String(f.id) === String(fid) })
-    })
-    var functions = bucket ? bucket.functions : (evt ? [evt] : [])
+    //
+    // The pool fed into that balance/history math has to be the FULL
+    // contract pool (loadFullContractPool — includes LMS-resync-superseded
+    // duplicate ids), not collectAllEventRows/buildDeptContractBuckets
+    // (picker-only, deliberately live-only so a stale duplicate never shows
+    // as something new to select). Using the picker's live-only pool here
+    // silently dropped any collection logged against an id a later resync
+    // marked cancelled — exactly what happened for a real Venue contract:
+    // its first several cash collections landed on two ids a resync later
+    // superseded, so this screen's balance and history both skipped them
+    // while Event Financials (which already pools this way) showed it
+    // correctly settled.
+    var functions = evt && evt.contract_no ? await loadFullContractPool(evt.contract_no, evt.department) : []
+    if (functions.length === 0 && evt) functions = [evt]
     var historyIds = functions.length > 0 ? functions.map(function (f) { return f.id }) : [Number(fid)]
 
     setCollectBalanceLoading(true)

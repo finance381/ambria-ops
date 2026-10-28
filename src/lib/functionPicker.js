@@ -234,3 +234,23 @@ export async function loadFunctionPickerPool(dateStr) {
 
   return { dateRows: dateRows, allRows: allRows }
 }
+
+// Every event row for a (contract_no, department) pair, for balance/history
+// purposes — deliberately NOT filtering lms_cancelled_at, unlike the picker
+// pool above. A resync mints a new event row for the same function and marks
+// the old one cancelled, rather than updating it in place, but never
+// re-points collections already logged against the old id, so a "cancelled"
+// duplicate can still be the one real money is sitting on (mirrors
+// EventLedger.jsx's own contract pool, which hit this exact gotcha first).
+// Only ever call this for balance/history math once a function is already
+// selected — the live-only picker pool above is still correct for what a
+// user may pick as "the" function to log a new entry against.
+export async function loadFullContractPool(contractNo, department) {
+  if (!contractNo) return []
+  var res = await supabase.from('events')
+    .select(FUNC_PICKER_COLS)
+    .eq('contract_no', contractNo)
+    .eq('department', department)
+    .is('merged_into_id', null)
+  return res.data || []
+}
