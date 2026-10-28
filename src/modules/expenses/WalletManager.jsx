@@ -513,6 +513,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [collectTxnDate, setCollectTxnDate] = useState('')
   var [collectImage, setCollectImage] = useState(null)
   var [collectSaving, setCollectSaving] = useState(false)
+  // Shown right after a successful collection, since the modal no longer
+  // auto-closes (see submitCollection) — the pending balance below it is
+  // the real confirmation, this is just "yes, that one went through."
+  var [collectJustSaved, setCollectJustSaved] = useState(false)
   var collectVoice = useVoice()
   var [tentativeModal, setTentativeModal] = useState(false)
   var [tentativeGuestName, setTentativeGuestName] = useState('')
@@ -1327,12 +1331,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setCollectDesc('')
     setCollectTxnDate(toYMD(new Date()))
     setCollectImage(null)
+    setCollectJustSaved(false)
   }
 
   async function loadFunctionsForDate(dateStr) {
     setCollectDate(dateStr)
     setCollectEventId('')
     setCollectBalance(null)
+    setCollectJustSaved(false)
     if (!dateStr) { setCollectEvents([]); setCollectAllEventRows([]); return }
     setCollectFunctionsLoading(true)
     // contact_person/contact_number/secondary_contact/is_tentative aren't
@@ -1357,6 +1363,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   }
 
   async function selectCollectFunction(fid) {
+    setCollectJustSaved(false)
     setCollectEventId(fid)
     setCollectBalance(null)
     setLmsPayments(null)
@@ -2183,8 +2190,24 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       })
     } catch (_) {}
 
-    setCollectModal(false)
+    // Stay open instead of closing: the pending balance shown here was
+    // computed before this collection landed, so closing immediately meant
+    // the only way to see it reflect this payment was a full re-navigation
+    // (pick the date, pick the function, all over again) — easy to read as
+    // "it doesn't update" when logging several collections back to back for
+    // the same guest. Clear only the entry fields and re-pull the balance
+    // and history for the function/contract that's still selected.
+    setCollectAmount('')
+    setCollectDesc('')
+    setCollectImage(null)
+    setCollectMode('')
+    setCollectBankPaymentType('')
     setCollectSaving(false)
+    // selectCollectFunction clears collectJustSaved as its first line (it's
+    // also the normal "user picked a different function" path) — set it
+    // back to true only after that refresh has actually landed.
+    if (collectEventId) await selectCollectFunction(collectEventId)
+    setCollectJustSaved(true)
     refreshBalance()
     openWalletTxns(null)
   }
@@ -2775,6 +2798,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   </div>
                 )
               })()}
+            </div>
+          )}
+
+          {collectJustSaved && (
+            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg px-3 py-2 text-[12px] font-semibold">
+              <Icon name="check" size={14} className="shrink-0" />
+              Collected — balance below is updated. Log another, or close when done.
             </div>
           )}
 
