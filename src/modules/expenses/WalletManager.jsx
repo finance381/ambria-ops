@@ -1402,31 +1402,18 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // with lmsRows (already fetched for the balance calc) into one
   // chronological list, same idea as Event Financials' combined
   // Transactions tab, scaled down for this sheet.
+  // fn_event_collections (00155) is a SECURITY DEFINER RPC specifically for
+  // this: event_ledger_select's RLS normally only shows a collection row to
+  // the person who created it, so two collectors on the same function used
+  // to only ever see their own half of the history here. The RPC returns
+  // every collector's rows for the given events, pre-joined to the detail
+  // this screen already showed (collector name, receipt).
   async function loadOpsCollections(ids) {
     if (!ids || ids.length === 0) return []
-    var { data } = await supabase.from('event_ledger')
-      .select('id, payment_mode, amount_paise, reference_id, description, created_by, created_at')
-      .eq('entry_type', 'collection')
-      .in('event_id', ids.map(Number))
-      .order('created_at', { ascending: false })
-    var rows = data || []
-    if (rows.length === 0) return []
-    var txnIds = []
-    rows.forEach(function (r) { if (r.reference_id && txnIds.indexOf(r.reference_id) === -1) txnIds.push(r.reference_id) })
-    var creatorIds = []
-    rows.forEach(function (r) { if (r.created_by && creatorIds.indexOf(r.created_by) === -1) creatorIds.push(r.created_by) })
-    var wtById = {}
-    if (txnIds.length > 0) {
-      var { data: wtRows } = await supabase.from('wallet_transactions').select('id, received_image_path').in('id', txnIds)
-      ;(wtRows || []).forEach(function (w) { wtById[w.id] = w })
-    }
-    var nameById = {}
-    if (creatorIds.length > 0) {
-      var { data: profRows } = await supabase.from('profiles').select('id, name').in('id', creatorIds)
-      ;(profRows || []).forEach(function (p) { nameById[p.id] = p.name || null })
-    }
+    var { data, error } = await supabase.rpc('fn_event_collections', { p_event_ids: ids.map(Number) })
+    if (error || !data) return []
+    var rows = data.slice().sort(function (a, b) { return new Date(b.created_at) - new Date(a.created_at) })
     return rows.map(function (r) {
-      var wt = r.reference_id ? wtById[r.reference_id] : null
       return {
         key: 'ops:' + r.id,
         date: r.created_at,
@@ -1434,8 +1421,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         amount_paise: r.amount_paise,
         description: r.description,
         source: 'ops',
-        enteredBy: nameById[r.created_by] || null,
-        receiptUrl: wt && wt.received_image_path ? getReceiptUrl(wt.received_image_path) : null,
+        enteredBy: r.creator_name || null,
+        receiptUrl: r.wt_received_image_path ? getReceiptUrl(r.wt_received_image_path) : null,
         orderNo: null,
       }
     })

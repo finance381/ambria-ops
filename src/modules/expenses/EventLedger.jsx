@@ -592,22 +592,6 @@ function EventLedger(props) {
         expenseCheckById[e.id] = { checked_by: e.checked_by, checked_at: e.checked_at, tally_entered_by: e.tally_entered_by, tally_entered_at: e.tally_entered_at }
       })
     }
-    // Collection entries carry a wallet_transactions.id in reference_id — that
-    // row is what actually holds the receipt image, mode and checked flag.
-    var collTxnIds = []
-    rows.forEach(function (r) {
-      if (r.entry_type === 'collection' && r.reference_id && collTxnIds.indexOf(r.reference_id) === -1) collTxnIds.push(r.reference_id)
-    })
-    var wtById = {}
-    if (collTxnIds.length > 0) {
-      var { data: wtRows } = await supabase.from('wallet_transactions')
-        .select('id, amount_paise, payment_mode, bank_payment_type, receipt_no, status, performed_by, received_image_path, checked_by, checked_at, tally_entered_by, tally_entered_at')
-        .in('id', collTxnIds)
-      ;(wtRows || []).forEach(function (w) {
-        wtById[w.id] = w
-        if (w.performed_by && creatorIds.indexOf(w.performed_by) === -1) creatorIds.push(w.performed_by)
-      })
-    }
     var nameById = {}
     if (creatorIds.length > 0) {
       var { data: profRows } = await supabase.from('profiles').select('id, name').in('id', creatorIds)
@@ -621,15 +605,58 @@ function EventLedger(props) {
       r._checkedAt = chk ? chk.checked_at : null
       r._enteredBy = chk ? chk.tally_entered_by : null
       r._enteredAt = chk ? chk.tally_entered_at : null
-      var wt = r.entry_type === 'collection' ? wtById[r.reference_id] : null
-      if (wt) {
-        r._wt = wt
-        r._collectorName = nameById[wt.performed_by] || null
-      }
       return r
     })
+    // event_ledger_select's RLS only shows a 'collection' row to its own
+    // creator (plus finance_hr/dept-hierarchy reach) -- so this direct query
+    // above never returns more than the viewer's own collections. Discard
+    // whatever collection rows it did return and replace them wholesale with
+    // fn_event_collections (00155), a SECURITY DEFINER RPC that returns every
+    // collector's rows for these events, so two people collecting against
+    // the same function both see the full picture here.
+    rows = rows.filter(function (r) { return r.entry_type !== 'collection' }).concat(await loadAllCollections(ids))
     setEntries(rows)
     setEntriesLoading(false)
+  }
+
+  async function loadAllCollections(ids) {
+    var { data, error } = await supabase.rpc('fn_event_collections', { p_event_ids: ids.map(Number) })
+    if (error || !data) return []
+    return data.map(function (r) {
+      return {
+        id: r.id,
+        entry_type: 'collection',
+        direction: 'in',
+        payment_mode: r.payment_mode,
+        amount_paise: r.amount_paise,
+        reference_type: r.reference_type,
+        reference_id: r.reference_id,
+        description: r.description,
+        created_by: r.created_by,
+        created_at: r.created_at,
+        event_id: r.event_id,
+        _creatorName: r.creator_name,
+        _entryDate: null,
+        _checkedBy: null,
+        _checkedAt: null,
+        _enteredBy: null,
+        _enteredAt: null,
+        _wt: {
+          amount_paise: r.wt_amount_paise,
+          payment_mode: r.wt_payment_mode,
+          bank_payment_type: r.wt_bank_payment_type,
+          receipt_no: r.wt_receipt_no,
+          status: r.wt_status,
+          performed_by: r.performed_by,
+          received_image_path: r.wt_received_image_path,
+          checked_by: r.wt_checked_by,
+          checked_at: r.wt_checked_at,
+          tally_entered_by: r.wt_tally_entered_by,
+          tally_entered_at: r.wt_tally_entered_at,
+        },
+        _collectorName: r.collector_name,
+      }
+    })
   }
 
   // Fetches LMS's own payment history for a contract (the same read the
