@@ -15,6 +15,10 @@ var EDITOR_ONLY_KEYS = [
   'rental_perfect_offset', 'rental_filler_offset',
   'rental_pushpanjali_manaktala_offset', 'rental_pushpanjali_exotica_offset',
   'rental_tier_pct',
+  // Lunch-session overrides for the same four cascades — same offset idea,
+  // applied only to the Lunch slot column instead of every slot.
+  'rental_perfect_offset_lunch', 'rental_filler_offset_lunch',
+  'rental_pushpanjali_manaktala_offset_lunch', 'rental_pushpanjali_exotica_offset_lunch',
 ]
 
 function byOrder(a, b) { return (a.sort_order || 0) - (b.sort_order || 0) }

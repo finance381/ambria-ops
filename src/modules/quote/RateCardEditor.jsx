@@ -532,6 +532,13 @@ function RentalsEditor({ config, onSave, saving }) {
   var [offsetPM, setOffsetPM] = useState(config.rental_pushpanjali_manaktala_offset != null ? config.rental_pushpanjali_manaktala_offset : 0)
   var [offsetPE, setOffsetPE] = useState(config.rental_pushpanjali_exotica_offset != null ? config.rental_pushpanjali_exotica_offset : 0)
   var [tierPct, setTierPct] = useState(clone(config.rental_tier_pct || {}))
+  // Lunch-session overrides: the same four flat-₹L cascades, but applied
+  // only to the Lunch slot's own column instead of every slot — Lunch
+  // pricing doesn't have to track the main (Dinner/Sundowner) cascade.
+  var [offsetLunch, setOffsetLunch] = useState(config.rental_perfect_offset_lunch != null ? config.rental_perfect_offset_lunch : 0)
+  var [offsetPFLunch, setOffsetPFLunch] = useState(config.rental_filler_offset_lunch != null ? config.rental_filler_offset_lunch : 0)
+  var [offsetPMLunch, setOffsetPMLunch] = useState(config.rental_pushpanjali_manaktala_offset_lunch != null ? config.rental_pushpanjali_manaktala_offset_lunch : 0)
+  var [offsetPELunch, setOffsetPELunch] = useState(config.rental_pushpanjali_exotica_offset_lunch != null ? config.rental_pushpanjali_exotica_offset_lunch : 0)
   var kingsIdx = 0
   var perfectIdx = 1
   var fillerIdx = 2
@@ -540,6 +547,15 @@ function RentalsEditor({ config, onSave, saving }) {
     if (_lbl.indexOf('king') !== -1) kingsIdx = _ci
     if (_lbl.indexOf('perfect') !== -1) perfectIdx = _ci
     if (_lbl.indexOf('filler') !== -1) fillerIdx = _ci
+  }
+  var lunchIdx = -1
+  for (var _si0 = 0; _si0 < slots.length; _si0++) {
+    if ((slots[_si0] || '').toLowerCase().indexOf('lunch') !== -1) { lunchIdx = _si0; break }
+  }
+  // Picks the Lunch override for the Lunch slot column, the normal offset
+  // everywhere else.
+  function offsetForSlot(si, normal, lunch) {
+    return (lunchIdx !== -1 && si === lunchIdx) ? lunch : normal
   }
 
   function getTierPct(vid) {
@@ -553,6 +569,10 @@ function RentalsEditor({ config, onSave, saving }) {
   useEffect(function () { setOffsetPM(config.rental_pushpanjali_manaktala_offset != null ? config.rental_pushpanjali_manaktala_offset : 0) }, [config.rental_pushpanjali_manaktala_offset])
   useEffect(function () { setOffsetPE(config.rental_pushpanjali_exotica_offset != null ? config.rental_pushpanjali_exotica_offset : 0) }, [config.rental_pushpanjali_exotica_offset])
   useEffect(function () { setTierPct(clone(config.rental_tier_pct || {})) }, [config.rental_tier_pct])
+  useEffect(function () { setOffsetLunch(config.rental_perfect_offset_lunch != null ? config.rental_perfect_offset_lunch : 0) }, [config.rental_perfect_offset_lunch])
+  useEffect(function () { setOffsetPFLunch(config.rental_filler_offset_lunch != null ? config.rental_filler_offset_lunch : 0) }, [config.rental_filler_offset_lunch])
+  useEffect(function () { setOffsetPMLunch(config.rental_pushpanjali_manaktala_offset_lunch != null ? config.rental_pushpanjali_manaktala_offset_lunch : 0) }, [config.rental_pushpanjali_manaktala_offset_lunch])
+  useEffect(function () { setOffsetPELunch(config.rental_pushpanjali_exotica_offset_lunch != null ? config.rental_pushpanjali_exotica_offset_lunch : 0) }, [config.rental_pushpanjali_exotica_offset_lunch])
 
   // Group venues by parent; each group holds one or more leaf items
   var groups = venues.map(function (p) {
@@ -655,36 +675,39 @@ function RentalsEditor({ config, onSave, saving }) {
   // Re-applies the offsets across an entire venue's grid (every category,
   // every slot) — used both for the "Apply to all venues" bulk action and
   // for live-recomputing the currently open venue the instant an offset
-  // field itself changes, rather than only on the next cell edit.
-  function applyOffsetsToVenueData(vd, offV, offPFV, targetPctV, floorPctV) {
+  // field itself changes, rather than only on the next cell edit. The
+  // Lunch slot column uses offVLunch/offPFVLunch instead of offV/offPFV.
+  function applyOffsetsToVenueData(vd, offV, offPFV, offVLunch, offPFVLunch, targetPctV, floorPctV) {
     var d = clone(vd)
     for (var ci = 0; ci < cats.length; ci++) {
       for (var si = 0; si < slots.length; si++) {
-        cascadeSlot(d, 'q', ci, si, offV, offPFV, targetPctV, floorPctV)
+        cascadeSlot(d, 'q', ci, si, offsetForSlot(si, offV, offVLunch), offsetForSlot(si, offPFV, offPFVLunch), targetPctV, floorPctV)
       }
     }
     return d
   }
 
-  // Subtracts a flat ₹L amount from every cell of a grid (all categories,
-  // tiers and slots) — the Pushpanjali-as-base mechanic.
-  function subtractFlatGrid(vd, offV) {
+  // Subtracts a flat ₹L amount from every cell of a grid (all categories and
+  // tiers) — the Pushpanjali-as-base mechanic. The Lunch slot column uses
+  // offVLunch instead of offV.
+  function subtractFlatGrid(vd, offV, offVLunch) {
     var d = {}
     TIERS.forEach(function (tier) {
       d[tier] = (vd[tier] || []).map(function (row) {
-        return (row || []).map(function (v) { return roundHalf((v || 0) - offV) })
+        return (row || []).map(function (v, si) { return roundHalf((v || 0) - offsetForSlot(si, offV, offVLunch)) })
       })
     })
     return d
   }
 
   // Pushes Pushpanjali's current grid (as the base) onto every Manaktala
-  // and Exotica sub-venue, each via its own flat ₹L offset.
-  function applyPushBaseOffsets(d, offMK, offEX) {
+  // and Exotica sub-venue, each via its own flat ₹L offset (plus its own
+  // Lunch-session override).
+  function applyPushBaseOffsets(d, offMK, offEX, offMKLunch, offEXLunch) {
     if (!pushLeafId) return d
     var baseGrid = padRental(d[pushLeafId] || emptyRental())
-    manaktalaIds.forEach(function (id) { d[id] = subtractFlatGrid(baseGrid, offMK) })
-    exoticaIds.forEach(function (id) { d[id] = subtractFlatGrid(baseGrid, offEX) })
+    manaktalaIds.forEach(function (id) { d[id] = subtractFlatGrid(baseGrid, offMK, offMKLunch) })
+    exoticaIds.forEach(function (id) { d[id] = subtractFlatGrid(baseGrid, offEX, offEXLunch) })
     return d
   }
 
@@ -695,8 +718,8 @@ function RentalsEditor({ config, onSave, saving }) {
     d[selV] = padRental(d[selV])
     d[selV][tier][catIdx][slotIdx] = val
     var p = getTierPct(selV)
-    cascadeSlot(d[selV], tier, catIdx, slotIdx, offset, offsetPF, p.target, p.floor)
-    if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE)
+    cascadeSlot(d[selV], tier, catIdx, slotIdx, offsetForSlot(slotIdx, offset, offsetLunch), offsetForSlot(slotIdx, offsetPF, offsetPFLunch), p.target, p.floor)
+    if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE, offsetPMLunch, offsetPELunch)
     setDraft(d)
   }
 
@@ -709,8 +732,8 @@ function RentalsEditor({ config, onSave, saving }) {
     var p = getTierPct(selV)
     setDraft(function (prev) {
       var d = clone(prev)
-      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), val, offsetPF, p.target, p.floor)
-      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE)
+      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), val, offsetPF, offsetLunch, offsetPFLunch, p.target, p.floor)
+      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE, offsetPMLunch, offsetPELunch)
       return d
     })
   }
@@ -721,8 +744,8 @@ function RentalsEditor({ config, onSave, saving }) {
     var p = getTierPct(selV)
     setDraft(function (prev) {
       var d = clone(prev)
-      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), offset, val, p.target, p.floor)
-      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE)
+      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), offset, val, offsetLunch, offsetPFLunch, p.target, p.floor)
+      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE, offsetPMLunch, offsetPELunch)
       return d
     })
   }
@@ -731,12 +754,48 @@ function RentalsEditor({ config, onSave, saving }) {
   // they don't need the selected venue to be Pushpanjali to live-recompute.
   function updateOffsetPM(val) {
     setOffsetPM(val)
-    setDraft(function (prev) { return applyPushBaseOffsets(clone(prev), val, offsetPE) })
+    setDraft(function (prev) { return applyPushBaseOffsets(clone(prev), val, offsetPE, offsetPMLunch, offsetPELunch) })
   }
 
   function updateOffsetPE(val) {
     setOffsetPE(val)
-    setDraft(function (prev) { return applyPushBaseOffsets(clone(prev), offsetPM, val) })
+    setDraft(function (prev) { return applyPushBaseOffsets(clone(prev), offsetPM, val, offsetPMLunch, offsetPELunch) })
+  }
+
+  // Lunch-session override updates mirror the four above, but only ever
+  // change what the Lunch slot column computes to.
+  function updateOffsetLunch(val) {
+    setOffsetLunch(val)
+    if (!selV) return
+    var p = getTierPct(selV)
+    setDraft(function (prev) {
+      var d = clone(prev)
+      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), offset, offsetPF, val, offsetPFLunch, p.target, p.floor)
+      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE, offsetPMLunch, offsetPELunch)
+      return d
+    })
+  }
+
+  function updateOffsetPFLunch(val) {
+    setOffsetPFLunch(val)
+    if (!selV) return
+    var p = getTierPct(selV)
+    setDraft(function (prev) {
+      var d = clone(prev)
+      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), offset, offsetPF, offsetLunch, val, p.target, p.floor)
+      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE, offsetPMLunch, offsetPELunch)
+      return d
+    })
+  }
+
+  function updateOffsetPMLunch(val) {
+    setOffsetPMLunch(val)
+    setDraft(function (prev) { return applyPushBaseOffsets(clone(prev), offsetPM, offsetPE, val, offsetPELunch) })
+  }
+
+  function updateOffsetPELunch(val) {
+    setOffsetPELunch(val)
+    setDraft(function (prev) { return applyPushBaseOffsets(clone(prev), offsetPM, offsetPE, offsetPMLunch, val) })
   }
 
   function updateVenueTierPct(field, val) {
@@ -748,20 +807,20 @@ function RentalsEditor({ config, onSave, saving }) {
     var p = { target: next[selV].target || 0, floor: next[selV].floor || 0 }
     setDraft(function (prev) {
       var d = clone(prev)
-      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), offset, offsetPF, p.target, p.floor)
-      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE)
+      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), offset, offsetPF, offsetLunch, offsetPFLunch, p.target, p.floor)
+      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE, offsetPMLunch, offsetPELunch)
       return d
     })
   }
 
   async function applyToAllVenues() {
-    if (!(await appConfirm('Recalculate every venue and sub-venue’s Target/Floor (Perfect from King’s, Filler from Perfect, and Manaktala/Exotica from Pushpanjali) using each one’s own % offsets and the shared flat offsets? This overwrites whatever is already in those cells.'))) return
+    if (!(await appConfirm('Recalculate every venue and sub-venue’s Target/Floor (Perfect from King’s, Filler from Perfect, and Manaktala/Exotica from Pushpanjali) using each one’s own % offsets and the shared flat offsets — including the Lunch-session overrides for the Lunch slot? This overwrites whatever is already in those cells.'))) return
     var d = clone(draft)
     leaves.forEach(function (lf) {
       var p = getTierPct(lf.id)
-      d[lf.id] = applyOffsetsToVenueData(padRental(d[lf.id] || emptyRental()), offset, offsetPF, p.target, p.floor)
+      d[lf.id] = applyOffsetsToVenueData(padRental(d[lf.id] || emptyRental()), offset, offsetPF, offsetLunch, offsetPFLunch, p.target, p.floor)
     })
-    d = applyPushBaseOffsets(d, offsetPM, offsetPE)
+    d = applyPushBaseOffsets(d, offsetPM, offsetPE, offsetPMLunch, offsetPELunch)
     setDraft(d)
   }
 
@@ -817,6 +876,50 @@ function RentalsEditor({ config, onSave, saving }) {
         </div>
         {!pushLeafId && (
           <div style={{ fontSize: 10, color: C.red, marginTop: 8 }}>No venue matching "Pushpanjali" found — this won't autofill until one exists.</div>
+        )}
+      </div>
+
+      <div style={{ marginBottom: 14, padding: 10, borderRadius: 9, background: '#FFF8F0', border: '1px solid ' + C.border }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.maroon, letterSpacing: 0.5, marginBottom: 8 }}>LUNCH SESSION OVERRIDES</div>
+        <div style={{ fontSize: 10, color: C.muted, marginBottom: 10 }}>Same four cascades as above, applied only to the Lunch slot's own column. Leave at 0 to fall back to the main offsets above.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>King's → Perfect (Lunch, ₹L)</div>
+          </div>
+          <div style={{ width: 80, flexShrink: 0 }}>
+            <Num value={offsetLunch} onChange={updateOffsetLunch} />
+          </div>
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_perfect_offset_lunch', offsetLunch) }} disabled={saving} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Perfect → Filler (Lunch, ₹L)</div>
+          </div>
+          <div style={{ width: 80, flexShrink: 0 }}>
+            <Num value={offsetPFLunch} onChange={updateOffsetPFLunch} />
+          </div>
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_filler_offset_lunch', offsetPFLunch) }} disabled={saving} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Pushpanjali → Manaktala (Lunch, ₹L)</div>
+          </div>
+          <div style={{ width: 80, flexShrink: 0 }}>
+            <Num value={offsetPMLunch} onChange={updateOffsetPMLunch} />
+          </div>
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_pushpanjali_manaktala_offset_lunch', offsetPMLunch) }} disabled={saving} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Pushpanjali → Exotica (Lunch, ₹L)</div>
+          </div>
+          <div style={{ width: 80, flexShrink: 0 }}>
+            <Num value={offsetPELunch} onChange={updateOffsetPELunch} />
+          </div>
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_pushpanjali_exotica_offset_lunch', offsetPELunch) }} disabled={saving} />
+        </div>
+        {lunchIdx === -1 && (
+          <div style={{ fontSize: 10, color: C.red, marginTop: 8 }}>No slot named "Lunch" found — these overrides won't apply to anything until one exists.</div>
         )}
       </div>
 
