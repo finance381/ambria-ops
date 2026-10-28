@@ -9,8 +9,10 @@ import QuickSendDrawer from '../../components/broadcast/QuickSendDrawer'
 /* ═══════════════════════════════════════════════════════
    AMBRIA QUOTE CALCULATOR — Server-Side Pricing
    
-   All rate cards in quote_config table.
-   calculate_quote RPC returns computed values.
+   Rate cards live in the quote_* tables (quote_venues, quote_decor_rate_cards,
+   quote_rental_rate_cells, quote_dj_options, quote_menu_items, etc.) — migrated
+   off the old quote_config jsonb blob in 00144-00149.
+   calculate_quote_v2 RPC returns computed values.
    Client = pure input form + display layer.
    ═══════════════════════════════════════════════════════ */
 
@@ -1303,7 +1305,11 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
     if (cached) { calcSeq.current++; setCalcResult(cached); setCalcLoading(false); return }
     var seq = ++calcSeq.current
     setCalcLoading(true)
-    var { data, error } = await supabase.rpc('calculate_quote', {
+    // v2 reads the relational quote_* tables instead of quote_config's
+    // jsonb — verified byte-identical to calculate_quote across every real
+    // venue/slot/date-category/decor-tier/DJ-option/menu/TTD combination
+    // before this switch (see the Phase 1 migrations, 00144-00149).
+    var { data, error } = await supabase.rpc('calculate_quote_v2', {
       p_venue_id: venueId,
       p_pax: pax,
       p_slot: slot,
