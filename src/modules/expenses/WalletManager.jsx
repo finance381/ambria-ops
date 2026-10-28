@@ -488,11 +488,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [collectBankPaymentType, setCollectBankPaymentType] = useState('')
   var [collectBalance, setCollectBalance] = useState(null)
   var [collectBalanceLoading, setCollectBalanceLoading] = useState(false)
-  // What LMS itself has on record for this contract — fn_event_balance above
-  // only ever reflects collections made through Ambria Ops' own wallet, so a
-  // payment entered straight into LMS by someone else is otherwise invisible
-  // here. Fetched live (not synced/stored) since it's only needed at the
-  // moment someone's about to collect against a specific contract.
+  // What LMS itself has on record for this contract — computeContractBalance
+  // above only ever reflects collections made through Ambria Ops' own
+  // wallet, so a payment entered straight into LMS by someone else is
+  // otherwise invisible here. Fetched live (not synced/stored) since it's
+  // only needed at the moment someone's about to collect against a specific
+  // contract.
   var [lmsPayments, setLmsPayments] = useState(null)
   var [lmsPaymentsLoading, setLmsPaymentsLoading] = useState(false)
   var [lmsPaymentsError, setLmsPaymentsError] = useState('')
@@ -1380,29 +1381,26 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     // per-function balance would quietly under- or over-collect against
     // what the guest actually still owes across the whole booking. The
     // collection history below is pooled the same way, for the same reason.
+    //
+    // Always goes through computeContractBalance (fn_event_group_balance) —
+    // a solo function is just a pool of one here — the same RPC the Events
+    // tab's Event Financials (EventLedger.jsx's loadBalance/
+    // loadContractBalance) always uses, for both solo and pooled functions.
+    // This used to call a separate, single-event fn_event_balance RPC for
+    // the solo case, which could disagree with it: a function Event
+    // Financials showed as fully settled could still show pending here.
     var bucket = buildDeptContractBuckets(collectAllEventRows).find(function (b) {
       return b.functions.some(function (f) { return String(f.id) === String(fid) })
     })
-    var historyIds = bucket ? bucket.functions.map(function (f) { return f.id }) : [Number(fid)]
+    var functions = bucket ? bucket.functions : (evt ? [evt] : [])
+    var historyIds = functions.length > 0 ? functions.map(function (f) { return f.id }) : [Number(fid)]
 
-    if (bucket && bucket.isContract) {
-      setCollectBalanceLoading(true)
-      var lmsRows = evt && evt.contract_no ? await loadLmsPayments(evt.contract_no, evt.department) : []
-      var result = await computeContractBalance(bucket.functions, lmsRows)
-      setCollectBalance(result.balance)
-      setCollectBalanceLoading(false)
-      loadCollectHistory(historyIds, lmsRows)
-      return
-    }
     setCollectBalanceLoading(true)
-    var { data, error } = await supabase.rpc('fn_event_balance', { p_event_id: Number(fid) })
-    if (!error && data && data.length > 0) { setCollectBalance(data[0]) }
+    var lmsRows = evt && evt.contract_no ? await loadLmsPayments(evt.contract_no, evt.department) : []
+    var result = await computeContractBalance(functions, lmsRows)
+    setCollectBalance(result.balance)
     setCollectBalanceLoading(false)
-
-    if (evt && evt.contract_no) {
-      var lmsRows2 = await loadLmsPayments(evt.contract_no, evt.department)
-      loadCollectHistory(historyIds, lmsRows2)
-    }
+    loadCollectHistory(historyIds, lmsRows)
   }
 
   // Ambria Ops' own collection rows for the event_id(s) in play — merged
