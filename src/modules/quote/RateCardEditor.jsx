@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { hasPerm } from '../../lib/permissions'
 import { appConfirm } from '../../components/ui/AppDialog'
+import { loadRateCardConfig, saveRateCardKey } from './rateCardData'
 
 /* ═══════════════════════════════════════════════════════
    RATE CARD EDITOR — Fully dynamic, admin-only
@@ -1261,6 +1262,13 @@ function MenuEditor({ config, onSave, saving }) {
 //  DÉCOR EDITOR
 // ══════════════════════════════════════
 
+// A tier always means "a real named row with a cell per date category" now
+// — the quote_decor_rate_cards table (and quote_dj_options, the same
+// shape) can't store anything else, so there's no separate "flat" shape to
+// toggle into or out of any more. One tier is just a 1-row list; the ₹0
+// décor bug (00140) came directly from the old editor being able to save a
+// flat, un-nested array here that calculate_quote then read as if it were
+// nested.
 function DecorEditor({ config, onSave, saving }) {
   var cats = config.categories || DEFAULT_CATS
   var venues = config.venues || []
@@ -1289,44 +1297,31 @@ function DecorEditor({ config, onSave, saving }) {
     var s = DECOR_SECTIONS[subTab] || DECOR_SECTIONS[0]
     if (!s || !s.key) return
     var d = clone((config.decor || {})[s.key] || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] })
-    // Pad each tier's category arrays
-    if (d.labels && d.labels.length > 0) {
-      var clean = {}
-      TIERS.forEach(function (tier) { clean[tier] = [] })
-      d.labels.forEach(function (_, tierIdx) {
-        TIERS.forEach(function (tier) {
-          var existing = Array.isArray(d[tier][tierIdx]) ? d[tier][tierIdx] : []
-          while (existing.length < cats.length) existing.push(0)
-          clean[tier].push(existing)
-        })
-      })
-      TIERS.forEach(function (tier) { d[tier] = clean[tier] })
-    } else if (!d.labels || d.labels.length === 0) {
-      // Flat mode (Valencia) — pad flat arrays
+    if (!Array.isArray(d.labels)) d.labels = []
+    var clean = {}
+    TIERS.forEach(function (tier) { clean[tier] = [] })
+    d.labels.forEach(function (_, tierIdx) {
       TIERS.forEach(function (tier) {
-        if (!Array.isArray(d[tier])) d[tier] = []
-        while (d[tier].length < cats.length) d[tier].push(0)
+        var existing = Array.isArray(d[tier][tierIdx]) ? d[tier][tierIdx] : []
+        while (existing.length < cats.length) existing.push(0)
+        clean[tier].push(existing)
       })
-    }
+    })
+    TIERS.forEach(function (tier) { d[tier] = clean[tier] })
     setDraft(d)
   }, [subTab, config])
 
   function updateOffset(val) { var d = clone(draft); d.nw_offset = val; setDraft(d) }
   function updateLabel(idx, val) { var d = clone(draft); d.labels[idx] = val; setDraft(d) }
   function updateTiered(tier, tierIdx, catIdx, val) { var d = clone(draft); d[tier][tierIdx][catIdx] = val; setDraft(d) }
-  function updateFlat(tier, catIdx, val) { var d = clone(draft); d[tier][catIdx] = val; setDraft(d) }
-
-  var isFlat = !draft.labels || draft.labels.length === 0
 
   function addTier() {
     var d = clone(draft)
     if (!d.labels) d.labels = []
-    var wasFlat = d.labels.length === 0
     d.labels.push('New Tier')
     TIERS.forEach(function (tier) {
       var row = []
       for (var c = 0; c < cats.length; c++) row.push(0)
-      if (wasFlat) d[tier] = []
       d[tier].push(row)
     })
     setDraft(d)
@@ -1362,8 +1357,7 @@ function DecorEditor({ config, onSave, saving }) {
           <div style={{ width: 80 }}><Num value={draft.nw_offset} onChange={updateOffset} /></div>
         </div>
 
-        {/* Tier labels */}
-        {!isFlat && draft.labels && (
+        {draft.labels && draft.labels.length > 0 && (
           <div style={{ marginBottom: 12 }}>
             {draft.labels.map(function (l, i) {
               return (
@@ -1373,14 +1367,13 @@ function DecorEditor({ config, onSave, saving }) {
                 </div>
               )
             })}
-            <AddRow label="Add Décor Tier" onClick={addTier} />
           </div>
         )}
+        <AddRow label="Add Décor Tier" onClick={addTier} />
 
-        {/* Tiered grids */}
-        {!isFlat && (draft.labels || []).map(function (tierLabel, tierIdx) {
+        {(draft.labels || []).map(function (tierLabel, tierIdx) {
           return (
-            <div key={tierIdx} style={{ marginBottom: 18 }}>
+            <div key={tierIdx} style={{ marginTop: 18 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 6 }}>{tierLabel}</div>
               <TierGrid>
                 {cats.map(function (cat, catIdx) {
@@ -1398,23 +1391,8 @@ function DecorEditor({ config, onSave, saving }) {
           )
         })}
 
-        {/* Flat grid (Valencia) */}
-        {isFlat && (
-          <div style={{ marginBottom: 12 }}>
-            <TierGrid>
-              {cats.map(function (cat, catIdx) {
-                return (
-                  <React.Fragment key={catIdx}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: cat.color || C.muted }}>{cat.label}</div>
-                    {TIERS.map(function (tier) {
-                      return <Num key={tier} value={(draft[tier] || [])[catIdx] || 0} onChange={function (v) { updateFlat(tier, catIdx, v) }} />
-                    })}
-                  </React.Fragment>
-                )
-              })}
-            </TierGrid>
-            <AddRow label="Convert to Tiered" onClick={addTier} />
-          </div>
+        {(!draft.labels || draft.labels.length === 0) && (
+          <div style={{ fontSize: 11, color: C.muted, textAlign: 'center', padding: '12px 0' }}>No décor tiers for this venue yet — add one above.</div>
         )}
 
         <Btn label={'Save ' + sec.label} variant="primary" onClick={function () {
@@ -1425,7 +1403,7 @@ function DecorEditor({ config, onSave, saving }) {
           if (existing.lunch_override) out.lunch_override = existing.lunch_override
           merged[sec.key] = out
           onSave('decor', merged)
-        }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
+        }} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
       </Card>
     </>
   )
@@ -1435,6 +1413,9 @@ function DecorEditor({ config, onSave, saving }) {
 //  LUNCH RATES EDITOR
 // ══════════════════════════════════════
 
+// Same "a tier is always a real named row" shape as DecorEditor above — a
+// lunch override with one unnamed tier was exactly the stored shape behind
+// the original ₹0 décor bug.
 function LunchRatesEditor({ config, onSave, saving }) {
   var cats = config.categories || DEFAULT_CATS
   var venues = config.venues || []
@@ -1452,7 +1433,7 @@ function LunchRatesEditor({ config, onSave, saving }) {
 
   var [subTab, setSubTab] = useState(0)
   var sec = LUNCH_SECTIONS[subTab] || LUNCH_SECTIONS[0] || { key: '', label: '', status: 'placeholder' }
-  var raw = (((config.decor || {})[sec.key] || {}).lunch_override) || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] }
+  var raw = (((config.decor || {})[sec.key] || {}).lunch_override) || { labels: [], nw_offset: 0, q: [], t: [], f: [] }
   var [draft, setDraft] = useState(clone(raw))
 
   useEffect(function () {
@@ -1462,43 +1443,32 @@ function LunchRatesEditor({ config, onSave, saving }) {
   useEffect(function () {
     var s = LUNCH_SECTIONS[subTab] || LUNCH_SECTIONS[0]
     if (!s || !s.key) return
-    var d = clone((((config.decor || {})[s.key] || {}).lunch_override) || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] })
-    if (d.labels && d.labels.length > 0) {
-      var clean = {}
-      TIERS.forEach(function (tier) { clean[tier] = [] })
-      d.labels.forEach(function (_, tierIdx) {
-        TIERS.forEach(function (tier) {
-          var existing = Array.isArray(d[tier][tierIdx]) ? d[tier][tierIdx] : []
-          while (existing.length < cats.length) existing.push(0)
-          clean[tier].push(existing)
-        })
-      })
-      TIERS.forEach(function (tier) { d[tier] = clean[tier] })
-    } else if (!d.labels || d.labels.length === 0) {
+    var d = clone((((config.decor || {})[s.key] || {}).lunch_override) || { labels: [], nw_offset: 0, q: [], t: [], f: [] })
+    if (!Array.isArray(d.labels)) d.labels = []
+    var clean = {}
+    TIERS.forEach(function (tier) { clean[tier] = [] })
+    d.labels.forEach(function (_, tierIdx) {
       TIERS.forEach(function (tier) {
-        if (!Array.isArray(d[tier])) d[tier] = []
-        while (d[tier].length < cats.length) d[tier].push(0)
+        var existing = Array.isArray(d[tier][tierIdx]) ? d[tier][tierIdx] : []
+        while (existing.length < cats.length) existing.push(0)
+        clean[tier].push(existing)
       })
-    }
+    })
+    TIERS.forEach(function (tier) { d[tier] = clean[tier] })
     setDraft(d)
   }, [subTab, config])
 
   function updateOffset(val) { var d = clone(draft); d.nw_offset = val; setDraft(d) }
   function updateLabel(idx, val) { var d = clone(draft); d.labels[idx] = val; setDraft(d) }
   function updateTiered(tier, tierIdx, catIdx, val) { var d = clone(draft); d[tier][tierIdx][catIdx] = val; setDraft(d) }
-  function updateFlat(tier, catIdx, val) { var d = clone(draft); d[tier][catIdx] = val; setDraft(d) }
-
-  var isFlat = !draft.labels || draft.labels.length === 0
 
   function addTier() {
     var d = clone(draft)
     if (!d.labels) d.labels = []
-    var wasFlat = d.labels.length === 0
     d.labels.push('New Tier')
     TIERS.forEach(function (tier) {
       var row = []
       for (var c = 0; c < cats.length; c++) row.push(0)
-      if (wasFlat) d[tier] = []
       d[tier].push(row)
     })
     setDraft(d)
@@ -1529,14 +1499,14 @@ function LunchRatesEditor({ config, onSave, saving }) {
       </div>
 
       <Card title={sec.label + ' Lunch Décor (₹L)'}>
-        <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Décor rates applied when Lunch slot is selected. Overrides standard décor for lunch bookings.</div>
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Décor rates applied when Lunch slot is selected. Overrides standard décor for lunch bookings. No tiers = no override — standard décor applies even for Lunch.</div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: 10, borderRadius: 9, background: C.bg, border: '1px solid ' + C.border }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, flex: 1 }}>NW Offset (₹L)</div>
           <div style={{ width: 80 }}><Num value={draft.nw_offset} onChange={updateOffset} /></div>
         </div>
 
-        {!isFlat && draft.labels && (
+        {draft.labels && draft.labels.length > 0 && (
           <div style={{ marginBottom: 12 }}>
             {draft.labels.map(function (l, i) {
               return (
@@ -1546,13 +1516,13 @@ function LunchRatesEditor({ config, onSave, saving }) {
                 </div>
               )
             })}
-            <AddRow label="Add Lunch Tier" onClick={addTier} />
           </div>
         )}
+        <AddRow label="Add Lunch Tier" onClick={addTier} />
 
-        {!isFlat && (draft.labels || []).map(function (tierLabel, tierIdx) {
+        {(draft.labels || []).map(function (tierLabel, tierIdx) {
           return (
-            <div key={tierIdx} style={{ marginBottom: 18 }}>
+            <div key={tierIdx} style={{ marginTop: 18 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 6 }}>{tierLabel}</div>
               <TierGrid>
                 {cats.map(function (cat, catIdx) {
@@ -1570,22 +1540,8 @@ function LunchRatesEditor({ config, onSave, saving }) {
           )
         })}
 
-        {isFlat && (
-          <div style={{ marginBottom: 12 }}>
-            <TierGrid>
-              {cats.map(function (cat, catIdx) {
-                return (
-                  <React.Fragment key={catIdx}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: cat.color || C.muted }}>{cat.label}</div>
-                    {TIERS.map(function (tier) {
-                      return <Num key={tier} value={(draft[tier] || [])[catIdx] || 0} onChange={function (v) { updateFlat(tier, catIdx, v) }} />
-                    })}
-                  </React.Fragment>
-                )
-              })}
-            </TierGrid>
-            <AddRow label="Convert to Tiered" onClick={addTier} />
-          </div>
+        {(!draft.labels || draft.labels.length === 0) && (
+          <div style={{ fontSize: 11, color: C.muted, textAlign: 'center', padding: '12px 0' }}>No lunch override for this venue — add a tier above to create one.</div>
         )}
 
         <Btn label={'Save ' + sec.label + ' Lunch'} variant="primary" onClick={function () {
@@ -1594,7 +1550,7 @@ function LunchRatesEditor({ config, onSave, saving }) {
           var existing = merged[sec.key] || {}
           merged[sec.key] = Object.assign({}, existing, { lunch_override: draft })
           onSave('decor', merged)
-        }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
+        }} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
       </Card>
     </>
   )
@@ -1902,31 +1858,28 @@ function RateCardEditor({ profile }) {
   var [saveMsg, setSaveMsg] = useState('')
 
   useEffect(function () {
-    supabase.from('quote_config').select('key, value').then(function (res) {
-      if (res.data) {
-        var map = {}
-        res.data.forEach(function (r) { map[r.key] = r.value })
-        setConfig(map)
-      }
+    loadRateCardConfig().then(function (cfg) {
+      setConfig(cfg)
       setLoading(false)
     })
   }, [])
 
+  // Rate cards live in the quote_* tables now (Phase 3) — each tab still
+  // calls this with the exact same key/value shape it always has
+  // ('venues', 'decor', 'rentals', ...); saveRateCardKey is what changed
+  // underneath, translating that into writes against the real tables
+  // instead of one quote_config blob. config itself is the snapshot
+  // saveRateCardKey diffs against for the handful of keys (categories,
+  // slots, venues) whose rows are referenced by position elsewhere.
   async function saveKey(key, value) {
     setSaving(true); setSaveMsg('')
-    // Upsert — insert if missing, update if exists
-    var { error } = await supabase.from('quote_config').upsert(
-      { key: key, value: value, updated_at: new Date().toISOString() },
-      { onConflict: 'key' }
-    )
+    var { error } = await saveRateCardKey(key, value, config)
     if (error) {
       setSaveMsg('Error: ' + error.message)
     } else {
       setSaveMsg('Saved: ' + key)
-      var updated = Object.assign({}, config)
-      updated[key] = value
-      setConfig(updated)
-      try { localStorage.removeItem('qc_config_v1') } catch (e) {}
+      var fresh = await loadRateCardConfig()
+      setConfig(fresh)
     }
     setSaving(false)
     setTimeout(function () { setSaveMsg('') }, 3000)

@@ -5,6 +5,7 @@ import { useLang } from '../../lib/i18n.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
 import { hasPerm } from '../../lib/permissions'
 import QuickSendDrawer from '../../components/broadcast/QuickSendDrawer'
+import { loadQuoteFormData } from './rateCardData'
 
 /* ═══════════════════════════════════════════════════════
    AMBRIA QUOTE CALCULATOR — Server-Side Pricing
@@ -1213,16 +1214,18 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
   var [venueList, setVenueList] = useState(null)
 
   useEffect(function () {
-    var CACHE_KEY = 'qc_config_v1'
+    // venues/event_types/inquiry_modes/season_dates moved to the quote_*
+    // tables (Phase 3) — RateCardEditor.jsx writes there now, so this reads
+    // from there too, or edits made in the admin tool would never reach
+    // this form. lms_locations is unrelated to RateCardEditor (synced by
+    // something else entirely) and stays on quote_config.
+    var CACHE_KEY = 'qc_config_v2'
     var TTL = 600000
-    function apply(rows) {
-      rows.forEach(function (row) {
-        if (row.key === 'inquiry_modes' && Array.isArray(row.value)) setInquiryModes(row.value)
-        if (row.key === 'event_types' && Array.isArray(row.value)) setEventTypes(row.value)
-        if (row.key === 'season_dates' && row.value) setSeasonDates(row.value)
-        if (row.key === 'venues' && Array.isArray(row.value)) setVenueList(row.value)
-        if (row.key === 'lms_locations' && row.value) setLmsLocations(row.value)
-      })
+    function apply(data) {
+      if (Array.isArray(data.inquiry_modes)) setInquiryModes(data.inquiry_modes)
+      if (Array.isArray(data.event_types)) setEventTypes(data.event_types)
+      if (data.season_dates) setSeasonDates(data.season_dates)
+      if (Array.isArray(data.venues)) setVenueList(data.venues)
     }
     var fresh = false
     try {
@@ -1232,11 +1235,15 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
         if (c && c.data) { apply(c.data); fresh = Date.now() - c.t < TTL }
       }
     } catch (e) {}
-    if (fresh) return
-    supabase.from('quote_config').select('key, value').in('key', ['inquiry_modes', 'event_types', 'season_dates', 'venues', 'lms_locations']).then(function (res) {
+    if (!fresh) {
+      loadQuoteFormData().then(function (data) {
+        apply(data)
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), data: data })) } catch (e) {}
+      })
+    }
+    supabase.from('quote_config').select('key, value').eq('key', 'lms_locations').then(function (res) {
       if (!res.data) return
-      apply(res.data)
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), data: res.data })) } catch (e) {}
+      res.data.forEach(function (row) { if (row.key === 'lms_locations' && row.value) setLmsLocations(row.value) })
     })
   }, [])
 

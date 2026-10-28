@@ -496,8 +496,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     setTentativeFunctionType('')
     setTentativeModal(true)
     if (eventTypeOptions.length === 0) {
-      supabase.from('quote_config').select('key, value').eq('key', 'event_types').maybeSingle()
-        .then(function (res) { setEventTypeOptions((res.data && res.data.value) || []) })
+      // Moved off quote_config to quote_event_types (Phase 3 of the quote
+      // pricing migration) — RateCardEditor.jsx's Event Types tab writes
+      // there now.
+      supabase.from('quote_event_types').select('label, icon').order('sort_order')
+        .then(function (res) { setEventTypeOptions(res.data || []) })
     }
   }
 
