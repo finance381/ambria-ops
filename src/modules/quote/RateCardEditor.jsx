@@ -506,6 +506,25 @@ function VenuesEditor({ config, onSave, saving }) {
 //  RENTALS EDITOR
 // ══════════════════════════════════════
 
+function CollapsibleSection({ title, subtitle, defaultOpen, children }) {
+  var [open, setOpen] = useState(!!defaultOpen)
+  return (
+    <div style={{ marginBottom: 14, borderRadius: 9, background: '#FFF8F0', border: '1px solid ' + C.border, overflow: 'hidden' }}>
+      <button onClick={function () { setOpen(!open) }} style={{
+        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+        padding: 10, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left',
+      }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.maroon, letterSpacing: 0.5 }}>{title}</div>
+          {subtitle && <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>{subtitle}</div>}
+        </div>
+        <span style={{ fontSize: 11, fontWeight: 700, color: C.maroon2, flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>▾</span>
+      </button>
+      {open && <div style={{ padding: '0 10px 10px' }}>{children}</div>}
+    </div>
+  )
+}
+
 function RentalsEditor({ config, onSave, saving }) {
   var rentals = config.rentals || {}
   var venues = config.venues || []
@@ -830,59 +849,59 @@ function RentalsEditor({ config, onSave, saving }) {
 
   return (
     <Card title="Rental Rates (₹L)">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: 10, borderRadius: 9, background: '#FFF8F0', border: '1px solid ' + C.border }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>King's → Perfect offset (₹L)</div>
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction, shared by every venue and sub-venue. Filling a King's cell autofills Perfect as King's − this.</div>
-        </div>
-        <div style={{ width: 80, flexShrink: 0 }}>
-          <Num value={offset} onChange={updateOffset} />
-        </div>
-        <Btn label="Save" variant="small" onClick={function () { onSave('rental_perfect_offset', offset) }} disabled={saving} />
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: 10, borderRadius: 9, background: '#FFF8F0', border: '1px solid ' + C.border }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Perfect → Filler offset (₹L)</div>
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction, shared by every venue and sub-venue. Filling a Perfect cell (directly, or via King's) autofills Filler as Perfect − this.</div>
-        </div>
-        <div style={{ width: 80, flexShrink: 0 }}>
-          <Num value={offsetPF} onChange={updateOffsetPF} />
-        </div>
-        <Btn label="Save" variant="small" onClick={function () { onSave('rental_filler_offset', offsetPF) }} disabled={saving} />
-      </div>
-
-      <div style={{ marginBottom: 14, padding: 10, borderRadius: 9, background: '#FFF8F0', border: '1px solid ' + C.border }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: C.maroon, letterSpacing: 0.5, marginBottom: 8 }}>PUSHPANJALI AS BASE</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+      <CollapsibleSection title="CASCADE OFFSETS" subtitle="King's → Perfect → Filler, and Pushpanjali as the base for Manaktala/Exotica" defaultOpen={true}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10, marginBottom: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Pushpanjali → Manaktala offset (₹L)</div>
-            <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction off every Pushpanjali cell. Editing Pushpanjali's grid autofills every Manaktala sub-venue as Pushpanjali − this.</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>King's → Perfect offset (₹L)</div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction, shared by every venue and sub-venue. Filling a King's cell autofills Perfect as King's − this.</div>
           </div>
           <div style={{ width: 80, flexShrink: 0 }}>
-            <Num value={offsetPM} onChange={updateOffsetPM} />
+            <Num value={offset} onChange={updateOffset} />
           </div>
-          <Btn label="Save" variant="small" onClick={function () { onSave('rental_pushpanjali_manaktala_offset', offsetPM) }} disabled={saving} />
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_perfect_offset', offset) }} disabled={saving} />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Pushpanjali → Exotica offset (₹L)</div>
-            <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction off every Pushpanjali cell. Editing Pushpanjali's grid autofills every Exotica sub-venue as Pushpanjali − this.</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Perfect → Filler offset (₹L)</div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction, shared by every venue and sub-venue. Filling a Perfect cell (directly, or via King's) autofills Filler as Perfect − this.</div>
           </div>
           <div style={{ width: 80, flexShrink: 0 }}>
-            <Num value={offsetPE} onChange={updateOffsetPE} />
+            <Num value={offsetPF} onChange={updateOffsetPF} />
           </div>
-          <Btn label="Save" variant="small" onClick={function () { onSave('rental_pushpanjali_exotica_offset', offsetPE) }} disabled={saving} />
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_filler_offset', offsetPF) }} disabled={saving} />
         </div>
-        {!pushLeafId && (
-          <div style={{ fontSize: 10, color: C.red, marginTop: 8 }}>No venue matching "Pushpanjali" found — this won't autofill until one exists.</div>
-        )}
-      </div>
 
-      <div style={{ marginBottom: 14, padding: 10, borderRadius: 9, background: '#FFF8F0', border: '1px solid ' + C.border }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: C.maroon, letterSpacing: 0.5, marginBottom: 8 }}>LUNCH SESSION OVERRIDES</div>
-        <div style={{ fontSize: 10, color: C.muted, marginBottom: 10 }}>Same four cascades as above, applied only to the Lunch slot's own column. Leave at 0 to fall back to the main offsets above.</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <div style={{ paddingTop: 10, borderTop: '1px dashed ' + C.border }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.maroon, letterSpacing: 0.5, marginBottom: 8 }}>PUSHPANJALI AS BASE</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Pushpanjali → Manaktala offset (₹L)</div>
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction off every Pushpanjali cell. Editing Pushpanjali's grid autofills every Manaktala sub-venue as Pushpanjali − this.</div>
+            </div>
+            <div style={{ width: 80, flexShrink: 0 }}>
+              <Num value={offsetPM} onChange={updateOffsetPM} />
+            </div>
+            <Btn label="Save" variant="small" onClick={function () { onSave('rental_pushpanjali_manaktala_offset', offsetPM) }} disabled={saving} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Pushpanjali → Exotica offset (₹L)</div>
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction off every Pushpanjali cell. Editing Pushpanjali's grid autofills every Exotica sub-venue as Pushpanjali − this.</div>
+            </div>
+            <div style={{ width: 80, flexShrink: 0 }}>
+              <Num value={offsetPE} onChange={updateOffsetPE} />
+            </div>
+            <Btn label="Save" variant="small" onClick={function () { onSave('rental_pushpanjali_exotica_offset', offsetPE) }} disabled={saving} />
+          </div>
+          {!pushLeafId && (
+            <div style={{ fontSize: 10, color: C.red, marginTop: 8 }}>No venue matching "Pushpanjali" found — this won't autofill until one exists.</div>
+          )}
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="LUNCH SESSION OVERRIDES" subtitle="Same four cascades as above, applied only to the Lunch slot's own column. Leave at 0 to fall back to the main offsets." defaultOpen={false}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10, marginBottom: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>King's → Perfect (Lunch, ₹L)</div>
           </div>
@@ -921,7 +940,7 @@ function RentalsEditor({ config, onSave, saving }) {
         {lunchIdx === -1 && (
           <div style={{ fontSize: 10, color: C.red, marginTop: 8 }}>No slot named "Lunch" found — these overrides won't apply to anything until one exists.</div>
         )}
-      </div>
+      </CollapsibleSection>
 
       <div style={{ marginBottom: 14, padding: 10, background: C.bg, borderRadius: 8 }}>
         {groups.map(function (g, gi) {
