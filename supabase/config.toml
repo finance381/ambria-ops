@@ -408,3 +408,10 @@ entrypoint = "./functions/sync-events/index.ts"
 [functions.wa-webhook]
 enabled = true
 verify_jwt = false
+
+# Ambria Calendar's season-proxy calls this for King's/Perfect badges with only
+# an x-api-key (SEASON_EXPORT_KEY, checked inside the function) — no Supabase
+# JWT, so the gateway check MUST be off or the calendar badges silently vanish.
+[functions.season-export]
+enabled = true
+verify_jwt = false
