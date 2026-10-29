@@ -16,6 +16,7 @@ import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import EnteredMark from '../../components/ui/EnteredMark'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 // Every real cash/bank movement in the system, from whichever source recorded it:
 // money paid out (vendor payments/deductions, salary payments/adjustments, wallet-funded
@@ -240,6 +241,8 @@ function PaymentsLedger({ profile }) {
   var listRef = useRef(null)
   var [detailTarget, setDetailTarget] = useState(null) // { row, event, collectorName, loading } — vendor/salary/collection rows
   var [enlargedImg, setEnlargedImg] = useState(null)
+  useBackButtonClose(!!detailTarget, closeDetail)
+  useBackButtonClose(!!enlargedImg, function () { setEnlargedImg(null) })
   var [checkingKey, setCheckingKey] = useState(null)
   var [enteringKey, setEnteringKey] = useState(null)
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { load() })
@@ -1082,9 +1085,10 @@ function PaymentsLedger({ profile }) {
                               say who the guest was, when the function actually
                               ran, or where — a reader had to open the row to find
                               any of that. */}
-                          {r.source === 'collection' && r._eventInfo && (function () {
-                            var ei = r._eventInfo
+                          {r.source === 'collection' && (r._eventInfo || r._receiptNo) && (function () {
+                            var ei = r._eventInfo || {}
                             var bits = [
+                              r._receiptNo ? '#' + r._receiptNo : null,
                               ei.function_date ? formatDate(ei.function_date) : null,
                               ei.client_name,
                               venueLabelWithCode(ei.venue_name),
