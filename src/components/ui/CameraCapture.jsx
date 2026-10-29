@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import ImageCropper from './ImageCropper'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 // Live in-page camera, deliberately NOT <input type="file" capture="environment">.
 // That native picker launches the OS camera as its own activity, backgrounding this
@@ -19,6 +20,8 @@ function CameraCapture({ onCapture, onClose }) {
   var [shotUrl, setShotUrl] = useState('')
   var [shotBlob, setShotBlob] = useState(null)
   var [cropping, setCropping] = useState(false)
+
+  useBackButtonClose(true, onClose)
 
   useEffect(function () {
     var cancelled = false

@@ -13,6 +13,7 @@ import DescriptionNote from '../../components/ui/DescriptionNote'
 import EnteredMark from '../../components/ui/EnteredMark'
 import ReverseDialog from '../../components/ui/ReverseDialog'
 import { appConfirm } from '../../components/ui/AppDialog'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 // Label left, value right, hairline between. A py-2 row plus a divider costs
 // ~34px where the old space-y-3 pair cost ~44px, and the rule makes a long
@@ -42,6 +43,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
   var [allocations, setAllocations] = useState([])
   var [allocVenues, setAllocVenues] = useState({})
   var [imgFullscreen, setImgFullscreen] = useState('')
+  useBackButtonClose(!!imgFullscreen, function () { setImgFullscreen(''); setFullscreenIdx(-1) })
   var [fullscreenIdx, setFullscreenIdx] = useState(-1)
   var [imgRotations, setImgRotations] = useState({})
   var [lookupLabels, setLookupLabels] = useState({})

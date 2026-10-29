@@ -43,3 +43,21 @@ export function goBack() {
     fn()
   }
 }
+
+// For a view that was pushed on open and can also close some other way (a
+// modal's Save succeeding, a parent re-rendering it shut) rather than only
+// through goBack()/the back gesture — call from that effect's cleanup so the
+// entry doesn't sit on the stack as a stale handler. If a real back press
+// already popped it (stack.lastIndexOf returns -1), this is a no-op; if it's
+// still there, it's spliced out and its now-orphaned history entry is walked
+// back off the stack so a later, unrelated back press doesn't silently
+// consume it instead of actually going back.
+export function popBack(fn) {
+  var i = stack.lastIndexOf(fn)
+  if (i === -1) return
+  stack.splice(i, 1)
+  if (i === stack.length) {
+    ignoreNext = true
+    window.history.back()
+  }
+}

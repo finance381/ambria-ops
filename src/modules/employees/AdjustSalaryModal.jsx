@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 var DEBIT_PRESETS = [
   'LOP (Leave Without Pay)',
@@ -34,6 +35,8 @@ function AdjustSalaryModal(props) {
   var [reasonOther, setReasonOther] = useState('')
   var [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0])
   var [saving, setSaving] = useState(false)
+
+  useBackButtonClose(true, function () { if (!saving) onClose && onClose() })
   var [error, setError] = useState('')
 
   var cashBalPaise = (employee && employee.cash_balance_paise) || 0

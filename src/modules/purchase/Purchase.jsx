@@ -16,6 +16,7 @@ import { filterVisibleVendors } from '../../lib/vendorGating'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { appConfirm } from '../../components/ui/AppDialog'
 import DescriptionNote from '../../components/ui/DescriptionNote'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 var PO_STATUS_LABELS = {
   draft: 'Draft',
@@ -1308,6 +1309,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
   var [multiOpen, setMultiOpen] = useState(false)
   var [multiForm, setMultiForm] = useState({ vendor: '', vendorContact: '', receipt: null, items: {} })
   var [multiProcessing, setMultiProcessing] = useState(false)
+  useBackButtonClose(multiOpen, function () { if (!multiProcessing) setMultiOpen(false) })
   var [multiProgress, setMultiProgress] = useState(null)
   var [rateHistory, setRateHistory] = useState([])
   var [rateLoading, setRateLoading] = useState(false)

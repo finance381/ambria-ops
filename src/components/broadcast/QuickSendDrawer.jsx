@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 // contact: { phone, name, external_ids?, venue_id? } — a not-yet-tracked lead/guest,
 //   upserted into wa_contacts on open. OR pass contactId directly for an existing one.
 function QuickSendDrawer({ contact, contactId, defaultTemplateId, onClose, onSent }) {
+  useBackButtonClose(true, onClose)
   var [resolvedContactId, setResolvedContactId] = useState(contactId || null)
   var [resolvedContact, setResolvedContact] = useState(null)
   var [venueName, setVenueName] = useState('')

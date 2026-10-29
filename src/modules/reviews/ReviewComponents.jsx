@@ -7,6 +7,7 @@ import Modal from '../../components/ui/Modal'
 import InventoryForm from '../inventory/InventoryForm'
 import { getAdapter } from './adapters/index.jsx'
 import useReviewActions from './useReviewActions'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 var DOMAIN_META = {
   inventory:      { label: 'Inventory',       icon: 'ti-box' },
@@ -196,6 +197,8 @@ function ActionConfirmSheet({ action, item, onConfirm, onCancel, saving }) {
   var [notes, setNotes] = useState('')
   var needsNotes = !!ACTION_NEEDS_NOTES[action]
 
+  useBackButtonClose(true, onCancel)
+
   function confirm() {
     if (needsNotes && !notes.trim()) return
     onConfirm(notes.trim())
@@ -234,6 +237,8 @@ function ReviewDetailSheet({ item, onClose, onActioned, isMobile, profile }) {
   var [editingOpen, setEditingOpen] = useState(false)
   var [timelineKey, setTimelineKey] = useState(0)
   var actions = useReviewActions(function () { if (onActioned) onActioned() })
+
+  useBackButtonClose(true, onClose)
 
   var canApproveReject = APPROVABLE_DOMAINS.indexOf(item.domain) !== -1
   var canRequestChanges = WORKFLOW_DOMAINS.indexOf(item.domain) !== -1 && (item.status === 'pending' || item.status === 'changes_requested')

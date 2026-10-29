@@ -8,6 +8,7 @@ import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { useBodyScrollLock } from '../../lib/useBodyScrollLock'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 import CameraCapture from '../../components/ui/CameraCapture'
 
 // One label and one field for the whole form, so a row cannot drift out of
@@ -20,6 +21,7 @@ var PICK = 'h-11 inline-flex items-center justify-center gap-2 rounded-xl border
 
 function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
   useBodyScrollLock(true)
+  useBackButtonClose(true, function () { if (!paySaving) onClose() })
   var [payMode, setPayMode] = useState('')
   var [payType, setPayType] = useState('')
   var [payAmount, setPayAmount] = useState('')

@@ -17,6 +17,7 @@ import { avatarTint } from '../../lib/avatarTint'
 import { DeptChip } from '../../components/ui/Badge'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import EnteredMark from '../../components/ui/EnteredMark'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 var ENTRY_TYPES = [
   { key: 'all', label: 'All' },
@@ -277,6 +278,7 @@ function EventLedger(props) {
   var [enteringLmsId, setEnteringLmsId] = useState(null)
   var [printingDocId, setPrintingDocId] = useState(null)
   var [collDetail, setCollDetail] = useState(null)
+  useBackButtonClose(!!collDetail, function () { setCollDetail(null) })
   var [currentEventIds, setCurrentEventIds] = useState([])
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadEntries(currentEventIds) }, props && props.onNavigateToExpenses)
   var propEventId = props && props.eventId ? String(props.eventId) : null

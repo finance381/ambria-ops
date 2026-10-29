@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop'
 import 'react-image-crop/dist/ReactCrop.css'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 // Full-screen crop step shared by the camera's review screen (crop what was
 // just shot) and the receipt gallery (crop something already attached).
@@ -16,6 +17,8 @@ function ImageCropper({ imageUrl, onDone, onCancel }) {
   var [completedCrop, setCompletedCrop] = useState(null)
   var [saving, setSaving] = useState(false)
   var [error, setError] = useState('')
+
+  useBackButtonClose(true, onCancel)
 
   // Starts the box at 90% of the image, centered, rather than the full frame
   // — leaves the resize handles reachable at the edges immediately instead

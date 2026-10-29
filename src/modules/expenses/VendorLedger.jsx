@@ -27,6 +27,7 @@ import { ON, OFF } from '../../lib/ui'
 import { useBodyScrollLock } from '../../lib/useBodyScrollLock'
 import ReverseDialog from '../../components/ui/ReverseDialog'
 import { appConfirm } from '../../components/ui/AppDialog'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -618,6 +619,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
   var [mergeTargetId, setMergeTargetId] = useState('')
   var [mergeSearch, setMergeSearch] = useState('')
   var [mergeSaving, setMergeSaving] = useState(false)
+  useBackButtonClose(showMergeModal, function () { if (!mergeSaving) setShowMergeModal(false) })
 
   var [view, setView] = useState('list')  // 'list' | 'detail'
   var [vendors, setVendors] = useState([])

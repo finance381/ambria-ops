@@ -167,6 +167,7 @@ import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import EnteredMark from '../../components/ui/EnteredMark'
 import { hasPerm } from '../../lib/permissions'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { avatarTint } from '../../lib/avatarTint'
 import CameraCapture from '../../components/ui/CameraCapture'
@@ -437,6 +438,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [receiveImage, setReceiveImage] = useState(null)
   var [receiveSaving, setReceiveSaving] = useState(false)
   var [enlargedWalletImg, setEnlargedWalletImg] = useState(null)
+  useBackButtonClose(!!enlargedWalletImg, function () { setEnlargedWalletImg(null) })
   var [pendingIncoming, setPendingIncoming] = useState([])
   var [pendingOutgoing, setPendingOutgoing] = useState([])
   var [pendingIssues, setPendingIssues] = useState([])
@@ -467,6 +469,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // carries guest name / session / date for the compact row, not just the detail modal.
   var [collectionEventRefs, setCollectionEventRefs] = useState({})
   var [cancelTarget, setCancelTarget] = useState(null)  // { txn, kind: 'collection' | 'epc' }
+  useBackButtonClose(!!cancelTarget, function () { if (!cancelSaving) { setCancelTarget(null); setCancelReason('') } })
   var [cancelReason, setCancelReason] = useState('')
   var [cancelSaving, setCancelSaving] = useState(false)
   var [collectModal, setCollectModal] = useState(false)
@@ -1676,6 +1679,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [gvExp, setGvExp] = useState(null)  // expense row for the Raise JV modal, opened from the expense detail
   var [detailTarget, setDetailTarget] = useState(null)  // { txn, kind, event, collectorName, imgUrl, loading }
   var [payDetailTarget, setPayDetailTarget] = useState(null)  // { txn, entry, partyName, loading }
+  useBackButtonClose(!!expenseDetailTarget && !gvExp, function () { closeExpenseDetail(false) })
+  useBackButtonClose(!!gvExp, function () { setGvExp(null) })
+  useBackButtonClose(!!detailTarget, function () { setDetailTarget(null) })
+  useBackButtonClose(!!payDetailTarget, function () { setPayDetailTarget(null) })
 
   // Opens on what is already here, then fills in the rest.
   //

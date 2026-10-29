@@ -6,6 +6,7 @@ import PageWave from '../ui/PageWave'
 import Logo from '../ui/Logo'
 import Icon from '../ui/Icon'
 import NotificationBell from '../ui/NotificationBell'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 // Inventory's photograph: warm light through leaves across a pale wall,
 // vases and a bowl — the ground behind the top of the Inventory section.
 import inventoryBg from '../../assets/inventory-bg.webp'
@@ -417,6 +418,7 @@ function AdminShell({ profile, onSignOut, initialNotifLink }) {
   var [subTab, setSubTab] = useState(null)
   var [subTabMeta, setSubTabMeta] = useState(null)
   var [navOpen, setNavOpen] = useState(false)
+  useBackButtonClose(navOpen, function () { setNavOpen(false) })
   // Set by onNavigate's 3rd arg when a ledger screen sends the user to a
   // specific expense's edit/Raise JV view instead of just the Expenses tab.
   var [deepLinkExpense, setDeepLinkExpense] = useState(null)

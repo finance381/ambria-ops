@@ -21,6 +21,7 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import CameraCapture from '../../components/ui/CameraCapture'
 import { appConfirm } from '../../components/ui/AppDialog'
 import DescriptionNote from '../../components/ui/DescriptionNote'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -683,6 +684,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [expReceipt, setExpReceipt] = useState(null)
   var [cameraOpen, setCameraOpen] = useState(false)
   var [expReceiptZoom, setExpReceiptZoom] = useState('')
+  useBackButtonClose(!!expReceiptZoom, function () { setExpReceiptZoom('') })
   var [expSubTypeId, setExpSubTypeId] = useState(editReq?.expense_sub_type_id ? String(editReq.expense_sub_type_id) : '')
   var [expSubTypeFields, setExpSubTypeFields] = useState([])
   var [expFieldValues, setExpFieldValues] = useState({})
@@ -1842,12 +1844,14 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
   var [zoomImg, setZoomImg] = useState('')
+  useBackButtonClose(!!zoomImg, function () { setZoomImg('') })
   var [poStatuses, setPoStatuses] = useState({})
   var [stockQty, setStockQty] = useState({})
   var [stockLoading, setStockLoading] = useState(false)
   var [fulfillChoices, setFulfillChoices] = useState({})
   var [dispatchNote, setDispatchNote] = useState('')
   var [confirmAction, setConfirmAction] = useState(null)
+  useBackButtonClose(confirmAction === 'expense', function () { setConfirmAction(null) })
   var [deleteMode, setDeleteMode] = useState(false)
   var [deleteReason, setDeleteReason] = useState('')
   var refData = useReferenceData()

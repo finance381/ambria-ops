@@ -4,6 +4,7 @@ import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { CTRL, BTN_GHOST, BTN_PRIMARY, BTN_SEND, CARD, Labeled, Notice, TagsInput, useTagSuggestions } from './ui'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 // Contact fields fn_wa_resolve_mapping (migration 00029) actually supports —
 // keep this list in sync with that function's CASE branches.
@@ -121,6 +122,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
   var [previewLoading, setPreviewLoading] = useState(false)
 
   var [confirmOpen, setConfirmOpen] = useState(false)
+  useBackButtonClose(confirmOpen, function () { setConfirmOpen(false) })
   var [confirmToken, setConfirmToken] = useState('')
   var [sending, setSending] = useState(false)
   var [sendProgress, setSendProgress] = useState(null)

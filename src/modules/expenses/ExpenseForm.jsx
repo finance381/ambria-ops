@@ -21,6 +21,7 @@ import { buildContractBuckets, loadFunctionPickerPool } from '../../lib/function
 import FunctionPickerGrid from '../../components/ui/FunctionPickerGrid'
 import { appConfirm } from '../../components/ui/AppDialog'
 import BottomSheet from '../../components/ui/BottomSheet'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -304,6 +305,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   var [error, setError] = useState('')
   var [success, setSuccess] = useState('')
   var [zoomImg, setZoomImg] = useState('')
+  useBackButtonClose(!!zoomImg, function () { setZoomImg('') })
   var [cameraTarget, setCameraTarget] = useState(null) // entry idx currently capturing for, or null
   var [cropTarget, setCropTarget] = useState(null) // { idx, rIdx, url } of the receipt being cropped, or null
   var [tentativeModal, setTentativeModal] = useState(false)

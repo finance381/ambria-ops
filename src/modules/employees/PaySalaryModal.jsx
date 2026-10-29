@@ -6,6 +6,7 @@ import { formatPoints } from '../../lib/format'
 import { compressImage } from '../../lib/imageCompress'
 import VoiceInput from '../../components/ui/VoiceInput'
 import CameraCapture from '../../components/ui/CameraCapture'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 
 var REASON_PRESETS = [
@@ -29,6 +30,8 @@ function PaySalaryModal(props) {
   var [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0])
   var [saving, setSaving] = useState(false)
   var [error, setError] = useState('')
+
+  useBackButtonClose(true, function () { if (!saving) onClose && onClose() })
 
   // Adjustment (deduct-from-owed) toggle
   var [showAdj, setShowAdj] = useState(false)
