@@ -1006,24 +1006,17 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
                 {thisChargeable > 0 && <span className="shrink-0 h-8 px-3 rounded-full bg-red-50 border border-red-200 text-red-700 text-[13.5px] font-extrabold inline-flex items-center">{thisChargeable} due</span>}
               </div>
               <div className="p-5 flex-1 flex flex-col">
-                {ratePaise > 0 && totalIssued > 0 ? renderCollectForm(true) : (
+                {/* A rate is only needed to charge for extras — logging
+                    plates coming back with nothing owed doesn't need one,
+                    so this opens as soon as anything's been issued.
+                    renderCollectForm itself already only asks for payment
+                    details (mode/photo/discount) when isCollection is true;
+                    canCollect separately still requires a rate before any
+                    actual charge can be submitted. */}
+                {totalIssued > 0 ? renderCollectForm(true) : (
                   <div className="flex-1 flex flex-col justify-center rounded-2xl bg-slate-50 border border-dashed border-slate-300 px-5 py-6">
-                    <p className="text-[14px] font-bold text-slate-800">{ratePaise <= 0 ? 'No rate for this function yet' : 'Nothing to collect yet'}</p>
-                    <p className="mt-0.5 text-[12.5px] text-slate-500">Collect opens when both of these are in place:</p>
-                    <ul className="mt-3 space-y-2">
-                      {[[ratePaise > 0, ratePaise > 0 ? 'Rate set — ₹' + rateRs.toLocaleString('en-IN') + ' per plate' : 'A rate per plate on the contract' + (isAdmin ? ' (or Set rate above)' : '')],
-                        [totalIssued > 0, totalIssued > 0 ? totalIssued + ' plates issued' : 'Plates issued for the function']].map(function (x, i) {
-                        return (
-                          <li key={i} className="flex items-center gap-2 text-[13.5px]">
-                            <span className={'shrink-0 w-5 h-5 rounded-full inline-flex items-center justify-center ' + (x[0] ? 'bg-emerald-500 text-white' : 'bg-white border border-slate-300 text-slate-400')}>
-                              <Icon name={x[0] ? 'check' : 'minus'} size={11} strokeWidth={3} />
-                            </span>
-                            <span className={x[0] ? 'text-slate-700 font-semibold' : 'text-slate-500'}>{x[1]}</span>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                    <p className="mt-3 text-[12.5px] text-slate-400">Plates used beyond the quota of {quota} are charged here.</p>
+                    <p className="text-[14px] font-bold text-slate-800">Nothing issued yet</p>
+                    <p className="mt-2 text-[12.5px] text-slate-500">Returns and extras collection open once plates have been issued for this function.</p>
                   </div>
                 )}
               </div>
@@ -1397,7 +1390,12 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
           <div className={wide ? 'grid xl:grid-cols-2 gap-3 items-start' : 'space-y-2.5'}>
           {/* Issue | Collect — one card, one form at a time. */}
           {eventDetail && (function () {
-            var canCollectHere = ratePaise > 0 && totalIssued > 0
+            // A rate is only needed to charge for extras, not to log plates
+            // coming back with nothing owed — the Collect tab (and
+            // renderCollectForm within it) opens as soon as anything's been
+            // issued; canCollect separately still requires a rate before any
+            // actual charge can be submitted.
+            var canCollectHere = totalIssued > 0
             // Issue opens first; Collect is one tap away (its tab carries the
             // chargeable count as a badge, so a pending collection still shows).
             var tab = canCollectHere ? (actionTab || 'issue') : 'issue'
