@@ -596,7 +596,10 @@ function EventLedger(props) {
     }
     var nameById = {}
     if (creatorIds.length > 0) {
-      var { data: profRows } = await supabase.from('profiles').select('id, name').in('id', creatorIds)
+      // fn_profile_names, not a direct select -- RLS on profiles only lets a
+      // user read their own row, and most entries here were logged by
+      // someone else.
+      var { data: profRows } = await supabase.rpc('fn_profile_names', { p_ids: creatorIds })
       ;(profRows || []).forEach(function (p) { nameById[p.id] = p.name || null })
     }
     rows = rows.map(function (r) {
@@ -914,7 +917,11 @@ function EventLedger(props) {
       var receivedByName = ''
       var signatureUrl = null
       if (d.collectorId) {
-        var { data: pr } = await supabase.from('profiles').select('name, signature_path').eq('id', d.collectorId).maybeSingle()
+        // fn_profile_names, not a direct select -- RLS on profiles only lets
+        // a user read their own row, and whoever is printing this usually
+        // isn't the collector.
+        var { data: prRows } = await supabase.rpc('fn_profile_names', { p_ids: [d.collectorId] })
+        var pr = (prRows || [])[0]
         if (pr) {
           receivedByName = pr.name || ''
           if (pr.signature_path) {

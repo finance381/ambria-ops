@@ -641,7 +641,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           .then(function (r) { return { src: src, rows: (r.data || []).map(function (v) { return { id: String(v.id), label: v.name } }) } })
       }
       if (src === 'staff') {
-        return supabase.from('profiles').select('id, name').in('id', ids)
+        // Not .from('profiles') directly -- RLS there only lets a user read
+        // their own row, and the staff member on someone else's expense is
+        // usually not the viewer.
+        return supabase.rpc('fn_profile_names', { p_ids: ids })
           .then(function (r) { return { src: src, rows: (r.data || []).map(function (p) { return { id: String(p.id), label: p.name || '—' } }) } })
       }
       if (src === 'job_departments') {
@@ -685,7 +688,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       setTransferParties(function (prev) { return Object.assign({}, prev, tMap) })
       var cpArr = Object.keys(cpIds)
       if (cpArr.length > 0) {
-        var { data: pData } = await supabase.from('profiles').select('id, name').in('id', cpArr)
+        // fn_profile_names, not a direct select -- RLS on profiles only lets
+        // a user read their own row, and a transfer counterparty is usually
+        // someone else.
+        var { data: pData } = await supabase.rpc('fn_profile_names', { p_ids: cpArr })
         var pMap = {}
         ;(pData || []).forEach(function (p) { pMap[p.id] = p })
         setWalletProfiles(function (prev) { return Object.assign({}, prev, pMap) })
@@ -973,7 +979,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       if (evArr.length > 0 || missing.length > 0) {
         var wave2 = await Promise.all([
           evArr.length > 0 ? supabase.from('event_ledger').select('id, event_name').in('id', evArr) : none,
-          missing.length > 0 ? supabase.from('profiles').select('id, name').in('id', missing) : none,
+          // fn_profile_names, not a direct select -- RLS on profiles only lets
+          // a user read their own row, which is exactly what this "needed on
+          // non-admin own-wallet view" case is for.
+          missing.length > 0 ? supabase.rpc('fn_profile_names', { p_ids: missing }) : none,
         ])
         if (!current()) return
 
@@ -1551,7 +1560,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var receivedByName = walletProfiles[collectorId]?.name || ''
     var signatureUrl = null
     if (collectorId) {
-      var { data: pr } = await supabase.from('profiles').select('name, signature_path').eq('id', collectorId).maybeSingle()
+      // fn_profile_names, not a direct select -- the collector printing this
+      // receipt is often not the person who collected it, and RLS on
+      // profiles only lets a user read their own row.
+      var { data: prRows } = await supabase.rpc('fn_profile_names', { p_ids: [collectorId] })
+      var pr = (prRows || [])[0]
       if (pr) {
         if (!receivedByName) receivedByName = pr.name || ''
         if (pr.signature_path) {
@@ -1806,7 +1819,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     }
     var collectorName = walletProfiles[txn.performed_by]?.name || ''
     if (!collectorName && txn.performed_by) {
-      var { data: pr } = await supabase.from('profiles').select('name').eq('id', txn.performed_by).maybeSingle()
+      // fn_profile_names, not a direct select -- same RLS gap as the receipt
+      // print above: the viewer opening this detail is often not the
+      // collector.
+      var { data: prRows2 } = await supabase.rpc('fn_profile_names', { p_ids: [txn.performed_by] })
+      var pr = (prRows2 || [])[0]
       if (pr) collectorName = pr.name || ''
     }
     var imgUrl = txn.received_image_path
@@ -1979,7 +1996,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       var { data: v } = await supabase.from('vendors').select('name').eq('id', entry.party_id).maybeSingle()
       partyName = (v && v.name) || ''
     } else {
-      var { data: p } = await supabase.from('profiles').select('name').eq('id', entry.party_id).maybeSingle()
+      // fn_profile_names, not a direct select -- a salary/staff payment's
+      // recipient is usually not the viewer, and RLS on profiles only lets a
+      // user read their own row.
+      var { data: pRows } = await supabase.rpc('fn_profile_names', { p_ids: [entry.party_id] })
+      var p = (pRows || [])[0]
       partyName = (p && p.name) || ''
     }
     // The bill(s) a deduction was credited against — stored as raw expense

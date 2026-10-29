@@ -305,7 +305,10 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
     cRows.forEach(function (r) { if (r.collected_by && userIds.indexOf(r.collected_by) === -1) userIds.push(r.collected_by) })
     var nameById = {}
     if (userIds.length > 0) {
-      var { data: profRows } = await supabase.from('profiles').select('id, name').in('id', userIds)
+      // fn_profile_names, not a direct select -- RLS on profiles only lets a
+      // user read their own row, and most of these were issued/collected by
+      // someone else.
+      var { data: profRows } = await supabase.rpc('fn_profile_names', { p_ids: userIds })
       ;(profRows || []).forEach(function (p) { nameById[p.id] = p.name || null })
     }
     iRows = iRows.map(function (r) { r._creatorName = nameById[r.issued_by] || null; return r })
@@ -452,7 +455,11 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
       var receivedByName = ''
       var signatureUrl = null
       if (r.collected_by) {
-        var { data: pr } = await supabase.from('profiles').select('name, signature_path').eq('id', r.collected_by).maybeSingle()
+        // fn_profile_names, not a direct select -- RLS on profiles only lets
+        // a user read their own row, and whoever is printing this usually
+        // isn't the collector.
+        var { data: prRows } = await supabase.rpc('fn_profile_names', { p_ids: [r.collected_by] })
+        var pr = (prRows || [])[0]
         if (pr) {
           receivedByName = pr.name || ''
           if (pr.signature_path) {
