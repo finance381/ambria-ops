@@ -16,6 +16,7 @@ import { filterUserCategories } from '../../lib/categories'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { reconcileStockBatches, stockValuePaise, placeRates } from '../../lib/stockBatches'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 var UNITS = [
   'Inches','Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens',
@@ -183,6 +184,41 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
     }
     return out
   })
+  // Two batches that should have been one (e.g. opening stock and a same-day
+  // "new stock" entry that was really the same delivery) — moves the whole
+  // source batch into the target and zeroes the source out, rather than
+  // requiring two separate qty edits that net to the same thing. Doesn't
+  // touch the overall qty field: it's a pure transfer, the total is
+  // unchanged. Rate carries over as a qty-weighted average of whichever
+  // side(s) actually have one; a side with no rate yet contributes nothing
+  // to the average rather than dragging it toward zero.
+  function mergeBatchInto(fromIdx, toIdx) {
+    var fromB = effBatches[fromIdx]
+    var toB = effBatches[toIdx]
+    if (!fromB || !toB || fromB.id === toB.id) return
+    var fromQty = Number(fromB.qty) || 0
+    var toQty = Number(toB.qty) || 0
+    appConfirm('Move this batch’s ' + fromQty + ' ' + unit + ' into Batch ' + (toIdx + 1) + '? This batch will be removed once you save.').then(function (ok) {
+      if (!ok) return
+      var mergedQty = Math.round((fromQty + toQty) * 1000) / 1000
+      var fromRate = fromB.rate_paise || null
+      var toRate = toB.rate_paise || null
+      var mergedRate = (fromRate && toRate)
+        ? Math.round((fromQty * fromRate + toQty * toRate) / (mergedQty || 1))
+        : (toRate || fromRate || null)
+      setBatchQtyEdits(function (prev) {
+        var n = Object.assign({}, prev)
+        n[fromB.id] = '0'
+        n[toB.id] = String(mergedQty)
+        return n
+      })
+      setBatchRateEdits(function (prev) {
+        var n = Object.assign({}, prev)
+        n[toB.id] = mergedRate ? String(mergedRate / 100) : ''
+        return n
+      })
+    })
+  }
   var [newStockQty, setNewStockQty] = useState('')
   var [newStockRate, setNewStockRate] = useState('')
   var [newStockAllocs, setNewStockAllocs] = useState([{ venue_id: '', sub_venue_id: '', qty: '' }])
@@ -1136,11 +1172,17 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
           <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.07em] text-slate-500">Batches</p>
           <div className="rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
             {effBatches.map(function (b, bi) {
+              // Merged away (qty edited down to 0) — gone from view the
+              // instant it's merged rather than lingering as an empty row
+              // until save; reconcileStockBatches deletes it for real then.
+              if (Number(b.qty) <= 0) return null
               var bq = Number(b.qty) || 0
               var missing = !b.rate_paise
               var typedRate = Object.prototype.hasOwnProperty.call(batchRateEdits, b.id) ? batchRateEdits[b.id] : (itemBatches[bi].rate_paise ? String(itemBatches[bi].rate_paise / 100) : '')
               var origQty = Number(itemBatches[bi].qty) || 0
               var typedQty = Object.prototype.hasOwnProperty.call(batchQtyEdits, b.id) ? batchQtyEdits[b.id] : String(origQty)
+              var otherIdxs = []
+              effBatches.forEach(function (ob, oi) { if (oi !== bi && Number(ob.qty) > 0) otherIdxs.push(oi) })
               function updateQty(v) {
                 setBatchQtyEdits(function (prev) {
                   var n = Object.assign({}, prev)
@@ -1175,6 +1217,13 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
                   <span className={"w-[104px] text-right text-[14px] font-bold tabular-nums " + (missing ? "text-amber-700" : "text-slate-900")}>
                     {missing ? 'Rate missing' : formatPaise(Math.round(bq * b.rate_paise))}
                   </span>
+                  {otherIdxs.length > 0 && (
+                    <select value="" onChange={function (e) { if (e.target.value !== '') mergeBatchInto(bi, Number(e.target.value)) }}
+                      className="h-9 px-2 bg-white border border-slate-300 rounded-lg text-[12px] font-semibold text-slate-600 focus:outline-none focus:ring-4 focus:ring-[#3B4668]/10 focus:border-[#A9B1CB]">
+                      <option value="">Merge into…</option>
+                      {otherIdxs.map(function (oi) { return <option key={oi} value={oi}>Batch {oi + 1}</option> })}
+                    </select>
+                  )}
                 </div>
               )
             })}
