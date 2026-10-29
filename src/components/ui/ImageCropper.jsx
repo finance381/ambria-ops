@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import ReactCrop, { centerCrop, makeAspectCrop, cropToCanvas } from 'react-image-crop'
+import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop'
 import 'react-image-crop/dist/ReactCrop.css'
 
 // Full-screen crop step shared by the camera's review screen (crop what was
@@ -30,8 +30,27 @@ function ImageCropper({ imageUrl, onDone, onCancel }) {
     if (completedCrop.width < 1 || completedCrop.height < 1) return
     setSaving(true); setError('')
     try {
+      // Not react-image-crop's own cropToCanvas helper: it sizes the output
+      // canvas as crop size × (naturalSize/displaySize) × devicePixelRatio —
+      // on a phone photo (often 3000-4000px+ per side already) shown small
+      // on screen, that extra devicePixelRatio multiplier (2-3x on most
+      // phones) pushed the canvas well past what mobile browsers reliably
+      // allocate, which get silently clamped/truncated rather than erroring
+      // — the crop came out covering a smaller area than what was actually
+      // selected. This draws at the image's own natural resolution only, no
+      // extra multiplier, same approach as the older ImageCrop.jsx.
+      var img = imgRef.current
+      var scaleX = img.naturalWidth / img.width
+      var scaleY = img.naturalHeight / img.height
       var canvas = document.createElement('canvas')
-      await cropToCanvas(imgRef.current, canvas, completedCrop)
+      canvas.width = Math.round(completedCrop.width * scaleX)
+      canvas.height = Math.round(completedCrop.height * scaleY)
+      var ctx = canvas.getContext('2d')
+      ctx.drawImage(
+        img,
+        completedCrop.x * scaleX, completedCrop.y * scaleY, completedCrop.width * scaleX, completedCrop.height * scaleY,
+        0, 0, canvas.width, canvas.height
+      )
       canvas.toBlob(function (blob) {
         if (!blob) { setError('Could not crop that image — try again.'); setSaving(false); return }
         onDone(blob)
