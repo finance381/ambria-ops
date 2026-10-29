@@ -164,10 +164,24 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   // written to the batches on save. A batch saved before rates were kept
   // shows ₹0 until it is given one here.
   var [batchRateEdits, setBatchRateEdits] = useState({})
+  // Quantities typed in for the item's batches (batch id → qty as typed) —
+  // lets a wrong quantity entered on a batch (e.g. opening stock typed as 4
+  // when it was really 5) be corrected directly, rather than only being
+  // fixable by changing the item's overall on-hand qty and letting
+  // reconcileStockBatches decide which batch absorbs the difference (always
+  // oldest-first, which may not be the one that was actually wrong).
+  var [batchQtyEdits, setBatchQtyEdits] = useState({})
   var effBatches = itemBatches.map(function (b) {
-    if (!Object.prototype.hasOwnProperty.call(batchRateEdits, b.id)) return b
-    var v = batchRateEdits[b.id]
-    return Object.assign({}, b, { rate_paise: v === '' || v == null ? null : Math.round(Number(v) * 100) })
+    var out = b
+    if (Object.prototype.hasOwnProperty.call(batchRateEdits, b.id)) {
+      var rv = batchRateEdits[b.id]
+      out = Object.assign({}, out, { rate_paise: rv === '' || rv == null ? null : Math.round(Number(rv) * 100) })
+    }
+    if (Object.prototype.hasOwnProperty.call(batchQtyEdits, b.id)) {
+      var qv = batchQtyEdits[b.id]
+      out = Object.assign({}, out, { qty: qv === '' || qv == null ? 0 : Number(qv) })
+    }
+    return out
   })
   var [newStockQty, setNewStockQty] = useState('')
   var [newStockRate, setNewStockRate] = useState('')
@@ -602,6 +616,14 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
       var v = batchRateEdits[id]
       rateOverrides[id] = v === '' || v == null ? null : Math.round(Number(v) * 100)
     })
+    // Batch quantities typed in the form, for reconcile to write — the
+    // qty field above was already nudged by the same amount as each edit
+    // (see updateQty), so totalQty below already accounts for these.
+    var qtyOverrides = {}
+    Object.keys(batchQtyEdits).forEach(function (id) {
+      var v = batchQtyEdits[id]
+      qtyOverrides[id] = v === '' || v == null ? 0 : Math.round(Number(v) * 1000) / 1000
+    })
     var addRatePaise = newStockRate ? Math.round(Number(newStockRate) * 100) : (latestBatchRate || itemRatePaise)
     var savedRatePaise = itemBatches.length > 0 ? ((addQty > 0 && addRatePaise) ? addRatePaise : (latestBatchRate || itemRatePaise)) : itemRatePaise
     var totalQty = Math.round(((Number(qty) || 0) + addQty) * 1000) / 1000
@@ -780,7 +802,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
           var venueRows = allocsForSave.filter(function (a) { return a.venue_id && Number(a.qty) > 0 }).map(function (a) { return { item_id: item.id, venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, sub_department_id: a.sub_department_id ? Number(a.sub_department_id) : null, qty: Number(a.qty) } })
           if (venueRows.length > 0) { var { error: vaErr } = await supabase.from(allocTable).insert(venueRows); if (vaErr) throw new Error('Allocation save failed: ' + vaErr.message) }
           await saveStockBatch(item.id, addQty, addRatePaise, addAllocs, false)
-          await reconcileStockBatches(supabase, { itemId: item.id, itemSource: isCatStore ? 'catering_store' : 'inventory', finalQty: totalQty, finalAllocs: venueRows, ratePaise: itemRatePaise, userId: profile?.id, rateOverrides: rateOverrides })
+          await reconcileStockBatches(supabase, { itemId: item.id, itemSource: isCatStore ? 'catering_store' : 'inventory', finalQty: totalQty, finalAllocs: venueRows, ratePaise: itemRatePaise, userId: profile?.id, rateOverrides: rateOverrides, qtyOverrides: qtyOverrides })
           if (imageFile) { var path = await uploadImage(item.id, imgPrefix); if (path) await supabase.from(tableName).update({ image_path: path }).eq('id', item.id) }
         }
       }
@@ -1101,25 +1123,52 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
         </div>
       )
     })()}
-      {/* Batch rates: each batch's unit rate, editable — a batch saved
-          before rates were kept has none (₹0) until it is given one. */}
+      {/* Batches: each one's own quantity and rate, editable — corrects a
+          typo on a specific batch directly, rather than only being fixable
+          by changing the item's overall on-hand qty and letting
+          reconcileStockBatches decide which batch absorbs the difference
+          (always oldest-first, which may not be the one that was wrong).
+          Editing a batch's qty here also nudges the overall qty field above
+          by the same amount, so the two never fall out of sync. A batch
+          saved before rates were kept has none (₹0) until it is given one. */}
       {itemBatches.length > 0 && (
         <div className="mt-4">
-          <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.07em] text-slate-500">Batch rates</p>
+          <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.07em] text-slate-500">Batches</p>
           <div className="rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
             {effBatches.map(function (b, bi) {
               var bq = Number(b.qty) || 0
               var missing = !b.rate_paise
-              var typed = Object.prototype.hasOwnProperty.call(batchRateEdits, b.id) ? batchRateEdits[b.id] : (itemBatches[bi].rate_paise ? String(itemBatches[bi].rate_paise / 100) : '')
+              var typedRate = Object.prototype.hasOwnProperty.call(batchRateEdits, b.id) ? batchRateEdits[b.id] : (itemBatches[bi].rate_paise ? String(itemBatches[bi].rate_paise / 100) : '')
+              var origQty = Number(itemBatches[bi].qty) || 0
+              var typedQty = Object.prototype.hasOwnProperty.call(batchQtyEdits, b.id) ? batchQtyEdits[b.id] : String(origQty)
+              function updateQty(v) {
+                setBatchQtyEdits(function (prev) {
+                  var n = Object.assign({}, prev)
+                  n[b.id] = v
+                  return n
+                })
+                var newQty = v === '' ? 0 : Number(v)
+                if (isNaN(newQty)) return
+                var prevQty = Object.prototype.hasOwnProperty.call(batchQtyEdits, b.id) ? Number(batchQtyEdits[b.id] || 0) : origQty
+                var delta = Math.round((newQty - prevQty) * 1000) / 1000
+                if (delta !== 0) setQty(function (prevTotal) { return String(Math.round(((Number(prevTotal) || 0) + delta) * 1000) / 1000) })
+              }
               return (
                 <div key={b.id} className={"flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-2.5 " + (missing ? "bg-amber-50/60" : "")}>
                   <span className="flex-1 min-w-[160px]">
                     <span className="block text-[13px] font-semibold text-slate-800">Batch {bi + 1} · {b.is_opening ? 'Opening stock' : 'New stock'}</span>
-                    <span className="block text-[11.5px] text-slate-500 tabular-nums">{bq} {unit} · {new Date(b.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    <span className="block text-[11.5px] text-slate-500 tabular-nums">{new Date(b.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                   </span>
                   <label className="flex items-center gap-1.5">
+                    <span className="text-[12px] font-semibold text-slate-500">Qty</span>
+                    <input type="number" min="0" step="any" inputMode="decimal" value={typedQty}
+                      onChange={function (e) { updateQty(e.target.value) }}
+                      className="w-20 h-9 px-2.5 bg-white border border-slate-300 rounded-lg text-[14px] font-semibold text-slate-900 tabular-nums focus:outline-none focus:ring-4 focus:ring-[#3B4668]/10 focus:border-[#A9B1CB]" />
+                    <span className="text-[12px] text-slate-500">{unit}</span>
+                  </label>
+                  <label className="flex items-center gap-1.5">
                     <span className="text-[12px] font-semibold text-slate-500">Rate ₹</span>
-                    <input type="number" min="0" step="any" inputMode="decimal" value={typed} placeholder="0"
+                    <input type="number" min="0" step="any" inputMode="decimal" value={typedRate} placeholder="0"
                       onChange={function (e) { var v = e.target.value; setBatchRateEdits(function (prev) { var n = Object.assign({}, prev); n[b.id] = v; return n }) }}
                       className={"w-24 h-9 px-2.5 bg-white border rounded-lg text-[14px] font-semibold text-slate-900 tabular-nums focus:outline-none focus:ring-4 focus:ring-[#3B4668]/10 " + (missing ? "border-amber-300" : "border-slate-300 focus:border-[#A9B1CB]")} />
                   </label>

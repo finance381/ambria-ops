@@ -22,6 +22,15 @@
 // opts.rateOverrides ({ batchId: ratePaise }) sets those batches' rates in
 // the same pass — a batch saved before rates were kept has none.
 //
+// opts.qtyOverrides ({ batchId: qty }) directly corrects a specific batch's
+// own quantity (e.g. a typo on opening stock) instead of leaving quantity
+// changes to the oldest-first/newest-first rules above, which don't target
+// any one batch in particular. The caller is expected to have already
+// folded the same change into opts.finalQty (InventoryForm.jsx's qty field
+// is nudged by the same delta as each edit), so the usual reconcile pass
+// below still runs — on an already-consistent total, it's a no-op beyond
+// writing the corrected batch.
+//
 // Returns true when something was written. Never throws.
 
 function r3(n) { return Math.round(n * 1000) / 1000 }
@@ -44,9 +53,11 @@ export async function reconcileStockBatches(supabase, opts) {
         return { venue_id: x.venue_id, sub_venue_id: x.sub_venue_id || null, qty: Number(x.qty) || 0 }
       })
       var q0 = Number(b.qty) || 0
-      var overrides = opts.rateOverrides || {}
-      var rate = Object.prototype.hasOwnProperty.call(overrides, b.id) ? overrides[b.id] : b.rate_paise
-      return { id: b.id, qty: q0, rate_paise: rate, is_opening: b.is_opening, added_by: b.added_by, created_at: b.created_at, allocs: allocs, before: JSON.stringify([q0, allocs, b.rate_paise || null]) }
+      var rateOverrides = opts.rateOverrides || {}
+      var rate = Object.prototype.hasOwnProperty.call(rateOverrides, b.id) ? rateOverrides[b.id] : b.rate_paise
+      var qtyOverrides = opts.qtyOverrides || {}
+      var qty = Object.prototype.hasOwnProperty.call(qtyOverrides, b.id) ? r3(Number(qtyOverrides[b.id]) || 0) : q0
+      return { id: b.id, qty: qty, rate_paise: rate, is_opening: b.is_opening, added_by: b.added_by, created_at: b.created_at, allocs: allocs, before: JSON.stringify([q0, allocs, b.rate_paise || null]) }
     })
 
     // 1. Quantity: oldest stock goes first; growth becomes a batch.
