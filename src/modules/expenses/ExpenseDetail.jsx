@@ -83,7 +83,9 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
     if (exp.penalized_by && ids.indexOf(exp.penalized_by) === -1) ids.push(exp.penalized_by)
     if (exp.acknowledged_by && ids.indexOf(exp.acknowledged_by) === -1) ids.push(exp.acknowledged_by)
     if (ids.length === 0) { setReviewerName(''); setPenalizerName(''); setAcknowledgerName(''); return }
-    supabase.from('profiles').select('id, name').in('id', ids).then(function (res) {
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and these are rarely the viewer.
+    supabase.rpc('fn_profile_names', { p_ids: ids }).then(function (res) {
       var map = {}
       ;(res.data || []).forEach(function (p) { map[p.id] = p.name || '' })
       setReviewerName(exp.reviewed_by ? (map[exp.reviewed_by] || '—') : '')
@@ -106,8 +108,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
     setCheckedByName('')
     if (!exp.checked_by) return
     var cancelled = false
-    supabase.from('profiles').select('name').eq('id', exp.checked_by).maybeSingle().then(function (res) {
-      if (!cancelled) setCheckedByName((res.data && res.data.name) || '')
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and the checker is rarely the viewer.
+    supabase.rpc('fn_profile_names', { p_ids: [exp.checked_by] }).then(function (res) {
+      if (!cancelled) setCheckedByName(((res.data || [])[0] && res.data[0].name) || '')
     })
     return function () { cancelled = true }
   }, [exp.checked_by])
@@ -116,8 +120,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
     setEnteredByName('')
     if (!exp.tally_entered_by) return
     var cancelled = false
-    supabase.from('profiles').select('name').eq('id', exp.tally_entered_by).maybeSingle().then(function (res) {
-      if (!cancelled) setEnteredByName((res.data && res.data.name) || '')
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and the Tally-enterer is rarely the viewer.
+    supabase.rpc('fn_profile_names', { p_ids: [exp.tally_entered_by] }).then(function (res) {
+      if (!cancelled) setEnteredByName(((res.data || [])[0] && res.data[0].name) || '')
     })
     return function () { cancelled = true }
   }, [exp.tally_entered_by])
@@ -151,7 +157,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         var creatorIds = []
         rows.forEach(function (g) { if (g.created_by && creatorIds.indexOf(g.created_by) === -1) creatorIds.push(g.created_by) })
         if (creatorIds.length > 0) {
-          supabase.from('profiles').select('id, name').in('id', creatorIds).then(function (r2) {
+          // fn_profile_names, not a direct select -- RLS on profiles only
+          // lets a user read their own row, and most GVs here were raised
+          // by someone else.
+          supabase.rpc('fn_profile_names', { p_ids: creatorIds }).then(function (r2) {
             var map = {}
             ;(r2.data || []).forEach(function (p) { map[p.id] = p.name || '' })
             setGvCreators(map)
@@ -188,7 +197,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
           .then(function (r) { return { src: src, rows: (r.data || []).map(function (v) { return { id: String(v.id), label: v.name } }) } })
       }
       if (src === 'staff') {
-        return supabase.from('profiles').select('id, name').in('id', ids)
+        // fn_profile_names, not a direct select -- RLS on profiles only lets
+        // a user read their own row, and the staff member on a lookup field
+        // is usually not the viewer.
+        return supabase.rpc('fn_profile_names', { p_ids: ids })
           .then(function (r) { return { src: src, rows: (r.data || []).map(function (p) { return { id: String(p.id), label: p.name || '—' } }) } })
       }
       if (src === 'categories') {

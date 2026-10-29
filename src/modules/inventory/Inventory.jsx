@@ -235,7 +235,10 @@ function Inventory({ profile }) {
     // Names for the submitters on this page not looked up yet.
     var missing = page.map(function (i) { return i.submitted_by }).filter(function (id, idx, arr) { return id && arr.indexOf(id) === idx && !submitters[id] })
     if (missing.length > 0) {
-      supabase.from('profiles').select('id, name').in('id', missing).then(function (res) {
+      // fn_profile_names, not a direct select -- RLS on profiles only lets a
+      // user read their own row, and most items here were submitted by
+      // someone else.
+      supabase.rpc('fn_profile_names', { p_ids: missing }).then(function (res) {
         if (!res.data) return
         setSubmitters(function (prev) {
           var next = Object.assign({}, prev)

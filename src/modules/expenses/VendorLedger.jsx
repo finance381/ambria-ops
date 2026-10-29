@@ -894,8 +894,10 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
         .select('id, receipt_paths, receipt_path, amount_paise, tax_paise, user_id, acknowledged_by, checked_by, checked_at, tally_entered_by, tally_entered_at, expense_allocations(department, department_id, venue_id, amount_paise, remarks, expense_type_id, expense_sub_type_id)')
         .in('id', expIds)
       : Promise.resolve({ data: [] })
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and most of these are someone else's.
     var namesP = entryProfileIds.length > 0
-      ? supabase.from('profiles').select('id, name').in('id', entryProfileIds)
+      ? supabase.rpc('fn_profile_names', { p_ids: entryProfileIds })
       : Promise.resolve({ data: [] })
     var both = await Promise.all([expsP, namesP])
 
@@ -951,7 +953,8 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
     Object.keys(acknowledgerIdByExpId).forEach(function (eid) { wantName(acknowledgerIdByExpId[eid]) })
     Object.keys(expCheckByExpId).forEach(function (eid) { wantName(expCheckByExpId[eid].checked_by); wantName(expCheckByExpId[eid].tally_entered_by) })
     if (extraIds.length > 0) {
-      var { data: pRows } = await supabase.from('profiles').select('id, name').in('id', extraIds)
+      // fn_profile_names, not a direct select -- same RLS gap as above.
+      var { data: pRows } = await supabase.rpc('fn_profile_names', { p_ids: extraIds })
       ;(pRows || []).forEach(function (p) { profileNameById[p.id] = p.name || null })
     }
 

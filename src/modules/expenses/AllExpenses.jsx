@@ -138,12 +138,14 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
   }, [allExpStatus, allExpFrom, allExpTo, ackDateFilter, allExpSearch, filtersOpen, deptFilter, expTypeFilter, expSubTypeFilter, venueFilter, userFilter, amountMin, amountMax])
 
   useEffect(function () {
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and this filter needs everyone.
     Promise.all([
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
-      supabase.from('profiles').select('id, name').order('name'),
+      supabase.rpc('fn_profile_names'),
     ]).then(function (res) {
       setDeptOptions(res[0].data || [])
-      setUserOptions(res[1].data || [])
+      setUserOptions((res[1].data || []).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') }))
     })
   }, [])
 

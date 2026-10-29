@@ -85,9 +85,11 @@ function useReviewQueue(profile) {
   async function resolveSubmitterNames(rows) {
     var ids = Array.from(new Set(rows.map(function (r) { return r.submitted_by }).filter(Boolean)))
     if (ids.length === 0) { setSubmitterNames({}); return {} }
-    var res = await supabase.from('profiles').select('id, name, email').in('id', ids)
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and most submitters here are someone else.
+    var res = await supabase.rpc('fn_profile_names', { p_ids: ids })
     var names = {}
-    ;(res.data || []).forEach(function (p) { names[p.id] = { name: p.name, email: p.email } })
+    ;(res.data || []).forEach(function (p) { names[p.id] = { name: p.name, email: null } })
     setSubmitterNames(names)
     return names
   }

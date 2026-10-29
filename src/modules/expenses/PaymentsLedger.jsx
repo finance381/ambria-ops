@@ -334,14 +334,20 @@ function PaymentsLedger({ profile }) {
       if (n && !isNaN(n) && expenseIdsForCheck.indexOf(n) === -1) expenseIdsForCheck.push(n)
     })
 
-    // One wave, not two. The wallet carries its owner's name and the plate
-    // collection carries its event's, so neither needs a follow-up query.
+    // The wallet-owner name used to ride along as an embedded profiles(...)
+    // select on this query -- but an embed still goes through profiles' own
+    // RLS (only your own row, unless admin/auditor/dept-approver), so it
+    // silently came back null for any wallet that wasn't the viewer's own.
+    // Owner ids are resolved below instead, through fn_profile_names
+    // alongside the checked-by/entered-by names.
     var [vRes, walletOwnersRes, epcRes, pRes, evRes, expCheckRes] = await Promise.all([
       vendorIds.length > 0 ? supabase.from('vendors').select('id, name').in('id', vendorIds) : Promise.resolve({ data: [] }),
-      walletIdsForOwners.length > 0 ? supabase.from('wallets').select('id, user_id, profiles(id, name)').in('id', walletIdsForOwners) : Promise.resolve({ data: [] }),
+      walletIdsForOwners.length > 0 ? supabase.from('wallets').select('id, user_id').in('id', walletIdsForOwners) : Promise.resolve({ data: [] }),
       // EPC back-links so collections can be split from plain event collections
       collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id, extras_charged, plates_returned, discount_paise, events(id, event_name, client_name, function_date, venue_name, location, session)').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
-      profileIds.length > 0 ? supabase.from('profiles').select('id, name').in('id', profileIds) : Promise.resolve({ data: [] }),
+      // fn_profile_names, not a direct select -- RLS on profiles only lets a
+      // user read their own row, and most of these are someone else's.
+      profileIds.length > 0 ? supabase.rpc('fn_profile_names', { p_ids: profileIds }) : Promise.resolve({ data: [] }),
       candidateEventIds.length > 0 ? supabase.from('events').select('id, event_name, client_name, function_date, venue_name, location, session').in('id', candidateEventIds) : Promise.resolve({ data: [] }),
       expenseIdsForCheck.length > 0 ? supabase.from('expenses').select('id, checked_by, checked_at, tally_entered_by, tally_entered_at').in('id', expenseIdsForCheck) : Promise.resolve({ data: [] }),
     ])
@@ -361,17 +367,16 @@ function PaymentsLedger({ profile }) {
     ledgerRows.forEach(function (r) { wantCheckerName(r.checked_by); wantCheckerName(r.tally_entered_by) })
     collectRows.forEach(function (w) { wantCheckerName(w.checked_by); wantCheckerName(w.tally_entered_by) })
     Object.keys(expCheckById).forEach(function (id) { wantCheckerName(expCheckById[id].checked_by); wantCheckerName(expCheckById[id].tally_entered_by) })
-    if (checkedByIds.length > 0) {
-      var checkerRes = await supabase.from('profiles').select('id, name').in('id', checkedByIds)
-      ;(checkerRes.data || []).forEach(function (p) { profileNames[p.id] = p.name })
-    }
-
     var walletOwnerMap = {}
     ;(walletOwnersRes.data || []).forEach(function (w) {
       walletOwnerMap[w.id] = w.user_id
-      // The embedded profile is the same row the old follow-up query fetched.
-      if (w.profiles && w.profiles.id && profileNames[w.profiles.id] == null) profileNames[w.profiles.id] = w.profiles.name
+      wantCheckerName(w.user_id)
     })
+    if (checkedByIds.length > 0) {
+      // fn_profile_names, not a direct select -- same RLS gap as above.
+      var checkerRes = await supabase.rpc('fn_profile_names', { p_ids: checkedByIds })
+      ;(checkerRes.data || []).forEach(function (p) { profileNames[p.id] = p.name })
+    }
 
     var epcByWalletTx = {}
     ;(epcRes.data || []).forEach(function (e) {
@@ -553,11 +558,15 @@ function PaymentsLedger({ profile }) {
         r._eventId
           ? supabase.from('events').select('id, contract_no, event_name, client_name, function_date, venue_name, location, created_user_name').eq('id', r._eventId).maybeSingle()
           : Promise.resolve({ data: null }),
+        // fn_profile_names, not a direct select -- RLS on profiles only lets
+        // a user read their own row, and the collector is usually not the
+        // viewer.
         r._performedBy
-          ? supabase.from('profiles').select('name').eq('id', r._performedBy).maybeSingle()
+          ? supabase.rpc('fn_profile_names', { p_ids: [r._performedBy] })
           : Promise.resolve({ data: null }),
       ]).then(function (res) {
-        setDetailTarget({ row: r, event: res[0].data || null, collectorName: (res[1].data && res[1].data.name) || '', loading: false })
+        var collectorRow = res[1].data ? res[1].data[0] : null
+        setDetailTarget({ row: r, event: res[0].data || null, collectorName: (collectorRow && collectorRow.name) || '', loading: false })
       })
     }
   }

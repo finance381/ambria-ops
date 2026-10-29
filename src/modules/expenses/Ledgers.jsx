@@ -487,9 +487,11 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   }, [])
 
   async function loadMaps() {
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and this directory needs everyone.
     var res = await Promise.all([
       supabase.from('departments').select('id, name'),
-      supabase.from('profiles').select('id, name'),
+      supabase.rpc('fn_profile_names'),
     ])
     var dm = {}; (res[0].data || []).forEach(function (d) { dm[d.id] = d.name })
     var um = {}; (res[1].data || []).forEach(function (u) { um[u.id] = u.name })

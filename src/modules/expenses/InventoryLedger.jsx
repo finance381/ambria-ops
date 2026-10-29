@@ -200,7 +200,10 @@ function InventoryLedger({ profile }) {
       }
       var nameById = {}
       if (allUserIds.length > 0) {
-        var { data: profRows } = await supabase.from('profiles').select('id, name').in('id', allUserIds)
+        // fn_profile_names, not a direct select -- RLS on profiles only lets
+        // a user read their own row, and most of this history is someone
+        // else's.
+        var { data: profRows } = await supabase.rpc('fn_profile_names', { p_ids: allUserIds })
         ;(profRows || []).forEach(function (p) { nameById[p.id] = p.name || null })
       }
       histRes = histRes.map(function (h) {

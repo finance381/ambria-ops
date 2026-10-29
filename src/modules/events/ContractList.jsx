@@ -156,7 +156,10 @@ function ContractList({ profile, deepLinkContractId }) {
     var ids = []
     rows.forEach(function (c) { if (c.tally_entered_by && ids.indexOf(c.tally_entered_by) === -1) ids.push(c.tally_entered_by) })
     if (ids.length === 0) return
-    supabase.from('profiles').select('id, name').in('id', ids).then(function (res) {
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and most entries here were entered by someone
+    // else.
+    supabase.rpc('fn_profile_names', { p_ids: ids }).then(function (res) {
       var next = {}
       ;(res.data || []).forEach(function (p) { next[p.id] = p.name })
       setEnteredNames(function (prev) { return Object.assign({}, prev, next) })

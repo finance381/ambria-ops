@@ -55,7 +55,10 @@ function GVLog({ profile }) {
       if (g.expense_id && expenseIds.indexOf(g.expense_id) === -1) expenseIds.push(g.expense_id)
     })
     if (creatorIds.length > 0) {
-      supabase.from('profiles').select('id, name').in('id', creatorIds).then(function (res) {
+      // fn_profile_names, not a direct select -- RLS on profiles only lets a
+      // user read their own row, and most GVs here were raised by someone
+      // else.
+      supabase.rpc('fn_profile_names', { p_ids: creatorIds }).then(function (res) {
         var m = {}
         ;(res.data || []).forEach(function (p) { m[p.id] = p.name || '' })
         setCreatorMap(m)

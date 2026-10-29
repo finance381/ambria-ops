@@ -640,7 +640,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       // Fetches employees, not departments — filtered by field.allowed_dept_ids at render time (dept overlap).
       items = refData.employees.filter(function (e) { return ['probation', 'active', 'on_leave'].indexOf(e.status) !== -1 })
     } else if (source === 'staff') {
-      var { data: pData } = await supabase.from('profiles').select('id, name').order('name')
+      // fn_profile_names, not a direct select -- RLS on profiles only lets a
+      // user read their own row, and this picker needs everyone.
+      var { data: pData } = await supabase.rpc('fn_profile_names')
+      pData = (pData || []).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') })
       items = (pData || []).map(function (p) { return { label: p.name || '—', value: String(p.id) } })
     } else if (source === 'categories') {
       var { data: cData } = await supabase.from('categories').select('id, name').order('name')

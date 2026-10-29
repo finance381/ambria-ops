@@ -134,8 +134,10 @@ function Requisitions({ profile, onBack }) {
       setSubDeptOptions(res.data || [])
     })
     if (hasReqApprove) {
-      supabase.from('profiles').select('id, name').order('name').then(function (res) {
-        setUserOptions(res.data || [])
+      // fn_profile_names, not a direct select -- RLS on profiles only lets a
+      // user read their own row, and this filter needs everyone.
+      supabase.rpc('fn_profile_names').then(function (res) {
+        setUserOptions((res.data || []).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') }))
       })
     }
   }, [])

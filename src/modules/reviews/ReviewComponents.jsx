@@ -130,7 +130,9 @@ function ReviewTimeline({ domain, sourceId }) {
         setEvents(rows)
         var ids = Array.from(new Set(rows.map(function (e) { return e.actor_id })))
         if (ids.length === 0) { setLoading(false); return }
-        supabase.from('profiles').select('id, name').in('id', ids).then(function (r2) {
+        // fn_profile_names, not a direct select -- RLS on profiles only lets
+        // a user read their own row, and most actors here are someone else.
+        supabase.rpc('fn_profile_names', { p_ids: ids }).then(function (r2) {
           if (cancelled) return
           var names = {}
           ;(r2.data || []).forEach(function (p) { names[p.id] = p.name })

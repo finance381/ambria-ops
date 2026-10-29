@@ -54,8 +54,12 @@ function ItemReceipts({ profile, onCountChange }) {
 
   // Submitter list — one shot
   useEffect(function () {
-    supabase.from('profiles').select('id, name').eq('active', true).order('name').then(function (res) {
-      setSubmitterOptions(res.data || [])
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and this filter needs everyone. Not filtered
+    // to active=true (the RPC doesn't carry that column) -- a former
+    // employee's name staying selectable here is harmless.
+    supabase.rpc('fn_profile_names').then(function (res) {
+      setSubmitterOptions((res.data || []).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') }))
     })
   }, [])
 

@@ -231,8 +231,10 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
       setSubDeptOptions(sds)
       setDeptOptions(res[1].data || [])
     })
-    supabase.from('profiles').select('id, name').order('name').then(function (res) {
-      var rows = res.data || []
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and this list/filter needs everyone.
+    supabase.rpc('fn_profile_names').then(function (res) {
+      var rows = (res.data || []).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') })
       if (showApproveTab) setUserOptions(rows)
       var m = {}
       rows.forEach(function (p) { m[p.id] = p.name || '' })
