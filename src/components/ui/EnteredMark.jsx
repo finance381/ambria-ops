@@ -1,4 +1,4 @@
-import { formatDateTime } from '../../lib/format'
+import { formatDate, formatDateTime } from '../../lib/format'
 
 // A second, independent stamp alongside CheckedStamp — "entered into Tally"
 // is a bookkeeping step separate from "checked", with its own permission,
@@ -24,13 +24,14 @@ function EnteredMark({ entered, enteredByName, enteredAt, canToggle, busy, onTog
   // on that being done.
   var title = 'Entered in Tally' + (enteredByName ? ' by ' + enteredByName : '') + (enteredAt ? ' · ' + formatDateTime(enteredAt) : '')
 
-  // The name is printed, not just left in the hover title — a touch device
-  // has no hover, and "who did this" is the first thing anyone checking a
-  // Tally entry asks.
+  // The name and date are printed, not just left in the hover title — a
+  // touch device has no hover, and "who did this, and when" is the first
+  // thing anyone checking a Tally entry asks.
   return (
     <span title={title} className="shrink-0 text-right leading-tight">
       <span className="block whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.04em] text-sky-600">Entered</span>
       {enteredByName && <span className="block whitespace-nowrap text-[9.5px] font-medium text-slate-400">{enteredByName}</span>}
+      {enteredAt && <span className="block whitespace-nowrap text-[9.5px] font-medium text-slate-400">{formatDate(enteredAt)}</span>}
     </span>
   )
 }
