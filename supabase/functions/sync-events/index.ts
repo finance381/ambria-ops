@@ -228,7 +228,10 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
     client_name: e[h + "guest_name"] || null,
     session: e[d + "session"] || null,
     catering: e[d + "catering"] || e[d + "menu"] || null,
-    total_plates: dep.pax ? safeInt(e[dep.pax] || 0) : 0,
+    // total_plates is the free quota (Extra Plate Collect charges only past
+    // it) — confirmed the paying pax and free pax are additive on the
+    // contract (150 pax + 10 free = 160 covered), not 10 carved out of 150.
+    total_plates: dep.pax ? safeInt(e[dep.pax] || 0) + (dep.freePax ? safeInt(e[dep.freePax] || 0) : 0) : 0,
     complementary_plates: dep.freePax ? safeInt(e[dep.freePax] || 0) : 0,
     extra_plates_charge: dep.extraPlate ? safePaise(e[dep.extraPlate] || 0) : 0,
     balance_received: safePaise(e[h + "advance_cash"] || 0) + safePaise(e[h + "advance_chq"] || 0),
