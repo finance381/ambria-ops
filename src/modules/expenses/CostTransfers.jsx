@@ -19,6 +19,7 @@ import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
 import { compressImage } from '../../lib/imageCompress'
 import ReverseDialog from '../../components/ui/ReverseDialog'
 import { pushBack, goBack as navBack } from '../../lib/backNav'
+import HoverZoomThumb from '../../components/ui/HoverZoomThumb'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -1714,12 +1715,20 @@ function ProofPicker({ file, setFile, rec, existingPath, onRemoveExisting, disab
   if (existingPath && !file && !rec.url) {
     var existingUrl = getReceiptUrl(existingPath)
     var existingIsVoice = isVoiceNotePath(existingPath)
+    var existingIsImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(existingPath)
     return (
       <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200">
         {existingIsVoice ? (
           <audio src={existingUrl} controls className="flex-1 min-w-0 h-8" />
         ) : (
-          <a href={existingUrl} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 text-[13px] font-medium text-indigo-700 truncate">📎 View attached proof</a>
+          <>
+            {existingIsImage && (
+              <HoverZoomThumb url={existingUrl} alt="Proof"
+                onClick={function () { window.open(existingUrl, '_blank', 'noopener') }}
+                className="w-9 h-9 rounded object-cover shrink-0 cursor-zoom-in border border-slate-200" />
+            )}
+            <a href={existingUrl} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 text-[13px] font-medium text-indigo-700 truncate">📎 View attached proof</a>
+          </>
         )}
         <button type="button" onClick={onRemoveExisting} disabled={disabled} aria-label="Remove proof"
           className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-red-600 hover:bg-red-100 disabled:opacity-50">
