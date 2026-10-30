@@ -169,6 +169,7 @@ function CostTransfers({ profile, inAdmin }) {
   var expSubTypes = refData.expenseSubTypes.filter(function (t) { return t.active }).slice().sort(byName)
   var venues = refData.venues.filter(function (v) { return v.active }).slice().sort(byName)
   var [categories, setCategories] = useState([])
+  var [staff, setStaff] = useState([])
 
   var [form, setForm] = useState(makeEmptyForm)
 
@@ -303,11 +304,16 @@ function CostTransfers({ profile, inAdmin }) {
         supabase.from('vendors').select('id, name, category_ids').eq('active', true).order('name'),
         supabase.from('job_departments').select('id, name').order('name'),
         supabase.from('categories').select('id, sub_department_id').order('id'),
+        // fn_profile_names, not a direct select -- RLS on profiles only lets
+        // a user read their own row, and a sub-type's "staff" lookup field
+        // needs everyone.
+        supabase.rpc('fn_profile_names'),
       ])
       setEvents(results[0].data || [])
       setVendors(results[1].data || [])
       setJobDepts(results[2].data || [])
       setCategories(results[3].data || [])
+      setStaff(results[4].data || [])
     } catch (_) { setError('Lookup load failed') }
   }
 
@@ -1195,7 +1201,7 @@ function CostTransfers({ profile, inAdmin }) {
                 </span>
               </div>
               <ExpenseTypeFields quiet value={form.from} onChange={updFrom}
-                expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} categories={categories} />
+                expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} staff={staff} />
             </div>
 
             <div className="relative h-4" aria-hidden="true">
@@ -1217,7 +1223,7 @@ function CostTransfers({ profile, inAdmin }) {
               </div>
               {form.to_rows.length === 1 ? (
                 <ToRowFields row={form.to_rows[0]} idx={0} onChange={updToRow}
-                  expTypes={expTypes} expSubTypes={expSubTypes} />
+                  expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} staff={staff} />
               ) : (
                 <div className="space-y-2">
                   {form.to_rows.map(function (row, idx) {
@@ -1235,7 +1241,7 @@ function CostTransfers({ profile, inAdmin }) {
                           </button>
                         </div>
                         <ToRowFields row={row} idx={idx} onChange={updToRow}
-                          expTypes={expTypes} expSubTypes={expSubTypes} />
+                          expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} staff={staff} />
                       </div>
                     )
                   })}
@@ -1633,13 +1639,13 @@ function CostTransfers({ profile, inAdmin }) {
               <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">From</label>
               <ExpenseTypeFields value={editForm.from}
                 onChange={function (patch) { setEditForm(function (p) { return Object.assign({}, p, { from: Object.assign({}, p.from, patch) }) }) }}
-                expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} categories={categories} />
+                expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} staff={staff} />
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">To</label>
               <ExpenseTypeFields value={editForm.to}
                 onChange={function (patch) { setEditForm(function (p) { return Object.assign({}, p, { to: Object.assign({}, p.to, patch) }) }) }}
-                expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} categories={categories} />
+                expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} staff={staff} />
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1.5">Amount (Rs) *</label>
@@ -1785,29 +1791,128 @@ function ProofPicker({ file, setFile, rec, existingPath, onRemoveExisting, disab
 }
 
 // Expense type + sub-type picker — shared by the From field and every To row.
-// `value` is { expense_type_id, expense_sub_type_id, meta }. A cost transfer just
-// reclassifies which department/type bucket an amount sits in, so it deliberately
-// does NOT render the sub-type's lookup extra_fields (e.g. "Employee Name" on a
-// salary sub-type) the way a real expense entry (ExpenseForm.jsx) does — those
-// identify who/what a fresh expense is for, which doesn't apply to a reclassification.
+// `value` is { expense_type_id, expense_sub_type_id, meta }. Below the two
+// pickers, the chosen sub-type's own extra fields (the same ones ExpenseForm.jsx
+// asks for on a fresh expense — "Employee Name" on a salary sub-type, a vendor
+// on one billed to a supplier) render too, answers keyed into `value.meta` by
+// the field's own key — a transfer reclassifying a salary cost still needs to
+// say which employee it's for, same as the original entry did. Category-source
+// lookup fields are the one exception, same as ExpenseForm: that's a tag on the
+// sub-type itself, not something a person picks.
 // stacked: type above sub-type, for the two-column New Cost Transfer form.
 // quiet: side by side like the default, with each microphone inside its field.
-function ExpenseTypeFields({ value, onChange, expTypes, expSubTypes, stacked, quiet }) {
+function ExpenseTypeFields({ value, onChange, expTypes, expSubTypes, stacked, quiet, vendors, venues, employees, staff }) {
   var etId = Number(value.expense_type_id) || 0
+  var subId = Number(value.expense_sub_type_id) || 0
   var subs = expSubTypes.filter(function (s) { return s.expense_type_id === etId })
   var etItems = expTypes.map(function (x) { return { value: String(x.id), label: x.name } })
   var subItems = subs.map(function (x) { return { value: String(x.id), label: x.name } })
+  var subType = subId ? expSubTypes.find(function (s) { return s.id === subId }) : null
+  var extraFields = (subType && Array.isArray(subType.extra_fields))
+    ? subType.extra_fields.filter(function (f) { return !(f.type === 'lookup' && f.source === 'categories') })
+    : []
+
+  function setMeta(key, val) {
+    var meta = Object.assign({}, value.meta || {})
+    meta[key] = val
+    onChange({ meta: meta })
+  }
+
+  function itemsForSource(source, allowedDeptIds) {
+    if (source === 'vendors') {
+      return (vendors || []).map(function (v) { return { value: String(v.id), label: v.name } })
+    }
+    if (source === 'job_departments') {
+      var allowed = allowedDeptIds || []
+      return (employees || []).filter(function (emp) {
+        if (allowed.length === 0) return true
+        var jd = emp.job_department_ids || []
+        for (var i = 0; i < jd.length; i++) { if (allowed.indexOf(jd[i]) !== -1) return true }
+        return false
+      }).map(function (emp) {
+        return { value: String(emp.id), label: (emp.full_name || '—') + (emp.employee_code ? ' (' + emp.employee_code + ')' : '') }
+      })
+    }
+    if (source === 'venues') {
+      return (venues || []).map(function (v) { return { value: String(v.id), label: v.code ? (v.code + ' — ' + v.name) : v.name } })
+    }
+    if (source === 'staff') {
+      return (staff || []).map(function (p) { return { value: String(p.id), label: p.name || '—' } })
+    }
+    return []
+  }
+
+  var fieldCls = 'w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow'
+  var fieldSty = { fontSize: '16px' }
+
+  function renderExtraField(field) {
+    var val = (value.meta || {})[field.key] || ''
+    if (field.type === 'lookup') {
+      return (
+        <SearchDropdown key={field.key} label={field.label + (field.required ? ' *' : '')}
+          items={itemsForSource(field.source, field.allowed_dept_ids)}
+          value={val} onChange={function (v) { setMeta(field.key, v) }}
+          placeholder={'Select ' + field.label + '...'} noVoice={stacked} inlineVoice={quiet} />
+      )
+    }
+    if (field.type === 'select') {
+      return (
+        <div key={field.key}>
+          <label className="block text-[11px] font-semibold text-slate-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <select value={val} onChange={function (e) { setMeta(field.key, e.target.value) }} className={fieldCls + ' bg-white'} style={fieldSty}>
+            <option value="">Select...</option>
+            {(field.options || []).map(function (opt) { return <option key={opt} value={opt}>{opt}</option> })}
+          </select>
+        </div>
+      )
+    }
+    if (field.type === 'textarea') {
+      return (
+        <div key={field.key}>
+          <label className="block text-[11px] font-semibold text-slate-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <textarea value={val} onChange={function (e) { setMeta(field.key, e.target.value) }} rows={2} className={fieldCls + ' resize-none'} style={fieldSty} />
+        </div>
+      )
+    }
+    if (field.type === 'date') {
+      return (
+        <div key={field.key}>
+          <label className="block text-[11px] font-semibold text-slate-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <input type="date" value={val} onChange={function (e) { setMeta(field.key, e.target.value) }} className={fieldCls} style={fieldSty} />
+        </div>
+      )
+    }
+    if (field.type === 'number') {
+      return (
+        <div key={field.key}>
+          <label className="block text-[11px] font-semibold text-slate-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+          <input type="number" inputMode="numeric" value={val} onChange={function (e) { setMeta(field.key, e.target.value) }} placeholder={field.label} className={fieldCls} style={fieldSty} />
+        </div>
+      )
+    }
+    return (
+      <div key={field.key}>
+        <label className="block text-[11px] font-semibold text-slate-600 mb-1">{field.label}{field.required && <span className="text-red-500"> *</span>}</label>
+        <input type="text" value={val} onChange={function (e) { setMeta(field.key, e.target.value) }} placeholder={field.label} className={fieldCls} style={fieldSty} />
+      </div>
+    )
+  }
 
   return (
     <div className={stacked ? "space-y-2.5" : "grid grid-cols-1 sm:grid-cols-2 gap-2.5"}>
       <SearchDropdown items={etItems} noVoice={stacked} inlineVoice={quiet}
         value={value.expense_type_id}
-        onChange={function (v) { onChange({ expense_type_id: v, expense_sub_type_id: '' }) }}
+        onChange={function (v) { onChange({ expense_type_id: v, expense_sub_type_id: '', meta: {} }) }}
         placeholder="Search expense type..." />
       <SearchDropdown items={subItems} noVoice={stacked} inlineVoice={quiet}
         value={value.expense_sub_type_id}
-        onChange={function (v) { onChange({ expense_sub_type_id: v }) }}
+        onChange={function (v) { onChange({ expense_sub_type_id: v, meta: {} }) }}
         placeholder={!etId ? 'Pick a type first' : (subs.length === 0 ? 'No sub-types' : 'Sub-type (optional)')} />
+      {extraFields.length > 0 && (
+        <div className={(stacked ? "" : "sm:col-span-2") + " space-y-2.5"}>
+          {extraFields.map(renderExtraField)}
+        </div>
+      )}
     </div>
   )
 }
@@ -1815,11 +1920,11 @@ function ExpenseTypeFields({ value, onChange, expTypes, expSubTypes, stacked, qu
 export default CostTransfers
 
 // One To row's fields: where the cost goes, then its amount beside a remark.
-function ToRowFields({ row, idx, onChange, expTypes, expSubTypes }) {
+function ToRowFields({ row, idx, onChange, expTypes, expSubTypes, vendors, venues, employees, staff }) {
   return (
     <div className="space-y-3">
       <ExpenseTypeFields quiet value={row} onChange={function (patch) { onChange(idx, patch) }}
-        expTypes={expTypes} expSubTypes={expSubTypes} />
+        expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} staff={staff} />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         <div className="relative">
           <span aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-[15px] text-slate-500 pointer-events-none">₹</span>
