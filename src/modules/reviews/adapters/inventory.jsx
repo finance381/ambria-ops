@@ -1,5 +1,6 @@
 import { supabase, getImageUrl } from '../../../lib/supabase'
 import { formatDate } from '../../../lib/format'
+import DescriptionNote from '../../../components/ui/DescriptionNote'
 
 async function fetchDetail(sourceId) {
   var res = await supabase.from('inventory_items')
@@ -36,8 +37,8 @@ function renderDetailBody(row) {
       {(row.min_order_qty > 0 || row.reorder_qty > 0) && (
         <p className="text-xs text-gray-400">{row.min_order_qty > 0 ? 'Min order: ' + row.min_order_qty : ''}{row.min_order_qty > 0 && row.reorder_qty > 0 ? ' · ' : ''}{row.reorder_qty > 0 ? 'Reorder at: ' + row.reorder_qty : ''}</p>
       )}
-      {row.notes && <p className="text-sm text-gray-500 italic">"{row.notes}"</p>}
-      {row.description && <p className="text-sm text-gray-500">{row.description}</p>}
+      <DescriptionNote text={row.notes} label="Notes" truncate={false} />
+      <DescriptionNote text={row.description} label="Description" truncate={false} />
       {allocs.length > 0 && (
         <div>
           <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Venue allocations</p>

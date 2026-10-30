@@ -8,6 +8,7 @@ import Icon from '../../components/ui/Icon'
 import SearchField from '../../components/ui/SearchField'
 import { CTRL, TEXTAREA, BTN_GHOST, BTN_PRIMARY, BTN_DANGER, TH, TD, Chip, Labeled, Notice, EmptyState, CHIP_GOOD, CHIP_WARN, CHIP_BAD, CHIP_NEUTRAL, WaMessageBody, TagsInput, useTagSuggestions } from './ui'
 import { appConfirm } from '../../components/ui/AppDialog'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 // Deferred, flagged rather than built riskily: (1) "Merge duplicates" — no
 // rpc_wa_contact_merge exists in Phase 1, and hand-rolling a merge here would
@@ -182,6 +183,7 @@ function CsvImportModal({ open, onClose, onSaved }) {
 }
 
 function ContactDetailDrawer({ contact, onClose, onChanged }) {
+  useBackButtonClose(true, onClose)
   var [phoneRevealed, setPhoneRevealed] = useState(false)
   var [name, setName] = useState(contact.name || '')
   var [tags, setTags] = useState(contact.tags || [])

@@ -4,6 +4,7 @@ import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { CTRL, BTN_GHOST, BTN_PRIMARY, BTN_SEND, CARD, Labeled, Notice, TagsInput, useTagSuggestions } from './ui'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 // Contact fields fn_wa_resolve_mapping (migration 00029) actually supports —
 // keep this list in sync with that function's CASE branches.
@@ -14,6 +15,19 @@ var MAPPABLE_FIELDS = [
   { value: 'contact.venue_affinity_name', label: 'Venue name' },
 ]
 var SOURCE_OPTIONS = ['', 'lms', 'contract', 'csv', 'manual', 'inbound']
+
+// scheduled_at round-trips through this component as a datetime-local-shaped
+// string (YYYY-MM-DDTHH:mm) that new Date() parses as LOCAL time on save
+// (`new Date(scheduledAt).toISOString()`). Loading an existing campaign back
+// has to reverse that exact conversion -- naively substring-ing the stored
+// UTC string reuses its UTC digits as if they were already local, and if
+// that gets saved again, the real scheduled_at silently shifts earlier by a
+// full timezone offset (5.5h for IST) every edit-and-resave cycle.
+function toLocalDatetimeValue(isoString) {
+  var d = new Date(isoString)
+  var local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+  return local.toISOString().slice(0, 16)
+}
 
 // The steps are numbered because they are genuinely ordered — the audience
 // cannot be previewed before a template is chosen, and the variable step only
@@ -108,6 +122,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
   var [previewLoading, setPreviewLoading] = useState(false)
 
   var [confirmOpen, setConfirmOpen] = useState(false)
+  useBackButtonClose(confirmOpen, function () { setConfirmOpen(false) })
   var [confirmToken, setConfirmToken] = useState('')
   var [sending, setSending] = useState(false)
   var [sendProgress, setSendProgress] = useState(null)
@@ -143,7 +158,7 @@ function CampaignBuilder({ campaignId, onClose, onSaved, hideBack }) {
         setVenueIds((f.venue_ids || []).map(String))
         setSource(f.source || '')
         setMinLastSentDays(f.min_last_sent_days != null ? String(f.min_last_sent_days) : '')
-        setScheduledAt(c.scheduled_at ? c.scheduled_at.substring(0, 16) : '')
+        setScheduledAt(c.scheduled_at ? toLocalDatetimeValue(c.scheduled_at) : '')
         setScheduleLater(!!c.scheduled_at)
         setMapping(c.variable_mapping_json || {})
       })

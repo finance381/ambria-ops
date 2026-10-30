@@ -1,16 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase, edgeFnErrorMessage } from '../../lib/supabase'
-import { formatDate, formatPoints, formatPointsPlain, titleCase } from '../../lib/format'
+import { stopAllVoice } from '../../lib/voiceRegistry'
+import { formatDate, formatPoints, formatPointsPlain } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { prepUpload, isVoiceNotePath, getReceiptUrl } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import BottomSheet from '../../components/ui/BottomSheet'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { scrollToTopOf } from '../../lib/scrollToTop'
 import { useVoice } from '../../hooks/useVoice'
 import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
+import { loadFunctionPickerPool, buildDeptContractBuckets, computeContractBalance, loadFullContractPool } from '../../lib/functionPicker'
 // Imported rather than read out of public/, for the same reasons PageBackdrop
 // gives: the base path is handled for us, and the content hash means a new
 // backdrop is never served from a stale cache. It was a 1.05MB PNG; as WebP at
@@ -164,6 +167,7 @@ import LedgerSourceMedia from '../../components/ledger/LedgerSourceMedia'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import EnteredMark from '../../components/ui/EnteredMark'
 import { hasPerm } from '../../lib/permissions'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { avatarTint } from '../../lib/avatarTint'
 import CameraCapture from '../../components/ui/CameraCapture'
@@ -323,21 +327,28 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var permsNew = (profile && profile.permsNew) || []
   var canCreateTentativeEvent = hasPerm(permsNew, 'events.list.create_tentative')
   var canMarkChecked = hasPerm(permsNew, 'finance.wallet.mark_checked')
+  // A second, independent checked-mark — Transfer and Vendor Payment rows
+  // only — for a separate reviewer from whoever does the first check.
+  var canMarkChecked2 = hasPerm(permsNew, 'finance.wallet.mark_checked2')
   var canMarkEntered = hasPerm(permsNew, 'finance.wallet.mark_entered')
   // Cancelling/rejecting a transfer used to be open to either party to it;
   // now admin/auditor or an explicit grant only — being the sender or
   // recipient no longer qualifies on its own.
   var canCancelTransfer = isAdmin || isAuditor || hasPerm(permsNew, 'finance.wallet.cancel_transfer')
   var [checkingTxnId, setCheckingTxnId] = useState(null)
+  var [checking2TxnId, setChecking2TxnId] = useState(null)
   var [checkingExpId, setCheckingExpId] = useState(null)
   var [enteringTxnId, setEnteringTxnId] = useState(null)
   var [enteringExpId, setEnteringExpId] = useState(null)
   // Which transaction rows have their allocation breakdown expanded —
-  // collapsed by default so the History list fits more rows on screen.
+  // expanded by default (it's usually what someone opened the row to see),
+  // collapsed only once someone explicitly clicks to shrink it. The map
+  // tracks the exception (collapsed), not the default.
   var [expandedTxnIds, setExpandedTxnIds] = useState({})
+  function isTxnExpanded(id) { return expandAllTxns || expandedTxnIds[id] !== false }
   function toggleTxnExpanded(id, ev) {
     if (ev) ev.stopPropagation()
-    setExpandedTxnIds(function (prev) { var next = Object.assign({}, prev); next[id] = !next[id]; return next })
+    setExpandedTxnIds(function (prev) { var next = Object.assign({}, prev); next[id] = !(prev[id] !== false); return next })
   }
   // Master override: when on, every row's allocation breakdown shows
   // regardless of its own entry in expandedTxnIds.
@@ -427,6 +438,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [receiveImage, setReceiveImage] = useState(null)
   var [receiveSaving, setReceiveSaving] = useState(false)
   var [enlargedWalletImg, setEnlargedWalletImg] = useState(null)
+  useBackButtonClose(!!enlargedWalletImg, function () { setEnlargedWalletImg(null) })
   var [pendingIncoming, setPendingIncoming] = useState([])
   var [pendingOutgoing, setPendingOutgoing] = useState([])
   var [pendingIssues, setPendingIssues] = useState([])
@@ -457,11 +469,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // carries guest name / session / date for the compact row, not just the detail modal.
   var [collectionEventRefs, setCollectionEventRefs] = useState({})
   var [cancelTarget, setCancelTarget] = useState(null)  // { txn, kind: 'collection' | 'epc' }
+  useBackButtonClose(!!cancelTarget, function () { if (!cancelSaving) { setCancelTarget(null); setCancelReason('') } })
   var [cancelReason, setCancelReason] = useState('')
   var [cancelSaving, setCancelSaving] = useState(false)
   var [collectModal, setCollectModal] = useState(false)
   var [collectDate, setCollectDate] = useState('')
   var [collectEvents, setCollectEvents] = useState([])
+  var [collectAllEventRows, setCollectAllEventRows] = useState([])
   var [collectFunctionsLoading, setCollectFunctionsLoading] = useState(false)
   var [collectEventId, setCollectEventId] = useState('')
   // Picking the event opens the balance and the rest of the form below the
@@ -477,15 +491,24 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [collectBankPaymentType, setCollectBankPaymentType] = useState('')
   var [collectBalance, setCollectBalance] = useState(null)
   var [collectBalanceLoading, setCollectBalanceLoading] = useState(false)
-  // What LMS itself has on record for this contract — fn_event_balance above
-  // only ever reflects collections made through Ambria Ops' own wallet, so a
-  // payment entered straight into LMS by someone else is otherwise invisible
-  // here. Fetched live (not synced/stored) since it's only needed at the
-  // moment someone's about to collect against a specific contract.
+  // What LMS itself has on record for this contract — computeContractBalance
+  // above only ever reflects collections made through Ambria Ops' own
+  // wallet, so a payment entered straight into LMS by someone else is
+  // otherwise invisible here. Fetched live (not synced/stored) since it's
+  // only needed at the moment someone's about to collect against a specific
+  // contract.
   var [lmsPayments, setLmsPayments] = useState(null)
   var [lmsPaymentsLoading, setLmsPaymentsLoading] = useState(false)
   var [lmsPaymentsError, setLmsPaymentsError] = useState('')
-  var [lmsPaymentsOpen, setLmsPaymentsOpen] = useState(false)
+  // The combined LMS + Ambria Ops collection history for whichever
+  // event_id(s) are in play (the whole pooled contract when one is open) —
+  // same idea as the Event Financials screen's merged Transactions list,
+  // scaled down for this sheet. lmsPayments above stays the raw LMS fetch,
+  // kept only because computeContractBalance needs it in that shape.
+  var [collectHistory, setCollectHistory] = useState(null)
+  var [collectHistoryLoading, setCollectHistoryLoading] = useState(false)
+  var [collectHistoryError, setCollectHistoryError] = useState('')
+  var [collectHistoryOpen, setCollectHistoryOpen] = useState(false)
   var [showActualCash, setShowActualCash] = useState(false)
   var [collectAmount, setCollectAmount] = useState('')
   var [collectDesc, setCollectDesc] = useState('')
@@ -494,10 +517,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [collectTxnDate, setCollectTxnDate] = useState('')
   var [collectImage, setCollectImage] = useState(null)
   var [collectSaving, setCollectSaving] = useState(false)
+  // Shown right after a successful collection, since the modal no longer
+  // auto-closes (see submitCollection) — the pending balance below it is
+  // the real confirmation, this is just "yes, that one went through."
+  var [collectJustSaved, setCollectJustSaved] = useState(false)
   var collectVoice = useVoice()
   var [tentativeModal, setTentativeModal] = useState(false)
   var [tentativeGuestName, setTentativeGuestName] = useState('')
   var [tentativeVenue, setTentativeVenue] = useState('')
+  var [tentativeVenueOther, setTentativeVenueOther] = useState('')
   var [tentativePax, setTentativePax] = useState('')
   var [tentativeFunctionType, setTentativeFunctionType] = useState('')
   var [tentativeSaving, setTentativeSaving] = useState(false)
@@ -613,7 +641,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           .then(function (r) { return { src: src, rows: (r.data || []).map(function (v) { return { id: String(v.id), label: v.name } }) } })
       }
       if (src === 'staff') {
-        return supabase.from('profiles').select('id, name').in('id', ids)
+        // Not .from('profiles') directly -- RLS there only lets a user read
+        // their own row, and the staff member on someone else's expense is
+        // usually not the viewer.
+        return supabase.rpc('fn_profile_names', { p_ids: ids })
           .then(function (r) { return { src: src, rows: (r.data || []).map(function (p) { return { id: String(p.id), label: p.name || '—' } }) } })
       }
       if (src === 'job_departments') {
@@ -657,7 +688,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       setTransferParties(function (prev) { return Object.assign({}, prev, tMap) })
       var cpArr = Object.keys(cpIds)
       if (cpArr.length > 0) {
-        var { data: pData } = await supabase.from('profiles').select('id, name').in('id', cpArr)
+        // fn_profile_names, not a direct select -- RLS on profiles only lets
+        // a user read their own row, and a transfer counterparty is usually
+        // someone else.
+        var { data: pData } = await supabase.rpc('fn_profile_names', { p_ids: cpArr })
         var pMap = {}
         ;(pData || []).forEach(function (p) { pMap[p.id] = p })
         setWalletProfiles(function (prev) { return Object.assign({}, prev, pMap) })
@@ -815,9 +849,20 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     }
     setTxnsLoading(true)
 
+    // loadAllWallets() invents a synthetic id ('no_wallet_' + user id) for a
+    // profile that has never had a real wallets row — there's nothing in
+    // wallet_transactions to query for it yet, and sending that placeholder
+    // string into a uuid column fails loudly (invalid input syntax for type
+    // uuid) the moment any filter re-runs this query.
+    if (String(wid).indexOf('no_wallet_') === 0) {
+      setWalletTxns([])
+      setTxnsLoading(false)
+      return
+    }
+
     try {
       var query = supabase.from('wallet_transactions')
-        .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode, bank_payment_type, cancel_wallet_tx_id, cancelled_at, cancelled_by, cancelled_reason, checked_by, checked_at, tally_entered_by, tally_entered_at')
+        .select('id, type, amount_paise, balance_after_paise, description, reference_type, reference_id, performed_by, created_at, issued_image_path, received_image_path, received_at, wallet_id, status, receipt_no, payment_mode, bank_payment_type, cancel_wallet_tx_id, cancelled_at, cancelled_by, cancelled_reason, checked_by, checked_at, checked2_by, checked2_at, tally_entered_by, tally_entered_at')
         .eq('wallet_id', wid)
         .order('created_at', { ascending: false })
         .limit(500)
@@ -832,7 +877,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       if (error) { alert('Failed to load transactions: ' + error.message); setTxnsLoading(false); return }
       var txns = data || []
       var cpIds = {}
-      txns.forEach(function (t) { if (t.checked_by) cpIds[t.checked_by] = true; if (t.tally_entered_by) cpIds[t.tally_entered_by] = true })
+      txns.forEach(function (t) { if (t.checked_by) cpIds[t.checked_by] = true; if (t.checked2_by) cpIds[t.checked2_by] = true; if (t.tally_entered_by) cpIds[t.tally_entered_by] = true })
 
       var tRefIds = txns.filter(function (t) { return t.reference_type === 'transfer' && t.reference_id }).map(function (t) { return t.reference_id })
       var expRefIds = txns.filter(function (tt) {
@@ -934,7 +979,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       if (evArr.length > 0 || missing.length > 0) {
         var wave2 = await Promise.all([
           evArr.length > 0 ? supabase.from('event_ledger').select('id, event_name').in('id', evArr) : none,
-          missing.length > 0 ? supabase.from('profiles').select('id, name').in('id', missing) : none,
+          // fn_profile_names, not a direct select -- RLS on profiles only lets
+          // a user read their own row, which is exactly what this "needed on
+          // non-admin own-wallet view" case is for.
+          missing.length > 0 ? supabase.rpc('fn_profile_names', { p_ids: missing }) : none,
         ])
         if (!current()) return
 
@@ -971,6 +1019,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       alert('Receipt image is required when issuing points.')
       return
     }
+    stopAllVoice()
     setIssueSaving(true)
     var amountRupees = Math.round(Number(issueAmount) * 100)
     var rpcName = issueType === 'debit' ? 'deduct_money' : 'issue_money'
@@ -1092,6 +1141,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
   async function initiateTransfer() {
     if (transferSaving || !transferTo || !transferAmount || Number(transferAmount) <= 0 || !transferDate) return
+    stopAllVoice()
     setTransferSaving(true)
     var amountRupees = Math.round(Number(transferAmount) * 100)
     var imagePath = null
@@ -1177,13 +1227,33 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setCheckingTxnId(null)
     if (error) { alert('Could not update: ' + error.message); return }
     var nowChecked = !!data
-    setWalletTxns(function (prev) { return prev.map(function (x) {
-      if (x.id !== t.id) return x
-      return Object.assign({}, x, {
-        checked_by: nowChecked ? profile.id : null,
-        checked_at: nowChecked ? new Date().toISOString() : null,
+    var checkPatch = { checked_by: nowChecked ? profile.id : null, checked_at: nowChecked ? new Date().toISOString() : null }
+    setWalletTxns(function (prev) { return prev.map(function (x) { return x.id === t.id ? Object.assign({}, x, checkPatch) : x }) })
+    // The payment-detail modal holds its own snapshot of this row (payDetailTarget.txn),
+    // separate from the walletTxns list it was opened from — without this it kept
+    // showing the pre-toggle state until the modal was closed and reopened.
+    setPayDetailTarget(function (prev) { return prev && prev.txn.id === t.id ? Object.assign({}, prev, { txn: Object.assign({}, prev.txn, checkPatch) }) : prev })
+    if (nowChecked && profile && profile.id) {
+      setWalletProfiles(function (prev) {
+        if (prev[profile.id]) return prev
+        var next = Object.assign({}, prev); next[profile.id] = { id: profile.id, name: profile.name }; return next
       })
-    }) })
+    }
+  }
+
+  // The second, independent checked-mark — Transfer/Vendor Payment rows
+  // only, gated by its own permission (finance.wallet.mark_checked2) so a
+  // different reviewer than the first check can do this one.
+  async function toggleWalletCheck2(t) {
+    if (checking2TxnId) return
+    setChecking2TxnId(t.id)
+    var { data, error } = await supabase.rpc('fn_toggle_wallet_check2', { p_transaction_id: t.id })
+    setChecking2TxnId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowChecked = !!data
+    var checkPatch = { checked2_by: nowChecked ? profile.id : null, checked2_at: nowChecked ? new Date().toISOString() : null }
+    setWalletTxns(function (prev) { return prev.map(function (x) { return x.id === t.id ? Object.assign({}, x, checkPatch) : x }) })
+    setPayDetailTarget(function (prev) { return prev && prev.txn.id === t.id ? Object.assign({}, prev, { txn: Object.assign({}, prev.txn, checkPatch) }) : prev })
     if (nowChecked && profile && profile.id) {
       setWalletProfiles(function (prev) {
         if (prev[profile.id]) return prev
@@ -1227,13 +1297,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setEnteringTxnId(null)
     if (error) { alert('Could not update: ' + error.message); return }
     var nowEntered = !!data
-    setWalletTxns(function (prev) { return prev.map(function (x) {
-      if (x.id !== t.id) return x
-      return Object.assign({}, x, {
-        tally_entered_by: nowEntered ? profile.id : null,
-        tally_entered_at: nowEntered ? new Date().toISOString() : null,
-      })
-    }) })
+    var enterPatch = { tally_entered_by: nowEntered ? profile.id : null, tally_entered_at: nowEntered ? new Date().toISOString() : null }
+    setWalletTxns(function (prev) { return prev.map(function (x) { return x.id === t.id ? Object.assign({}, x, enterPatch) : x }) })
+    setPayDetailTarget(function (prev) { return prev && prev.txn.id === t.id ? Object.assign({}, prev, { txn: Object.assign({}, prev.txn, enterPatch) }) : prev })
     if (nowEntered && profile && profile.id) {
       setWalletProfiles(function (prev) {
         if (prev[profile.id]) return prev
@@ -1278,80 +1344,193 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setCollectDesc('')
     setCollectTxnDate(toYMD(new Date()))
     setCollectImage(null)
+    setCollectJustSaved(false)
   }
 
   async function loadFunctionsForDate(dateStr) {
     setCollectDate(dateStr)
     setCollectEventId('')
     setCollectBalance(null)
-    if (!dateStr) { setCollectEvents([]); return }
+    setCollectJustSaved(false)
+    if (!dateStr) { setCollectEvents([]); setCollectAllEventRows([]); return }
     setCollectFunctionsLoading(true)
-    var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, client_name, session, contact_person, contact_number, secondary_contact, created_user_name, department, contract_no, is_tentative')
-      .eq('function_date', dateStr)
-      .is('merged_into_id', null)
-      .is('lms_cancelled_at', null)
-      .order('event_name')
-    setCollectEvents(data || [])
+    // contact_person/contact_number/secondary_contact/is_tentative aren't
+    // part of the shared picker pool's columns (every other "For a
+    // function?" picker has no use for them) — fetched here too, keyed by
+    // id, and merged onto the pooled rows below.
+    var pool = await loadFunctionPickerPool(dateStr)
+    var { data: contactData } = pool.allRows.length > 0
+      ? await supabase.from('events')
+          .select('id, contact_person, contact_number, secondary_contact, is_tentative')
+          .in('id', pool.allRows.map(function (r) { return r.id }))
+      : { data: [] }
+    var contactById = {}
+    ;(contactData || []).forEach(function (r) { contactById[r.id] = r })
+    function withContact(r) { return Object.assign({}, r, contactById[r.id] || {}) }
+    var dateRows = pool.dateRows.map(withContact)
+    var allRows = pool.allRows.map(withContact)
+    setCollectEvents(dateRows)
+    setCollectAllEventRows(allRows)
     setCollectFunctionsLoading(false)
-    if (data && data.length === 1) { selectCollectFunction(String(data[0].id)) }
+    if (dateRows.length === 1) { selectCollectFunction(String(dateRows[0].id)) }
   }
 
   async function selectCollectFunction(fid) {
+    setCollectJustSaved(false)
     setCollectEventId(fid)
     setCollectBalance(null)
     setLmsPayments(null)
     setLmsPaymentsError('')
-    setLmsPaymentsOpen(false)
+    setCollectHistory(null)
+    setCollectHistoryError('')
+    setCollectHistoryOpen(false)
     if (!fid) return
-    setCollectBalanceLoading(true)
-    var { data, error } = await supabase.rpc('fn_event_balance', { p_event_id: Number(fid) })
-    if (!error && data && data.length > 0) { setCollectBalance(data[0]) }
-    setCollectBalanceLoading(false)
+    var evt = collectAllEventRows.find(function (e) { return String(e.id) === String(fid) })
+    // Collecting against a multi-function contract (same department, pooled
+    // across dates — see buildDeptContractBuckets) has to show the whole
+    // contract's pending balance, not just this one function's: a collector
+    // working off this screen only ever sees the figure shown here, and a
+    // per-function balance would quietly under- or over-collect against
+    // what the guest actually still owes across the whole booking. The
+    // collection history below is pooled the same way, for the same reason.
+    //
+    // Always goes through computeContractBalance (fn_event_group_balance) —
+    // a solo function is just a pool of one here — the same RPC the Events
+    // tab's Event Financials (EventLedger.jsx's loadBalance/
+    // loadContractBalance) always uses, for both solo and pooled functions.
+    // This used to call a separate, single-event fn_event_balance RPC for
+    // the solo case, which could disagree with it: a function Event
+    // Financials showed as fully settled could still show pending here.
+    //
+    // The pool fed into that balance/history math has to be the FULL
+    // contract pool (loadFullContractPool — includes LMS-resync-superseded
+    // duplicate ids), not collectAllEventRows/buildDeptContractBuckets
+    // (picker-only, deliberately live-only so a stale duplicate never shows
+    // as something new to select). Using the picker's live-only pool here
+    // silently dropped any collection logged against an id a later resync
+    // marked cancelled — exactly what happened for a real Venue contract:
+    // its first several cash collections landed on two ids a resync later
+    // superseded, so this screen's balance and history both skipped them
+    // while Event Financials (which already pools this way) showed it
+    // correctly settled.
+    var functions = evt && evt.contract_no ? await loadFullContractPool(evt.contract_no, evt.department) : []
+    if (functions.length === 0 && evt) functions = [evt]
+    var historyIds = functions.length > 0 ? functions.map(function (f) { return f.id }) : [Number(fid)]
 
-    var evt = collectEvents.find(function (e) { return String(e.id) === String(fid) })
-    if (evt && evt.contract_no) loadLmsPayments(evt.contract_no)
+    setCollectBalanceLoading(true)
+    var lmsRows = evt && evt.contract_no ? await loadLmsPayments(evt.contract_no, evt.department) : []
+    var result = await computeContractBalance(functions, lmsRows)
+    setCollectBalance(result.balance)
+    setCollectBalanceLoading(false)
+    loadCollectHistory(historyIds, lmsRows)
   }
 
-  async function loadLmsPayments(contractNo) {
+  // Ambria Ops' own collection rows for the event_id(s) in play — merged
+  // with lmsRows (already fetched for the balance calc) into one
+  // chronological list, same idea as Event Financials' combined
+  // Transactions tab, scaled down for this sheet.
+  // fn_event_collections (00155) is a SECURITY DEFINER RPC specifically for
+  // this: event_ledger_select's RLS normally only shows a collection row to
+  // the person who created it, so two collectors on the same function used
+  // to only ever see their own half of the history here. The RPC returns
+  // every collector's rows for the given events, pre-joined to the detail
+  // this screen already showed (collector name, receipt).
+  async function loadOpsCollections(ids) {
+    if (!ids || ids.length === 0) return []
+    var { data, error } = await supabase.rpc('fn_event_collections', { p_event_ids: ids.map(Number) })
+    if (error || !data) return []
+    var rows = data.slice().sort(function (a, b) { return new Date(b.created_at) - new Date(a.created_at) })
+    return rows.map(function (r) {
+      return {
+        key: 'ops:' + r.id,
+        date: r.created_at,
+        isCash: r.payment_mode === 'cash',
+        amount_paise: r.amount_paise,
+        description: r.description,
+        source: 'ops',
+        enteredBy: r.creator_name || null,
+        receiptUrl: r.wt_received_image_path ? getReceiptUrl(r.wt_received_image_path) : null,
+        orderNo: null,
+      }
+    })
+  }
+
+  async function loadCollectHistory(ids, lmsRows) {
+    setCollectHistoryLoading(true)
+    setCollectHistoryError('')
+    try {
+      var opsRows = await loadOpsCollections(ids)
+      var lmsNormalized = (lmsRows || []).map(function (p) {
+        var isCash = p.pay_mode && String(p.pay_mode).toLowerCase().indexOf('cash') !== -1
+        return {
+          key: 'lms:' + p.receive_id,
+          date: p.date,
+          isCash: isCash,
+          amount_paise: p.net_amount_paise,
+          description: p.remarks || ('LMS ' + (p.receive_type || 'payment')),
+          source: 'lms',
+          enteredBy: p.entry_by || null,
+          receiptUrl: p.receipt_url || null,
+          orderNo: p.order_no || null,
+        }
+      })
+      setCollectHistory(opsRows.concat(lmsNormalized).sort(function (a, b) { return new Date(b.date || 0) - new Date(a.date || 0) }))
+    } catch (err) {
+      setCollectHistoryError(err.message || 'Could not load collection history')
+    }
+    setCollectHistoryLoading(false)
+  }
+
+  async function loadLmsPayments(contractNo, department) {
     setLmsPaymentsLoading(true)
     setLmsPaymentsError('')
+    var rows = []
     try {
       var sessionRes = await supabase.auth.getSession()
       var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
       var res = await supabase.functions.invoke('lms-payment-collections', {
-        body: { contract_no: contractNo },
+        body: { contract_no: contractNo, department: department || '' },
         headers: token ? { Authorization: 'Bearer ' + token } : {},
       })
       if (res.error) throw new Error(await edgeFnErrorMessage(res.error))
-      setLmsPayments((res.data && res.data.data) || [])
+      rows = (res.data && res.data.data) || []
+      setLmsPayments(rows)
     } catch (err) {
       setLmsPaymentsError(err.message || 'Could not load LMS payment history')
     }
     setLmsPaymentsLoading(false)
+    return rows
   }
 
   function openTentativeModal() {
     setTentativeGuestName('')
     setTentativeVenue('')
+    setTentativeVenueOther('')
     setTentativePax('')
     setTentativeFunctionType('')
     setTentativeModal(true)
     if (eventTypeOptions.length === 0) {
-      supabase.from('quote_config').select('key, value').eq('key', 'event_types').maybeSingle()
-        .then(function (res) { setEventTypeOptions((res.data && res.data.value) || []) })
+      // Moved off quote_config to quote_event_types (Phase 3 of the quote
+      // pricing migration) — RateCardEditor.jsx's Event Types tab writes
+      // there now.
+      supabase.from('quote_event_types').select('label, icon').order('sort_order')
+        .then(function (res) { setEventTypeOptions(res.data || []) })
     }
   }
 
   async function submitTentativeEvent() {
-    if (tentativeSaving || !collectDate || !tentativeGuestName.trim() || !tentativeVenue || !tentativeFunctionType) return
+    var venueIsOther = tentativeVenue === '__other__'
+    if (tentativeSaving || !collectDate || !tentativeGuestName.trim() || !tentativeFunctionType) return
+    if (!venueIsOther && !tentativeVenue) return
+    if (venueIsOther && !tentativeVenueOther.trim()) return
     setTentativeSaving(true)
     var { data: newId, error } = await supabase.rpc('fn_create_tentative_event', {
       p_client_name: tentativeGuestName.trim(),
-      p_venue_id: Number(tentativeVenue),
+      p_venue_id: venueIsOther ? null : Number(tentativeVenue),
       p_function_date: collectDate,
       p_pax: tentativePax ? Number(tentativePax) : null,
       p_function_type: tentativeFunctionType,
+      p_venue_name_other: venueIsOther ? tentativeVenueOther.trim() : null,
     })
     if (error) { alert('Could not create event: ' + error.message); setTentativeSaving(false); return }
     setTentativeSaving(false)
@@ -1381,7 +1560,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var receivedByName = walletProfiles[collectorId]?.name || ''
     var signatureUrl = null
     if (collectorId) {
-      var { data: pr } = await supabase.from('profiles').select('name, signature_path').eq('id', collectorId).maybeSingle()
+      // fn_profile_names, not a direct select -- the collector printing this
+      // receipt is often not the person who collected it, and RLS on
+      // profiles only lets a user read their own row.
+      var { data: prRows } = await supabase.rpc('fn_profile_names', { p_ids: [collectorId] })
+      var pr = (prRows || [])[0]
       if (pr) {
         if (!receivedByName) receivedByName = pr.name || ''
         if (pr.signature_path) {
@@ -1416,6 +1599,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (cancelSaving || !cancelTarget) return
     var reason = cancelReason.trim()
     if (reason.length < 3) { alert('Reason required (min 3 chars)'); return }
+    stopAllVoice()
     setCancelSaving(true)
     var t = cancelTarget.txn
     var kind = cancelTarget.kind
@@ -1508,6 +1692,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [gvExp, setGvExp] = useState(null)  // expense row for the Raise JV modal, opened from the expense detail
   var [detailTarget, setDetailTarget] = useState(null)  // { txn, kind, event, collectorName, imgUrl, loading }
   var [payDetailTarget, setPayDetailTarget] = useState(null)  // { txn, entry, partyName, loading }
+  useBackButtonClose(!!expenseDetailTarget && !gvExp, function () { closeExpenseDetail(false) })
+  useBackButtonClose(!!gvExp, function () { setGvExp(null) })
+  useBackButtonClose(!!detailTarget, function () { setDetailTarget(null) })
+  useBackButtonClose(!!payDetailTarget, function () { setPayDetailTarget(null) })
 
   // Opens on what is already here, then fills in the rest.
   //
@@ -1631,7 +1819,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     }
     var collectorName = walletProfiles[txn.performed_by]?.name || ''
     if (!collectorName && txn.performed_by) {
-      var { data: pr } = await supabase.from('profiles').select('name').eq('id', txn.performed_by).maybeSingle()
+      // fn_profile_names, not a direct select -- same RLS gap as the receipt
+      // print above: the viewer opening this detail is often not the
+      // collector.
+      var { data: prRows2 } = await supabase.rpc('fn_profile_names', { p_ids: [txn.performed_by] })
+      var pr = (prRows2 || [])[0]
       if (pr) collectorName = pr.name || ''
     }
     var imgUrl = txn.received_image_path
@@ -1750,12 +1942,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               <p className="font-medium text-gray-800">{formatDate(t.created_at)}</p>
             </div>
           </div>
-          {t.description && (
-            <div>
-              <p className="text-[10px] uppercase text-gray-500 mb-0.5">Description</p>
-              <p className="text-sm text-gray-800">{t.description}</p>
-            </div>
-          )}
+          <DescriptionNote text={t.description} truncate={false} />
           {detailTarget.imgUrl && (
             <div>
               <p className="text-[10px] uppercase text-gray-500 mb-1">Receipt Image</p>
@@ -1788,31 +1975,63 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   }
 
   async function openPaymentDetail(t) {
-    setPayDetailTarget({ txn: t, entry: null, partyName: '', loading: true })
-    if (!t.reference_id) { setPayDetailTarget({ txn: t, entry: null, partyName: '', loading: false }); return }
+    setPayDetailTarget({ txn: t, entry: null, dedEntry: null, bills: [], partyName: '', loading: true })
+    if (!t.reference_id) { setPayDetailTarget({ txn: t, entry: null, dedEntry: null, bills: [], partyName: '', loading: false }); return }
     // wallet_transactions.reference_id for a payment row is the shared UUID
     // (v_ref_id in pay_vendor / the salary-payment equivalent) — that value
-    // lives on ledger_entries.ref_id, not its own bigint id column.
-    var { data: entry } = await supabase.from('ledger_entries')
+    // lives on ledger_entries.ref_id, not its own bigint id column. A vendor
+    // payment made WITH a deduction writes two ledger_entries rows sharing
+    // this one ref_id (the payment itself, ref_type='vendor_payment', and
+    // the deduction credited against a bill, ref_type='vendor_deduction') —
+    // .maybeSingle() used to silently come back empty whenever a deduction
+    // was involved, since two rows matched it.
+    var { data: rows } = await supabase.from('ledger_entries')
       .select('id, ledger_type, party_id, entry_date, created_at, description, debit_paise, ref_type, metadata')
-      .eq('ref_id', t.reference_id).maybeSingle()
-    if (!entry) { setPayDetailTarget({ txn: t, entry: null, partyName: '', loading: false }); return }
+      .eq('ref_id', t.reference_id)
+    var entry = (rows || []).find(function (r) { return r.ref_type !== 'vendor_deduction' }) || null
+    var dedEntry = (rows || []).find(function (r) { return r.ref_type === 'vendor_deduction' }) || null
+    if (!entry) { setPayDetailTarget({ txn: t, entry: null, dedEntry: dedEntry, bills: [], partyName: '', loading: false }); return }
     var partyName = ''
     if (entry.ledger_type === 'vendor') {
       var { data: v } = await supabase.from('vendors').select('name').eq('id', entry.party_id).maybeSingle()
       partyName = (v && v.name) || ''
     } else {
-      var { data: p } = await supabase.from('profiles').select('name').eq('id', entry.party_id).maybeSingle()
+      // fn_profile_names, not a direct select -- a salary/staff payment's
+      // recipient is usually not the viewer, and RLS on profiles only lets a
+      // user read their own row.
+      var { data: pRows } = await supabase.rpc('fn_profile_names', { p_ids: [entry.party_id] })
+      var p = (pRows || [])[0]
       partyName = (p && p.name) || ''
     }
-    setPayDetailTarget({ txn: t, entry: entry, partyName: partyName, loading: false })
+    // The bill(s) a deduction was credited against — stored as raw expense
+    // ids on the deduction row's metadata, resolved here to something
+    // readable (same 'bill' PayVendorModal itself let the deduction be
+    // selected against).
+    var bills = []
+    var billIds = (dedEntry && dedEntry.metadata && dedEntry.metadata.source_expense_ids) || []
+    if (billIds.length > 0) {
+      var { data: exps } = await supabase.from('expenses').select('id, description, amount_paise, expense_date').in('id', billIds)
+      bills = exps || []
+    }
+    setPayDetailTarget({ txn: t, entry: entry, dedEntry: dedEntry, bills: bills, partyName: partyName, loading: false })
   }
 
   function renderPaymentDetailModal() {
     if (!payDetailTarget) return null
     var t = payDetailTarget.txn
     var entry = payDetailTarget.entry
+    var dedEntry = payDetailTarget.dedEntry
+    var bills = payDetailTarget.bills || []
     var meta = (entry && entry.metadata) || {}
+    var dedMeta = (dedEntry && dedEntry.metadata) || {}
+    // PaymentProofThumbs reads payment_images and deduction_image off one
+    // meta object — the two live on separate ledger_entries rows (the
+    // payment's own metadata, the deduction's own), so they're merged just
+    // for this.
+    var proofMeta = Object.assign({}, meta, dedEntry ? { deduction_image: dedMeta.deduction_image } : {})
+    var chkTarget = t
+    var showSecondCheck = t.reference_type === 'vendor_payment' && !!(canMarkChecked2 || chkTarget.checked2_by)
+    var showMark = !!(canMarkChecked || chkTarget.checked_by || canMarkEntered || chkTarget.tally_entered_by || showSecondCheck)
     return createPortal((
       <div className="fixed inset-0 z-[9998] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
         onClick={function () { setPayDetailTarget(null) }}>
@@ -1843,6 +2062,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     <p className="font-medium text-gray-800">{meta.mode === 'cash' ? '💵 Cash' : '🏦 Bank'}</p>
                   </div>
                 )}
+                {meta.payment_type && (
+                  <div>
+                    <p className="text-[10px] uppercase text-gray-500">Payment type</p>
+                    <p className="font-medium text-gray-800">{meta.payment_type === 'advance' ? 'Advance' : 'FNF (Full & Final)'}</p>
+                  </div>
+                )}
                 {meta.salary_month && (
                   <div>
                     <p className="text-[10px] uppercase text-gray-500">Salary Month</p>
@@ -1862,10 +2087,82 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   <p className="text-sm text-gray-800">{meta.reason}</p>
                 </div>
               )}
-              {(meta.payment_images || meta.deduction_image) && (
+              {dedEntry && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1.5">
+                  <p className="text-[10px] uppercase font-bold text-amber-700">Deduction applied</p>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-gray-500">Amount</span>
+                    <span className="font-bold text-amber-700">{formatPoints(dedEntry.debit_paise)}</span>
+                  </div>
+                  {dedMeta.reason && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-gray-500 flex-shrink-0">Reason</span>
+                      <span className="font-medium text-gray-800 text-right">{dedMeta.reason}</span>
+                    </div>
+                  )}
+                  {bills.length > 0 && (
+                    <div>
+                      <p className="text-gray-500 mb-1">Credited against bill{bills.length === 1 ? '' : 's'}</p>
+                      <div className="space-y-1">
+                        {bills.map(function (b) {
+                          return (
+                            <div key={b.id} className="flex justify-between gap-3 bg-white rounded px-2 py-1 border border-amber-100">
+                              <span className="text-gray-700 truncate">{formatDate(b.expense_date)} · {b.description || 'Expense #' + b.id}</span>
+                              <span className="font-semibold text-gray-900 flex-shrink-0">{formatPoints(b.amount_paise)}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {!bills.length && dedMeta.source_expense_ids && dedMeta.source_expense_ids.length > 0 && (
+                    <p className="text-[11px] text-gray-400 italic">Bill(s) selected but no longer found.</p>
+                  )}
+                </div>
+              )}
+              {(meta.payment_images || proofMeta.deduction_image) && (
                 <div>
                   <p className="text-[10px] uppercase text-gray-500 mb-1">Proof</p>
-                  <PaymentProofThumbs meta={meta} />
+                  <PaymentProofThumbs meta={proofMeta} />
+                </div>
+              )}
+              {showMark && (
+                <div className="flex items-center justify-between pt-2 border-t border-gray-100" onClick={function (ev) { ev.stopPropagation() }}>
+                  <span className="text-[11px] font-semibold text-gray-500">Finance review</span>
+                  <span className="flex items-center gap-1.5">
+                    <EnteredMark
+                      entered={!!chkTarget.tally_entered_by}
+                      enteredByName={chkTarget.tally_entered_by && walletProfiles[chkTarget.tally_entered_by] ? walletProfiles[chkTarget.tally_entered_by].name : null}
+                      enteredAt={chkTarget.tally_entered_at}
+                      canToggle={canMarkEntered}
+                      canUnenter={chkTarget.tally_entered_by === profile.id || isAdmin || isAuditor}
+                      busy={enteringTxnId === t.id}
+                      onToggle={function () { toggleWalletEntered(t) }}
+                    />
+                    <CheckedStamp
+                      variant="stamp"
+                      checked={!!chkTarget.checked_by}
+                      checkerName={chkTarget.checked_by && walletProfiles[chkTarget.checked_by] ? walletProfiles[chkTarget.checked_by].name : null}
+                      checkedAt={chkTarget.checked_at}
+                      canToggle={canMarkChecked}
+                      canUncheck={chkTarget.checked_by === profile.id || isAdmin || isAuditor}
+                      busy={checkingTxnId === t.id}
+                      onToggle={function () { toggleWalletCheck(t) }}
+                    />
+                    {showSecondCheck && (
+                      <CheckedStamp
+                        tone="violet"
+                        label={chkTarget.checked2_by ? 'Checked 2' : '2nd check'}
+                        checked={!!chkTarget.checked2_by}
+                        checkerName={chkTarget.checked2_by && walletProfiles[chkTarget.checked2_by] ? walletProfiles[chkTarget.checked2_by].name : null}
+                        checkedAt={chkTarget.checked2_at}
+                        canToggle={canMarkChecked2}
+                        canUncheck={chkTarget.checked2_by === profile.id || isAdmin || isAuditor}
+                        busy={checking2TxnId === t.id}
+                        onToggle={function () { toggleWalletCheck2(t) }}
+                      />
+                    )}
+                  </span>
                 </div>
               )}
               <p className="text-[10px] text-gray-400 pt-1">Logged {formatDate(t.created_at)}</p>
@@ -1888,6 +2185,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!collectTxnDate) { alert('Select the collection date'); return }
     if (collectMode === 'bank' && !collectImage) { alert('Receipt photo is required for bank collections'); return }
     if (collectMode === 'bank' && !collectBankPaymentType) { alert('Select a payment type'); return }
+    stopAllVoice()
     setCollectSaving(true)
     var amountRupees = Math.round(Number(collectAmount) * 100)
     var imagePath = null
@@ -1899,7 +2197,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       var { error: upErr } = await supabase.storage.from('receipts').upload(imagePath, cF, { upsert: true })
       if (upErr) { alert('Receipt upload failed: ' + upErr.message); setCollectSaving(false); return }
     }
-    var evtName = (collectEvents.find(function (e) { return String(e.id) === collectEventId }) || {}).event_name || ''
+    var evtName = (collectAllEventRows.find(function (e) { return String(e.id) === collectEventId }) || {}).event_name || ''
     var desc = (collectDesc.trim() || 'Collection') + ' — ' + evtName
     var { data, error } = await supabase.rpc('fn_wallet_collect', {
       p_event_id: Number(collectEventId),
@@ -1928,8 +2226,24 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       })
     } catch (_) {}
 
-    setCollectModal(false)
+    // Stay open instead of closing: the pending balance shown here was
+    // computed before this collection landed, so closing immediately meant
+    // the only way to see it reflect this payment was a full re-navigation
+    // (pick the date, pick the function, all over again) — easy to read as
+    // "it doesn't update" when logging several collections back to back for
+    // the same guest. Clear only the entry fields and re-pull the balance
+    // and history for the function/contract that's still selected.
+    setCollectAmount('')
+    setCollectDesc('')
+    setCollectImage(null)
+    setCollectMode('')
+    setCollectBankPaymentType('')
     setCollectSaving(false)
+    // selectCollectFunction clears collectJustSaved as its first line (it's
+    // also the normal "user picked a different function" path) — set it
+    // back to true only after that refresh has actually landed.
+    if (collectEventId) await selectCollectFunction(collectEventId)
+    setCollectJustSaved(true)
     refreshBalance()
     openWalletTxns(null)
   }
@@ -1937,6 +2251,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   async function runBulkIssue() {
     var userIds = Object.keys(bulkSelected).filter(function (k) { return bulkSelected[k] })
     if (bulkSaving || !userIds.length || !bulkAmount || Number(bulkAmount) <= 0) return
+    stopAllVoice()
     setBulkSaving(true)
     var amountRupees = Math.round(Number(bulkAmount) * 100)
     var desc = bulkDesc.trim() || 'Bulk points issued by admin'
@@ -2431,61 +2746,101 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   + Booking not in the list? Create tentative event
                 </button>
               )}
-              {collectEvents.length > 0 && (
-                <div className="space-y-1.5">
-                  {collectEvents.map(function (ev) {
-                    var selected = String(ev.id) === collectEventId
-                    return (
-                      <div key={ev.id} role="button" tabIndex={0}
-                        onClick={function () { selectCollectFunction(String(ev.id)) }}
-                        onKeyDown={function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectCollectFunction(String(ev.id)) } }}
-                        className={"w-full text-left px-3 py-2.5 rounded-xl border transition-colors cursor-pointer " +
-                          (selected ? "border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50" : "border-slate-200 hover:border-slate-300 bg-white")}>
-                        <div className={"text-[13px] font-bold " + (selected ? "text-indigo-900" : "text-slate-900")}>
-                          {ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '')}
-                        </div>
-                        <div className={"text-[12px] " + (selected ? "text-indigo-700" : "text-slate-500")}>
-                          {(ev.venue_name || '') + (ev.session ? ' · ' + ev.session : '')}
-                        </div>
-                        {(ev.department || ev.contract_no) && (
-                          <div className="flex items-center gap-1.5 mt-1">
-                            <DeptChip name={ev.department} />
-                            {ev.contract_no && (
-                              <span className="text-[10px] font-mono text-gray-500">#{ev.contract_no}</span>
-                            )}
-                          </div>
-                        )}
-                        {ev.created_user_name && (
-                          <div className={"text-[11px] mt-0.5 " + (selected ? "text-blue-600" : "text-gray-400")}>
-                            Contract by {ev.created_user_name}
-                          </div>
-                        )}
-                        {(ev.contact_number || ev.secondary_contact) && (
-                          <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs">
-                            {ev.contact_person && <span className="text-gray-500">{ev.contact_person}:</span>}
-                            {ev.contact_number && (
-                              <a href={"tel:" + String(ev.contact_number).replace(/[^0-9+]/g, '')}
-                                onClick={function (e) { e.stopPropagation() }}
-                                className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium">
-                                <Icon name="phone" size={13} className="shrink-0" />
-                                {ev.contact_number}
-                              </a>
-                            )}
-                            {ev.secondary_contact && (
-                              <a href={"tel:" + String(ev.secondary_contact).replace(/[^0-9+]/g, '')}
-                                onClick={function (e) { e.stopPropagation() }}
-                                className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800">
-                                <Icon name="phone" size={13} className="shrink-0" />
-                                {ev.secondary_contact}
-                              </a>
-                            )}
-                          </div>
-                        )}
+              {collectAllEventRows.length > 0 && (function () {
+                var buckets = buildDeptContractBuckets(collectAllEventRows)
+                function renderFunctionCard(ev, showDate) {
+                  var selected = String(ev.id) === collectEventId
+                  return (
+                    <div key={ev.id} role="button" tabIndex={0}
+                      onClick={function () { selectCollectFunction(String(ev.id)) }}
+                      onKeyDown={function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectCollectFunction(String(ev.id)) } }}
+                      className={"w-full text-left px-3 py-2.5 rounded-xl border transition-colors cursor-pointer " +
+                        (selected ? "border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50" : "border-slate-200 hover:border-slate-300 bg-white")}>
+                      <div className={"text-[13px] font-bold " + (selected ? "text-indigo-900" : "text-slate-900")}>
+                        {ev.event_name + (ev.client_name ? ' — ' + ev.client_name : '')}
                       </div>
-                    )
-                  })}
-                </div>
-              )}
+                      <div className={"text-[12px] " + (selected ? "text-indigo-700" : "text-slate-500")}>
+                        {[showDate ? formatDate(ev.function_date) : null, ev.venue_name, ev.location].filter(Boolean).join(' · ')}{ev.session ? ' · ' + ev.session : ''}
+                      </div>
+                      {(ev.department || ev.contract_no) && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <DeptChip name={ev.department} />
+                          {ev.contract_no && (
+                            <span className="text-[10px] font-mono text-gray-500">#{ev.contract_no}</span>
+                          )}
+                        </div>
+                      )}
+                      {ev.created_user_name && (
+                        <div className={"text-[11px] mt-0.5 " + (selected ? "text-blue-600" : "text-gray-400")}>
+                          Contract by {ev.created_user_name}
+                        </div>
+                      )}
+                      {(ev.contact_number || ev.secondary_contact) && (
+                        <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs">
+                          {ev.contact_person && <span className="text-gray-500">{ev.contact_person}:</span>}
+                          {ev.contact_number && (
+                            <a href={"tel:" + String(ev.contact_number).replace(/[^0-9+]/g, '')}
+                              onClick={function (e) { e.stopPropagation() }}
+                              className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium">
+                              <Icon name="phone" size={13} className="shrink-0" />
+                              {ev.contact_number}
+                            </a>
+                          )}
+                          {ev.secondary_contact && (
+                            <a href={"tel:" + String(ev.secondary_contact).replace(/[^0-9+]/g, '')}
+                              onClick={function (e) { e.stopPropagation() }}
+                              className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800">
+                              <Icon name="phone" size={13} className="shrink-0" />
+                              {ev.secondary_contact}
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                }
+                // A contract is selectable in one tap, same as a plain
+                // function — collecting against it doesn't need the guest's
+                // specific date, since the balance shown is already the
+                // whole contract's (see selectCollectFunction). It anchors
+                // to the earliest function in the pool; which one just
+                // names the collection in the receipt description, nothing
+                // financial depends on it.
+                return (
+                  <div className="space-y-1.5">
+                    {buckets.map(function (b) {
+                      if (!b.isContract) return renderFunctionCard(b.functions[0], false)
+                      var anchorId = String(b.functions[0].id)
+                      var selected = b.functions.some(function (f) { return String(f.id) === collectEventId })
+                      return (
+                        <div key={b.key} role="button" tabIndex={0}
+                          onClick={function () { selectCollectFunction(anchorId) }}
+                          onKeyDown={function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectCollectFunction(anchorId) } }}
+                          className={"w-full text-left px-3 py-2.5 rounded-xl border transition-colors cursor-pointer " +
+                            (selected ? "border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50" : "border-slate-200 hover:border-slate-300 bg-white")}>
+                          <div className="flex items-start justify-between gap-1.5">
+                            <div className={"text-[13px] font-bold " + (selected ? "text-indigo-900" : "text-slate-900")}>{b.clientName}</div>
+                            <span className="shrink-0 text-[9px] font-extrabold uppercase tracking-[0.05em] leading-none px-1.5 py-[3px] rounded bg-indigo-100 text-indigo-600">
+                              {b.functions.length} dates
+                            </span>
+                          </div>
+                          <div className={"text-[12px] " + (selected ? "text-indigo-700" : "text-slate-500")}>{b.venueName}</div>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <DeptChip name={b.department} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+            </div>
+          )}
+
+          {collectJustSaved && (
+            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg px-3 py-2 text-[12px] font-semibold">
+              <Icon name="check" size={14} className="shrink-0" />
+              Collected — balance below is updated. Log another, or close when done.
             </div>
           )}
 
@@ -2550,60 +2905,62 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </div>
           )}
 
-          {/* What LMS itself has on record for this contract — the figures
-              above only ever reflect collections logged through Ambria Ops'
-              own wallet, so a payment someone entered straight into LMS
-              (cash handed to a different department, a bank transfer logged
-              by the LMS team) would otherwise be invisible here. */}
+          {/* Every collection against this contract, LMS and Ambria Ops
+              together — same merged history Event Financials shows, so
+              whoever's collecting can see what's already come in before
+              asking for more, not just what the Pending Balance above nets
+              out to. */}
           {collectEventId && (
             <div className="border border-slate-200 rounded-lg overflow-hidden">
-              <button type="button" onClick={function () { setLmsPaymentsOpen(!lmsPaymentsOpen) }}
+              <button type="button" onClick={function () { setCollectHistoryOpen(!collectHistoryOpen) }}
                 className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white hover:bg-slate-50 transition-colors">
                 <span className="flex items-center gap-1.5 text-[11.5px] font-bold text-slate-600">
                   <Icon name="receipt" size={13} className="text-slate-400" />
-                  LMS payment history
-                  {lmsPayments && lmsPayments.length > 0 && (
+                  Contract collection history
+                  {collectHistory && collectHistory.length > 0 && (
                     <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold">
-                      {lmsPayments.length}
+                      {collectHistory.length}
                     </span>
                   )}
                 </span>
-                <Icon name={lmsPaymentsOpen ? 'chevronDown' : 'chevronRight'} size={13} className="text-slate-400" />
+                <Icon name={collectHistoryOpen ? 'chevronDown' : 'chevronRight'} size={13} className="text-slate-400" />
               </button>
-              {lmsPaymentsOpen && (
+              {collectHistoryOpen && (
                 <div className="px-3 py-2 border-t border-slate-100 bg-slate-50/60">
-                  {lmsPaymentsLoading ? (
-                    <p className="text-xs text-gray-400">Checking LMS...</p>
-                  ) : lmsPaymentsError ? (
-                    <p className="text-xs text-red-600">{lmsPaymentsError}</p>
-                  ) : !lmsPayments || lmsPayments.length === 0 ? (
-                    <p className="text-xs text-gray-400">No payments on record in LMS for this contract.</p>
+                  {collectHistoryLoading ? (
+                    <p className="text-xs text-gray-400">Loading collection history...</p>
+                  ) : collectHistoryError ? (
+                    <p className="text-xs text-red-600">{collectHistoryError}</p>
+                  ) : !collectHistory || collectHistory.length === 0 ? (
+                    <p className="text-xs text-gray-400">No collections on record for this contract yet.</p>
                   ) : (
                     <div className="space-y-1.5">
-                      {lmsPayments.map(function (p, pi) {
-                        // LMS itself reports cash payments at 1/10th of the real
-                        // amount (the same quirk the Pending Balance "Cash ×10"
-                        // dot above works around) — bank entries are unaffected.
-                        // Shares that same toggle rather than always-correcting,
-                        // so this still matches what LMS's own screen shows by
-                        // default.
-                        var pIsCash = p.pay_mode && String(p.pay_mode).toLowerCase().indexOf('cash') !== -1
+                      {collectHistory.map(function (p) {
                         return (
-                          <div key={pi} className="flex items-start justify-between gap-2 text-[11.5px] bg-white border border-slate-100 rounded-lg px-2.5 py-2">
+                          <div key={p.key} className="flex items-start justify-between gap-2 text-[11.5px] bg-white border border-slate-100 rounded-lg px-2.5 py-2">
                             <div className="min-w-0">
                               <div className="font-semibold text-slate-800">
                                 {p.date ? formatDate(p.date) : '—'}
-                                {p.pay_mode ? ' · ' + titleCase(p.pay_mode) : ''}
-                                {p.receive_type ? ' · ' + p.receive_type : ''}
+                                {' · '}{p.isCash ? 'Cash' : 'Bank'}
+                                {' · '}
+                                <span className={p.source === 'lms' ? 'text-amber-700' : 'text-emerald-700'}>
+                                  {p.source === 'lms' ? 'LMS' : 'Ambria Ops'}
+                                </span>
                               </div>
-                              {p.remarks && <div className="text-slate-500 mt-0.5 truncate">{p.remarks}</div>}
+                              <DescriptionNote text={p.description} label="Remarks" className="mt-1" />
                               <div className="text-slate-400 mt-0.5 flex items-center gap-2">
                                 <span>
-                                  {p.entry_by ? 'Entered by ' + p.entry_by : ''}
-                                  {p.status && p.status !== 'Y' ? (p.entry_by ? ' · status ' : 'status ') + p.status : ''}
+                                  {p.enteredBy ? 'Entered by ' + p.enteredBy : ''}
+                                  {/* LMS's own order/contract number on this specific
+                                      payment row — shown so a mismatch against the
+                                      contract you're viewing is visible at a glance,
+                                      since contract_no collides across departments. */}
+                                  {p.orderNo && p.orderNo !== collectAllEventRows.find(function (e) { return String(e.id) === String(collectEventId) })?.contract_no && (
+                                    <span className="text-amber-600 font-semibold"> · order #{p.orderNo} ⚠</span>
+                                  )}
                                 </span>
-                                {p.receipt_url && (
-                                  <a href={p.receipt_url} target="_blank" rel="noreferrer"
+                                {p.receiptUrl && (
+                                  <a href={p.receiptUrl} target="_blank" rel="noreferrer"
                                     onClick={function (ev) { ev.stopPropagation() }}
                                     className="text-indigo-600 hover:text-indigo-800 font-semibold shrink-0">
                                     View receipt ↗
@@ -2612,7 +2969,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                               </div>
                             </div>
                             <div className="shrink-0 font-bold text-slate-800 tabular-nums" data-notranslate>
-                              {formatPoints(p.net_amount_paise * (pIsCash && showActualCash ? 10 : 1))}
+                              {/* LMS reports cash at 1/10th the real amount (the same
+                                  quirk the Pending Balance "Cash ×10" dot works
+                                  around) — Ambria Ops' own cash rows are unaffected. */}
+                              {formatPoints(p.amount_paise * (p.source === 'lms' && p.isCash && showActualCash ? 10 : 1))}
                             </div>
                           </div>
                         )
@@ -2759,7 +3119,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
   function renderTentativeModal() {
     if (!tentativeModal) return null
-    var canSubmitTentative = !tentativeSaving && tentativeGuestName.trim() && tentativeVenue && tentativeFunctionType
+    var tentativeVenueIsOther = tentativeVenue === '__other__'
+    var canSubmitTentative = !tentativeSaving && tentativeGuestName.trim() && tentativeFunctionType &&
+      (tentativeVenueIsOther ? tentativeVenueOther.trim() : tentativeVenue)
     return (
       <BottomSheet open={true} onClose={function () { setTentativeModal(false) }} title="Create Tentative Event">
         <div className="space-y-4">
@@ -2782,7 +3144,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               style={{ fontSize: '16px' }}>
               <option value="">Select venue...</option>
               {activeVenues.map(function (v) { return <option key={v.id} value={v.id}>{(v.code ? v.code + ' — ' : '') + v.name}</option> })}
+              <option value="__other__">Others</option>
             </select>
+            {tentativeVenueIsOther && (
+              <input type="text" value={tentativeVenueOther}
+                onChange={function (e) { setTentativeVenueOther(e.target.value) }}
+                placeholder="Enter venue name"
+                className="w-full mt-2 px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                style={{ fontSize: '16px' }} />
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -3304,7 +3674,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                         if (isCancelled) return null
                         var chk = isExpRow ? xp : t
                         if (!chk) return null
-                        if ((!canMarkChecked && !chk.checked_by) && (!canMarkEntered && !chk.tally_entered_by)) return null
+                        var showSecondCheck = !isExpRow && (t.reference_type === 'transfer' || t.reference_type === 'vendor_payment') && (canMarkChecked2 || t.checked2_by)
+                        if ((!canMarkChecked && !chk.checked_by) && (!canMarkEntered && !chk.tally_entered_by) && !showSecondCheck) return null
                         return (
                           <span className="mt-1 flex items-center justify-end gap-1.5" onClick={function (ev) { ev.stopPropagation() }}>
                             <EnteredMark
@@ -3326,6 +3697,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                               busy={isExpRow ? checkingExpId === t.reference_id : checkingTxnId === t.id}
                               onToggle={function () { if (isExpRow) toggleExpenseCheck(t.reference_id); else toggleWalletCheck(t) }}
                             />
+                            {showSecondCheck && (
+                              <CheckedStamp
+                                tone="violet"
+                                label={t.checked2_by ? 'Checked 2' : '2nd check'}
+                                checked={!!t.checked2_by}
+                                checkerName={t.checked2_by && walletProfiles[t.checked2_by] ? walletProfiles[t.checked2_by].name : null}
+                                checkedAt={t.checked2_at}
+                                canToggle={canMarkChecked2}
+                                canUncheck={t.checked2_by === profile.id || isAdmin || isAuditor}
+                                busy={checking2TxnId === t.id}
+                                onToggle={function () { toggleWalletCheck2(t) }}
+                              />
+                            )}
                           </span>
                         )
                       })()}
@@ -3948,6 +4332,35 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var isDeletedExp = isExpRow && !!expenseRefs[t.reference_id] && !!expenseRefs[t.reference_id].deleted_at
     var isPayRow = PAYMENT_REF_TYPES.indexOf(t.reference_type) !== -1
     var rowIsClickable = isExpRow || t.reference_type === 'collection' || isEpc || isPayRow
+
+    // ── Title line, per type — promoted up from what used to be shown
+    // further down the card, since the "Transfer"/"Expense" badge already
+    // says what kind of row this is; repeating it (or the raw description)
+    // as the title too was the redundant part.
+    var isTransferRow = t.reference_type === 'transfer'
+    var transferFromName = isTransferRow ? (t.type === 'debit' ? txnUser.name : fullListCpName) : null
+    var transferToName = isTransferRow ? (t.type === 'debit' ? fullListCpName : txnUser.name) : null
+    // Older transfers had the recipient's name baked straight into the
+    // stored description at send time ("Transfer: pc at gd → Amar Kumar") —
+    // stripped back out here for display only (the DB value is untouched)
+    // so the demoted description line doesn't just repeat the new title.
+    var transferCleanDesc = t.description || ''
+    if (isTransferRow) {
+      var _prefixM = transferCleanDesc.match(/^Transfer from .+?: /) || transferCleanDesc.match(/^Transfer: /)
+      if (_prefixM) transferCleanDesc = transferCleanDesc.slice(_prefixM[0].length)
+      var _suffixName = t.type === 'debit' ? fullListCpName : txnUser.name
+      if (_suffixName) {
+        var _suffix = ' → ' + _suffixName
+        if (transferCleanDesc.slice(-_suffix.length) === _suffix) transferCleanDesc = transferCleanDesc.slice(0, -_suffix.length)
+      }
+    }
+    var expRowForTitle = isExpRow ? expenseRefs[t.reference_id] : null
+    var expTypeNameForTitle = expRowForTitle ? (expRowForTitle.expense_types?.name || '') : ''
+    var expSubTypeNameForTitle = expRowForTitle ? (expRowForTitle.expense_sub_types?.name || '') : ''
+    var collRowForTitle = t.reference_type === 'collection' && t.reference_id ? collectionEventRefs[t.reference_id] : null
+    var collTitleBits = collRowForTitle
+      ? [collRowForTitle.function_date ? formatDate(collRowForTitle.function_date) : null, collRowForTitle.client_name, venueLabelWithCode(collRowForTitle.venue_name), collRowForTitle.location, collRowForTitle.session].filter(Boolean)
+      : []
     function handleRowClick() {
       if (!rowIsClickable) return
       if (isExpRow) {
@@ -4005,11 +4418,17 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </span>
               )}
               <p className={"text-[14px] font-bold text-slate-900 leading-snug " + (isCancelled ? "line-through" : "")}>
-                {t.description || '—'}
+                {isTransferRow ? (
+                  <>{transferFromName || '—'} <span className="text-slate-400 font-semibold">→</span> {transferToName || '—'}</>
+                ) : isExpRow && expTypeNameForTitle ? (
+                  <>{expTypeNameForTitle}{expSubTypeNameForTitle ? <span className="text-slate-400"> › {expSubTypeNameForTitle}</span> : null}</>
+                ) : collTitleBits.length > 0 ? (
+                  collTitleBits.join(' · ')
+                ) : (t.description || '—')}
                 {isEpc && ' · ' + epcHit.epc.extras_charged + ' extras'}
               </p>
               {t.reference_type === 'collection' && t.payment_mode && (
-                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
+                <span className="text-[11.5px] font-bold uppercase px-2 py-1 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
                   {t.payment_mode}{t.bank_payment_type ? ' · ' + t.bank_payment_type : ''}
                 </span>
               )}
@@ -4031,6 +4450,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </span>
               )}
             </div>
+            {/* Demoted description — whatever the title promoted in its
+                place (From → To, the type › sub-type, or the function
+                details) already carries the structured facts; this is just
+                whatever free text came with it. */}
+            {isTransferRow && <DescriptionNote text={transferCleanDesc} className="mt-1" />}
+            {isExpRow && expTypeNameForTitle && <DescriptionNote text={t.description} className="mt-1" />}
+            {collTitleBits.length > 0 && <DescriptionNote text={t.description} className="mt-1" />}
             {isCancelled && t.cancelled_reason && (
               <p className="text-[10px] text-rose-600 italic mt-0.5">Reason: {t.cancelled_reason}</p>
             )}
@@ -4057,18 +4483,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                 </span>
               </p>
             )}
-            {/* Enrichment: collection → guest · session · event date, same facts the detail modal shows on click */}
-            {t.reference_type === 'collection' && t.reference_id && collectionEventRefs[t.reference_id] && (function () {
-              var ce = collectionEventRefs[t.reference_id]
-              var bits = [ce.function_date ? formatDate(ce.function_date) : null, ce.client_name, venueLabelWithCode(ce.venue_name), ce.location, ce.session].filter(Boolean)
-              if (bits.length === 0) return null
-              return <p className="text-[11.5px] text-slate-500 mt-0.5">{bits.join(' · ')}</p>
-            })()}
             {/* Enrichment: expense/refund → type › sub-type · event · vendor · extra fields · (refund amount + date) · per-allocation breakdown */}
             {(t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id && expenseRefs[t.reference_id] && (function () {
               var e = expenseRefs[t.reference_id]
-              var typeName = e.expense_types?.name || ''
-              var subTypeName = e.expense_sub_types?.name || ''
               var allocs = e.expense_allocations || []
               var parts = []
               var pairs = []
@@ -4097,13 +4514,10 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       every one of them grey and roughly the same size, is why
                       this read as a block rather than as facts — nothing told
                       the eye where one thing ended and the next began. */}
-                  {(typeName || e._event_name) && (
+                  {/* typeName/subTypeName moved up to the title — only the
+                      event-name chip still lives here. */}
+                  {e._event_name && (
                     <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-                      {typeName && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-bold">
-                          {typeName + (subTypeName ? ' › ' + subTypeName : '')}
-                        </span>
-                      )}
                       {e._event_name && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500">
                           <Icon name="calendar" size={11} />
@@ -4146,8 +4560,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       // than the section. At 10.5 it was the smallest thing on
                       // the card and read as a footnote.
                       className="mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-indigo-600 hover:text-indigo-800">
-                      <Icon name={expandedTxnIds[t.id] ? 'chevronDown' : 'chevronRight'} size={13} />
-                      {expandedTxnIds[t.id] ? 'Hide allocation details' : 'Allocation details'}
+                      <Icon name={isTxnExpanded(t.id) ? 'chevronDown' : 'chevronRight'} size={13} />
+                      {isTxnExpanded(t.id) ? 'Hide allocation details' : 'Allocation details'}
                     </button>
                   )}
                   {/* Under a rule, and indented off it. The breakdown and the
@@ -4157,7 +4571,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       other is when it happened and who did it. The rule makes
                       the breakdown read as belonging to the expense above it
                       rather than as one more line in a grey stack. */}
-                  {allocs.length > 0 && (expandAllTxns || !!expandedTxnIds[t.id]) && (function () {
+                  {allocs.length > 0 && isTxnExpanded(t.id) && (function () {
                     // "Decor" on every line, when every line is Decor, is 48px
                     // a row spent repeating the one thing they have in common —
                     // and it was 48px the chain needed to finish spelling
@@ -4247,7 +4661,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       credit rather than debiting the wallet in full — the
                       wallet balance change above only ever reflects the cash
                       leg, so without this the remainder is invisible here. */}
-                  {(expandAllTxns || !!expandedTxnIds[t.id]) && (e.payment_credit_paise || 0) > 0 && (
+                  {isTxnExpanded(t.id) && (e.payment_credit_paise || 0) > 0 && (
                     <div className="mt-2 pl-3 border-l-2 border-amber-100 space-y-1">
                       <p className="flex items-center justify-between gap-2 text-[12px]">
                         <span className="text-emerald-600">Paid now (cash)</span>
@@ -4357,7 +4771,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               // Nothing is drawn for someone who cannot mark a row and is
               // looking at one nobody has marked — CheckedStamp returns null
               // there, and an empty wrapper would still spend its margin.
-              if ((!canMarkChecked && !chk.checked_by) && (!canMarkEntered && !chk.tally_entered_by)) return null
+              var showSecondCheck2 = !isExpRow && (t.reference_type === 'transfer' || t.reference_type === 'vendor_payment') && (canMarkChecked2 || t.checked2_by)
+              if ((!canMarkChecked && !chk.checked_by) && (!canMarkEntered && !chk.tally_entered_by) && !showSecondCheck2) return null
               return (
               /* The artwork, not the chip: a chip beside an amount reads as
                  one more label, and this is a verdict on the figure above it.
@@ -4408,6 +4823,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       busy={checkingTxnId === t.id}
                       onToggle={function (ev) { ev.stopPropagation(); toggleWalletCheck(t) }}
                     />
+                    {showSecondCheck2 && (
+                      <CheckedStamp
+                        tone="violet"
+                        label={t.checked2_by ? 'Checked 2' : '2nd check'}
+                        checked={!!t.checked2_by}
+                        checkerName={t.checked2_by && walletProfiles[t.checked2_by] ? walletProfiles[t.checked2_by].name : null}
+                        checkedAt={t.checked2_at}
+                        canToggle={canMarkChecked2}
+                        canUncheck={t.checked2_by === profile.id || isAdmin || isAuditor}
+                        busy={checking2TxnId === t.id}
+                        onToggle={function (ev) { ev.stopPropagation(); toggleWalletCheck2(t) }}
+                      />
+                    )}
                   </>
                 )}
               </div>

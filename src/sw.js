@@ -34,16 +34,34 @@ self.addEventListener('push', function (event) {
 
 // Focuses an already-open tab rather than opening a second one, since this
 // is a PWA people keep pinned open — a fresh tab per notification would
-// pile up fast.
+// pile up fast. Focusing alone doesn't navigate anywhere though, so a
+// pinned-open tab just came to the front wherever it already was instead of
+// landing on the Inbox (or whatever the notification pointed at) -- the page
+// is told where to go via postMessage, and AdminShell.jsx/Shell.jsx's own
+// navigateFromNotification (already wired to NotificationBell's in-app
+// click) does the actual navigating once it receives it.
+//
+// `link` here is one of the app's internal short-codes ("broadcast:inbox",
+// "wallet:123", ...), not a URL -- see navigateFromNotification in
+// AdminShell.jsx/Shell.jsx for the full set. It's never valid to hand
+// straight to openWindow, which only ever opens real URLs; the no-tab-open
+// fallback instead opens the app's own root with it tacked on as a `notif`
+// query param, which App.jsx reads once on first load and resolves the same
+// way.
 self.addEventListener('notificationclick', function (event) {
   event.notification.close()
-  var link = (event.notification.data && event.notification.data.link) || '/ambria-ops/'
+  var link = (event.notification.data && event.notification.data.link) || ''
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
       for (var i = 0; i < clientList.length; i++) {
-        if ('focus' in clientList[i]) return clientList[i].focus()
+        var client = clientList[i]
+        if (link && 'postMessage' in client) client.postMessage({ type: 'NOTIFICATION_CLICK', link: link })
+        if ('focus' in client) return client.focus()
       }
-      if (self.clients.openWindow) return self.clients.openWindow(link)
+      if (self.clients.openWindow) {
+        var url = self.registration.scope + (link ? '?notif=' + encodeURIComponent(link) : '')
+        return self.clients.openWindow(url)
+      }
     })
   )
 })

@@ -28,29 +28,40 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     )
-    const { data, error } = await supabase
-      .from("quote_config")
-      .select("key, value, updated_at")
-      .in("key", ["season_dates", "categories"])
-    if (error) throw new Error(error.message)
-
-    const map: Record<string, any> = {}
-    let updatedAt = ""
-    for (const r of (data || [])) {
-      map[r.key] = r.value
-      if (r.updated_at > updatedAt) updatedAt = r.updated_at
-    }
+    // Moved off quote_config's jsonb to real tables (Phase 3 of the quote
+    // pricing migration) — date_categories.id is the same position index
+    // season_dates.date_category_id and this endpoint's own label lookup
+    // already assumed.
+    const [{ data: catRows, error: catErr }, { data: dateRows, error: dateErr }] = await Promise.all([
+      supabase.from("quote_date_categories").select("id, label, updated_at").order("sort_order"),
+      supabase.from("quote_season_dates").select("year, month, day, date_category_id, updated_at"),
+    ])
+    if (catErr) throw new Error(catErr.message)
+    if (dateErr) throw new Error(dateErr.message)
 
     const DEFAULT_CATS = [
-      { label: "King's" }, { label: "Perfect" }, { label: "Filler" },
+      { id: 0, label: "King's" }, { id: 1, label: "Perfect" }, { id: 2, label: "Filler" },
     ]
-    const cats = Array.isArray(map.categories) ? map.categories : DEFAULT_CATS
+    const cats = (catRows && catRows.length) ? catRows : DEFAULT_CATS
     const labels = cats.map((c: any) => c.label)
-    const raw = map.season_dates || {}
+    const labelById: Record<number, string> = {}
+    cats.forEach((c: any) => { labelById[c.id] = c.label })
+
+    var updatedAt = ""
+    for (const r of (catRows || []).concat(dateRows || [])) {
+      if (r.updated_at && r.updated_at > updatedAt) updatedAt = r.updated_at
+    }
+
+    const pad2 = (n: number) => (n < 10 ? "0" + n : "" + n)
     const dates: Record<string, string> = {}
-    for (const mmdd of Object.keys(raw)) {
-      const idx = raw[mmdd]
-      if (labels[idx]) dates[mmdd] = labels[idx]
+    for (const r of (dateRows || [])) {
+      // Same key shape the old jsonb already mixed together and this
+      // endpoint exported as-is: a year-less row is the legacy "MM-DD"
+      // recurring entry, a row with a year is a specific-date override —
+      // both can be present side by side, same as before.
+      const key = r.year ? (r.year + "-" + pad2(r.month) + "-" + pad2(r.day)) : (pad2(r.month) + "-" + pad2(r.day))
+      const label = labelById[r.date_category_id]
+      if (label) dates[key] = label
     }
 
     return new Response(JSON.stringify({

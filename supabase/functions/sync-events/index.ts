@@ -178,16 +178,30 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
   const d = dep.d  // detail prefix
 
   const entryNo = (e[dep.entryNo] || "").trim()
-  // `headid` is the CONTRACT's id, shared by every function under it — a
-  // multi-function contract (confirmed live: same dep_entry_no + headid,
-  // different id/dhcd_function/dhcd_date/dhcd_session per function) was
-  // silently collapsing down to just its last-seen function, because the
-  // dedup key below used to be built from headid and every sibling function
-  // landed on the identical key. `id` is the one field unique per function-
-  // detail row, so it has to come first here — headid only still matters
-  // for lms_head_id below, where "which contract this belongs to" is
-  // actually the question being asked.
-  const detailId = e.id || e.headid || ""
+  // Third attempt at this key — the first two each fixed one failure mode
+  // and opened another:
+  //  1. headid (the CONTRACT's id, shared by every function under it) --
+  //     collapsed a multi-function contract down to its last-seen function,
+  //     because every sibling function landed on the identical key.
+  //  2. e.id (LMS's own per-function-detail-row id) -- fixed #1, but it
+  //     turns out LMS regenerates this id on a plain resave of a contract
+  //     that didn't actually change (confirmed live: same contract, same
+  //     function_date/session, old id cancelled and a brand new id synced
+  //     two days later). Every resave orphaned that row's manually-entered
+  //     data (tally_entered_by, manual_plate_rate_paise, ...) onto a now-
+  //     cancelled row instead of updating it in place -- reported as
+  //     previously-"entered" contracts reverting to "not entered".
+  // function type + function date + session is stable across a resave (none
+  // of the three change just because LMS re-persisted the row) while still
+  // telling apart real siblings -- confirmed on 3 live multi-function
+  // contracts, every sibling differed in at least one of these three.
+  // Falls back to the old id/headid chain only when a row has no function
+  // date at all to key on (no better signal exists for that case).
+  const funcDate = (e[dep.functionDate] || "").trim()
+  const funcSignature = funcDate
+    ? (e[dep.funcCode] || "").trim() + "-" + funcDate + "-" + (e[d + "session"] || "").trim()
+    : ""
+  const detailId = funcSignature || e.id || e.headid || ""
   const entryById = dep.entryBy && e[dep.entryBy] ? String(e[dep.entryBy]).trim() : ""
   const createdName = entryById ? (lmsUserMap[entryById] || null) : null
 
@@ -214,7 +228,10 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
     client_name: e[h + "guest_name"] || null,
     session: e[d + "session"] || null,
     catering: e[d + "catering"] || e[d + "menu"] || null,
-    total_plates: dep.pax ? safeInt(e[dep.pax] || 0) : 0,
+    // total_plates is the free quota (Extra Plate Collect charges only past
+    // it) — confirmed the paying pax and free pax are additive on the
+    // contract (150 pax + 10 free = 160 covered), not 10 carved out of 150.
+    total_plates: dep.pax ? safeInt(e[dep.pax] || 0) + (dep.freePax ? safeInt(e[dep.freePax] || 0) : 0) : 0,
     complementary_plates: dep.freePax ? safeInt(e[dep.freePax] || 0) : 0,
     extra_plates_charge: dep.extraPlate ? safePaise(e[dep.extraPlate] || 0) : 0,
     balance_received: safePaise(e[h + "advance_cash"] || 0) + safePaise(e[h + "advance_chq"] || 0),
@@ -294,6 +311,52 @@ async function notifyNewContractsSynced(supa: any, SUPABASE_URL: string, SERVICE
   }
 }
 
+// Logs every stale-sweep cancellation to lms_sync_anomalies (durable history
+// of this specific known LMS-side gap — see the big comment above the sweep
+// itself) and notifies the same subscriber list as new-contract syncs, so an
+// admin finds out within minutes instead of someone noticing by accident
+// days later (as happened with contract #00773 -- cancelled, then missed by
+// every sync for 6 days before anyone looked at it). A contract that's
+// genuinely cancelled in LMS shows up here too; the admin screen is where
+// that gets told apart from an actual LMS listing gap and dismissed.
+async function notifyStaleAnomalies(supa: any, SUPABASE_URL: string, SERVICE_ROLE: string, staleRows: any[]) {
+  var insRes = await supa.from("lms_sync_anomalies").insert(staleRows.map(function (r: any) {
+    return {
+      event_id: r.id, lms_event_id: r.lms_event_id, contract_no: r.contract_no,
+      department: r.department, client_name: r.client_name, venue_name: r.venue_name,
+      function_date: r.function_date,
+    }
+  }))
+  if (insRes.error) { console.log("sync-events: lms_sync_anomalies insert failed: " + insRes.error.message); return }
+
+  var subsRes = await supa.from("lms_sync_notification_subscribers").select("user_id")
+  var userIds = (subsRes.data || []).map(function (r: any) { return r.user_id })
+  if (userIds.length === 0) return
+
+  var title = staleRows.length === 1 ? "A contract dropped out of LMS sync" : staleRows.length + " contracts dropped out of LMS sync"
+  var body = staleRows.length === 1
+    ? (staleRows[0].client_name || staleRows[0].contract_no || "A contract") + " (" + staleRows[0].department + ") — check Events → Sync Issues"
+    : "Check Events → Sync Issues to review them"
+  var link = "events:sync_issues"
+
+  for (var i = 0; i < userIds.length; i++) {
+    var uid = userIds[i]
+    var insNotif = await supa.from("notifications").insert({
+      user_id: uid, type: "lms_sync_anomaly", title: title, body: body, link: link,
+    })
+    if (insNotif.error) { console.log("sync-events: anomaly notification insert failed: " + insNotif.error.message); continue }
+    try {
+      await fetch(SUPABASE_URL + "/functions/v1/send-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + SERVICE_ROLE },
+        body: JSON.stringify({ user_id: uid, title: title, body: body, link: link }),
+      })
+    } catch (pushErr) {
+      console.log("sync-events: anomaly send-push call failed")
+    }
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -354,8 +417,13 @@ serve(async (req) => {
     var syncStartedAt = new Date().toISOString()
 
     async function syncDept(dep: typeof DEPARTMENTS[0]) {
-      var result = { synced: 0, fetched: 0, stale: 0, errors: [] as string[], newRows: [] as any[] }
+      var result = { synced: 0, fetched: 0, stale: 0, errors: [] as string[], newRows: [] as any[], staleAnomalies: [] as any[] }
       var allRows: any[] = []
+      // LMS's own positive cancellation signal -- rows carrying a non-empty
+      // cancel_remarks are a real "this was cancelled in LMS" fact, unlike
+      // a row merely being absent from the list (which LMS's own listing
+      // bug can also cause -- see the stale-candidate block below).
+      var explicitlyCancelledIds: string[] = []
       var page = 1
 
       while (true) {
@@ -385,12 +453,24 @@ serve(async (req) => {
         for (var ci = 0; ci < contracts.length; ci++) {
           var c = contracts[ci]
           var cancelRemarks = (c[dep.h + "cancel_remarks"] || "").trim()
-          if (cancelRemarks) continue
+          if (cancelRemarks) { explicitlyCancelledIds.push(mapRow(c, dep, lmsUserMap).lms_event_id); continue }
           allRows.push(mapRow(c, dep, lmsUserMap))
         }
 
         if (contracts.length < PAGE_SIZE) break
         page++
+      }
+
+      if (explicitlyCancelledIds.length > 0) {
+        var { data: justCancelled } = await supabase
+          .from("events")
+          .update({ lms_cancelled_at: new Date().toISOString() })
+          .in("lms_event_id", explicitlyCancelledIds)
+          .is("lms_cancelled_at", null)
+          .select("id")
+        if (justCancelled && justCancelled.length > 0) {
+          console.log(dep.name + ": " + justCancelled.length + " rows cancelled in LMS (cancel_remarks)")
+        }
       }
 
       // Deduplicate — prefer row with function_date
@@ -443,43 +523,57 @@ serve(async (req) => {
         }
       }
 
-      // Stale rows — not touched by this sync, which (since this department's
-      // fetch loop ran clean start to finish, see the error-count guard below)
-      // normally means LMS no longer returns them uncancelled: either
-      // genuinely cancelled (cancel_remarks now set, so our fetch loop skips
-      // it) or removed outright. Either way, flag them so events_safe and
-      // every picker that filters on it stop showing them. Only do this when
-      // the fetch had zero errors this run — a partial page failure would
-      // make perfectly live contracts look stale just because we never
-      // reached them, and that's not something to act on.
+      // Stale candidates — not touched by this sync, which (since this
+      // department's fetch loop ran clean start to finish, see the
+      // error-count guard below) normally means LMS genuinely cancelled or
+      // removed them. But it is only ever an INFERENCE from absence, and
+      // absence has a second, confirmed cause that has nothing to do with
+      // real cancellation:
       //
       // Confirmed live (contract #00674 / Venue_00674_676, "Sanjay Kumar" /
-      // HALDI, and several others since): LMS's own list endpoint returns
-      // 841 rows across 85 pages with only 784 distinct headids — 57
+      // HALDI, contract #00773, and others since): LMS's own list endpoint
+      // returns 841 rows across 85 pages with only 784 distinct headids — 57
       // duplicates from the page window shifting under concurrent edits —
-      // and a handful of contracts (including this one) are simply never in
-      // that list at all, in repeated independent scans minutes apart, while
-      // still fully visible and editable in LMS's own UI. For a genuinely
-      // transient miss, the grace window below gives several more sync runs
-      // a chance to re-catch the row before treating it as actually gone.
-      // For a PERMANENT gap like this one — the row can never be re-synced,
-      // so without the exemption check it would just get re-cancelled again
-      // a few hours after any manual restore — lms_stale_exempt (set by hand
-      // once a row like this is confirmed still live in LMS) opts it out of
-      // this pass entirely.
+      // and a handful of contracts are simply never in that list at all, in
+      // repeated independent scans minutes apart, while still fully visible
+      // and editable in LMS's own UI. #00773 sat auto-cancelled by this
+      // exact step for 6 days before anyone noticed, because absence used to
+      // be treated as equivalent to a real cancellation.
+      //
+      // Genuine cancellation is now detected directly above, from LMS's own
+      // cancel_remarks field — a real positive signal. This block no longer
+      // touches lms_cancelled_at at all: it only flags a candidate into
+      // lms_sync_anomalies for a human to confirm one way or the other in
+      // Events -> Sync Issues (fn_resolve_lms_sync_anomaly). Only done when
+      // the fetch had zero errors this run — a partial page failure would
+      // make perfectly live contracts look stale just because we never
+      // reached them. lms_stale_exempt (set via Dismiss on that screen) opts
+      // a known-flaky contract out of repeat alerts; the grace window gives
+      // a genuinely transient miss a few hours to self-recover before it's
+      // even raised.
       var staleGraceCutoff = new Date(Date.parse(syncStartedAt) - 3 * 60 * 60 * 1000).toISOString()
       if (result.errors.length === 0) {
-        var { data: staleRows } = await supabase
+        var { data: candidateRows } = await supabase
           .from("events")
-          .update({ lms_cancelled_at: new Date().toISOString() })
+          .select("id, lms_event_id, contract_no, department, client_name, venue_name, function_date")
           .like("lms_event_id", dep.name + "_%")
           .lt("synced_at", staleGraceCutoff)
           .is("lms_cancelled_at", null)
           .eq("lms_stale_exempt", false)
-          .select("id")
-        result.stale = (staleRows || []).length
+        var candidates = candidateRows || []
+        if (candidates.length > 0) {
+          var { data: alreadyFlagged } = await supabase
+            .from("lms_sync_anomalies")
+            .select("lms_event_id")
+            .in("lms_event_id", candidates.map(function (r: any) { return r.lms_event_id }))
+            .is("resolved_at", null)
+          var flaggedSet = new Set((alreadyFlagged || []).map(function (r: any) { return r.lms_event_id }))
+          candidates = candidates.filter(function (r: any) { return !flaggedSet.has(r.lms_event_id) })
+        }
+        result.stale = candidates.length
+        result.staleAnomalies = candidates
         if (result.stale > 0) {
-          console.log(dep.name + ": " + result.stale + " rows cancelled in LMS, flagged")
+          console.log(dep.name + ": " + result.stale + " rows missing from LMS's list, flagged for review")
         }
       }
 
@@ -509,6 +603,19 @@ serve(async (req) => {
         await notifyNewContractsSynced(supabase, supabaseUrl, supabaseKey, allNewRows)
       } catch (notifyErr) {
         console.log("notifyNewContractsSynced failed:", (notifyErr as Error).message)
+      }
+    }
+
+    var allStaleAnomalies: any[] = []
+    for (var dj = 0; dj < deptResults.length; dj++) {
+      var rj = deptResults[dj]
+      if (rj.status === "fulfilled") allStaleAnomalies.push.apply(allStaleAnomalies, rj.value.staleAnomalies)
+    }
+    if (allStaleAnomalies.length > 0) {
+      try {
+        await notifyStaleAnomalies(supabase, supabaseUrl, supabaseKey, allStaleAnomalies)
+      } catch (notifyErr) {
+        console.log("notifyStaleAnomalies failed:", (notifyErr as Error).message)
       }
     }
     return new Response(JSON.stringify({

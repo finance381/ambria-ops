@@ -6,6 +6,7 @@ import PageWave from '../ui/PageWave'
 import Logo from '../ui/Logo'
 import Icon from '../ui/Icon'
 import NotificationBell from '../ui/NotificationBell'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 // Inventory's photograph: warm light through leaves across a pale wall,
 // vases and a bowl — the ground behind the top of the Inventory section.
 import inventoryBg from '../../assets/inventory-bg.webp'
@@ -34,6 +35,7 @@ var RateCardEditor = lazyTab(function () { return import('../../modules/quote/Ra
 var Events = lazyTab(function () { return import('../../modules/events/Events') })
 var ContractList = lazyTab(function () { return import('../../modules/events/ContractList') })
 var ExtraPlateCollect = lazyTab(function () { return import('../../modules/events/ExtraPlateCollect') })
+var SyncIssues = lazyTab(function () { return import('../../modules/events/SyncIssues') })
 var AdminItems = lazyTab(function () { return import('../../modules/inventory/AdminItems') })
 var Categories = lazyTab(function () { return import('../../modules/categories/Categories') })
 var Users = lazyTab(function () { return import('../../modules/users/Users') })
@@ -147,6 +149,7 @@ var SUB_TAB_CONFIG = {
     { key: 'events',       label: 'Events',        icon: 'calendar', component: Events,            perm: 'events.list' },
     { key: 'contracts',    label: 'Contracts',     icon: 'fileText', component: ContractList,      perm: 'events.contracts' },
     { key: 'extra_plates', label: 'Extra Plates',  icon: 'utensils', component: ExtraPlateCollect, perm: 'events.extra_plate_collect' },
+    { key: 'sync_issues',  label: 'Sync Issues',   icon: 'refresh',  component: SyncIssues,        perm: 'events.sync_issues' },
   ],
   inventory: [
     // No Pending Review pill: pending inventory is reviewed under Reviews.
@@ -395,7 +398,7 @@ var MODULES = {
   broadcast: BroadcastHub,
 }
 
-function AdminShell({ profile, onSignOut }) {
+function AdminShell({ profile, onSignOut, initialNotifLink }) {
   var permsNew = profile.permsNew || []
   var visibleTabs = ADMIN_TABS.filter(function (t) { return tabAllowed(t, permsNew) })
 
@@ -415,6 +418,7 @@ function AdminShell({ profile, onSignOut }) {
   var [subTab, setSubTab] = useState(null)
   var [subTabMeta, setSubTabMeta] = useState(null)
   var [navOpen, setNavOpen] = useState(false)
+  useBackButtonClose(navOpen, function () { setNavOpen(false) })
   // Set by onNavigate's 3rd arg when a ledger screen sends the user to a
   // specific expense's edit/Raise JV view instead of just the Expenses tab.
   var [deepLinkExpense, setDeepLinkExpense] = useState(null)
@@ -437,8 +441,37 @@ function AdminShell({ profile, onSignOut }) {
     } else if (link && link.indexOf('contracts:') === 0) {
       setActive('events'); setSubTab('contracts'); setDeepLinkExpense(null)
       setDeepLinkContractId(link.slice('contracts:'.length))
+    } else if (link === 'events:sync_issues') {
+      setActive('events'); setSubTab('sync_issues'); setDeepLinkExpense(null)
     }
   }
+
+  // Runs once for a notification that opened a fresh tab (src/sw.js had no
+  // existing client to postMessage, so it put the link on the URL instead;
+  // App.jsx read it off window.location and handed it down as this prop).
+  // Stripped back out of the URL right after so a manual refresh of this tab
+  // later doesn't replay the same navigation.
+  useEffect(function () {
+    if (!initialNotifLink) return
+    navigateFromNotification(initialNotifLink)
+    var url = new URL(window.location.href)
+    url.searchParams.delete('notif')
+    window.history.replaceState(null, '', url.toString())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Covers the other case -- a tab was already open when the notification
+  // arrived, so src/sw.js focused it and postMessage'd the link directly
+  // instead of going through a URL reload at all.
+  useEffect(function () {
+    if (!navigator.serviceWorker) return
+    function onMessage(event) {
+      if (event.data && event.data.type === 'NOTIFICATION_CLICK') navigateFromNotification(event.data.link)
+    }
+    navigator.serviceWorker.addEventListener('message', onMessage)
+    return function () { navigator.serviceWorker.removeEventListener('message', onMessage) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Inventory's master sub-departments, listed under Inventory in the rail so
   // a sub-department is one click from the sidebar rather than a dropdown

@@ -730,12 +730,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">What was taken out</p>
-        <button onClick={addDeptRow} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-indigo-600 border border-dashed border-gray-300 rounded-lg hover:bg-indigo-50">
-          <Icon name="plus" size={13} /> Add Dept Row
-        </button>
-      </div>
+      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">What was taken out</p>
 
       {deptRows.map(function (row, idx) {
         var isKitchen = isKitchenRow(row)
@@ -939,6 +934,13 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           </div>
         )
       })}
+
+      {/* Same action as the one above the list — repeated here so adding
+          another row after scrolling down past several of them doesn't mean
+          scrolling back up to find the button again. */}
+      <button onClick={addDeptRow} className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold text-indigo-600 border border-dashed border-gray-300 rounded-lg hover:bg-indigo-50">
+        <Icon name="plus" size={13} /> Add Dept Row
+      </button>
 
       <div className="bg-gray-900 rounded-2xl px-5 py-4 flex items-center justify-between gap-3 flex-wrap">
         <div>

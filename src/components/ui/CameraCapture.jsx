@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import ImageCropper from './ImageCropper'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 // Live in-page camera, deliberately NOT <input type="file" capture="environment">.
 // That native picker launches the OS camera as its own activity, backgrounding this
@@ -17,6 +19,9 @@ function CameraCapture({ onCapture, onClose }) {
   var [ready, setReady] = useState(false)
   var [shotUrl, setShotUrl] = useState('')
   var [shotBlob, setShotBlob] = useState(null)
+  var [cropping, setCropping] = useState(false)
+
+  useBackButtonClose(true, onClose)
 
   useEffect(function () {
     var cancelled = false
@@ -95,6 +100,14 @@ function CameraCapture({ onCapture, onClose }) {
     setShotBlob(null)
   }
 
+  function applyCrop(blob) {
+    var oldUrl = shotUrl
+    setShotBlob(blob)
+    setShotUrl(URL.createObjectURL(blob))
+    setCropping(false)
+    if (oldUrl) URL.revokeObjectURL(oldUrl)
+  }
+
   function confirm() {
     if (!shotBlob) return
     var file = new File([shotBlob], 'camera_' + Date.now() + '.jpg', { type: 'image/jpeg', lastModified: Date.now() })
@@ -141,11 +154,15 @@ function CameraCapture({ onCapture, onClose }) {
           {shotUrl ? (
             <>
               <button type="button" onClick={retake}
-                className="h-12 px-6 rounded-full bg-white/15 backdrop-blur text-white text-sm font-semibold border border-white/40">
+                className="h-12 px-5 rounded-full bg-white/15 backdrop-blur text-white text-sm font-semibold border border-white/40">
                 Retake
               </button>
+              <button type="button" onClick={function () { setCropping(true) }}
+                className="h-12 px-5 rounded-full bg-white/15 backdrop-blur text-white text-sm font-semibold border border-white/40">
+                Crop
+              </button>
               <button type="button" onClick={confirm}
-                className="h-12 px-7 rounded-full bg-indigo-600 text-white text-sm font-bold shadow-lg">
+                className="h-12 px-6 rounded-full bg-indigo-600 text-white text-sm font-bold shadow-lg">
                 Use Photo
               </button>
             </>
@@ -155,6 +172,9 @@ function CameraCapture({ onCapture, onClose }) {
               className="w-[72px] h-[72px] rounded-full bg-white ring-4 ring-white/40 ring-offset-4 ring-offset-transparent active:scale-95 transition-transform disabled:opacity-40" />
           )}
         </div>
+      )}
+      {cropping && shotUrl && (
+        <ImageCropper imageUrl={shotUrl} onCancel={function () { setCropping(false) }} onDone={applyCrop} />
       )}
     </div>
   ), document.body)

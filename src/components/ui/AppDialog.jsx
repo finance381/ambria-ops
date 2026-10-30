@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import Icon from './Icon'
 import { useBodyScrollLock } from '../../lib/useBodyScrollLock'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 // The app's own confirm and alert, in place of the browser's.
 //
@@ -97,6 +98,7 @@ export function AppDialogHost() {
   }, [])
 
   useBodyScrollLock(!!cur)
+  useBackButtonClose(!!cur, function () { close(false) })
 
   useEffect(function () {
     if (!cur) return

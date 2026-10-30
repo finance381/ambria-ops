@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints } from '../../lib/format'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 function currentMonthISO() {
   var d = new Date()
@@ -26,6 +27,8 @@ function AccrueSalariesModal(props) {
   var [previewLoading, setPreviewLoading] = useState(false)
   var [previewError, setPreviewError] = useState('')
   var [saving, setSaving] = useState(false)
+
+  useBackButtonClose(true, function () { if (!saving) onClose && onClose() })
   var [error, setError] = useState('')
   var [result, setResult] = useState(null)  // RPC response after commit
 

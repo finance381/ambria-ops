@@ -12,6 +12,7 @@ import SearchField from '../../components/ui/SearchField'
 import Icon, { glyphForLabel } from '../../components/ui/Icon'
 import ledgerBg from '../../assets/ledger-bg.webp'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import EnteredMark from '../../components/ui/EnteredMark'
 import BottomSheet from '../../components/ui/BottomSheet'
 
@@ -486,9 +487,11 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   }, [])
 
   async function loadMaps() {
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and this directory needs everyone.
     var res = await Promise.all([
       supabase.from('departments').select('id, name'),
-      supabase.from('profiles').select('id, name'),
+      supabase.rpc('fn_profile_names'),
     ])
     var dm = {}; (res[0].data || []).forEach(function (d) { dm[d.id] = d.name })
     var um = {}; (res[1].data || []).forEach(function (u) { um[u.id] = u.name })
@@ -1458,7 +1461,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
                           )
                         })()}
                       </div>
-                      {r.remarks && <p className="mt-1 text-[12px] italic text-slate-500">"{r.remarks}"</p>}
+                      <DescriptionNote text={r.remarks} label="Remarks" truncate={false} />
                       {r.venue_id && <p className="mt-1 text-[11.5px] text-slate-500">Venue: <span className="font-semibold text-slate-700">{venueMap[r.venue_id] || '—'}</span></p>}
                       {/* A line each, not a box each. The label over the value
                           in a bordered pill cost two lines and about 34px of

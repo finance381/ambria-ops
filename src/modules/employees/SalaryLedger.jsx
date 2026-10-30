@@ -13,6 +13,9 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import Icon from '../../components/ui/Icon'
 import ReverseDialog from '../../components/ui/ReverseDialog'
+import { registerPdfFont } from '../../lib/pdfFont'
+import { openOrSharePdf } from '../../lib/pdfOutput'
+import { plainParticularsLines, plainDateLines, makeStatementCellHooks } from '../../lib/pdfStatementTable'
 
 function SalaryLedger({ profile, inAdmin }) {
   var permsNew = (profile && profile.permsNew) || []
@@ -33,6 +36,9 @@ function SalaryLedger({ profile, inAdmin }) {
   var [entries, setEntries] = useState([])
   var [entriesLoading, setEntriesLoading] = useState(false)
   var [showDeleted, setShowDeleted] = useState(false)
+  var [entryFrom, setEntryFrom] = useState('')
+  var [entryTo, setEntryTo] = useState('')
+  var [pdfBusy, setPdfBusy] = useState(false)
   // Opening an employee fully replaces the list's own returned JSX with a
   // separate tree, so the list unmounts rather than just being covered —
   // coming back always landed at the top of the list, regardless of where
@@ -54,6 +60,157 @@ function SalaryLedger({ profile, inAdmin }) {
   var [showAccrueModal, setShowAccrueModal] = useState(false)  // SL-C4
   var [showAdjustModal, setShowAdjustModal] = useState(false)  // SL-C5
   var refData = useReferenceData()
+
+  // Company-wide payroll register for a date range — independent of a
+  // single employee's own ledger (that one's further down, inside the
+  // detail view). Lives on the list screen since that's what "this ledger
+  // page" meant.
+  var [regFrom, setRegFrom] = useState('')
+  var [regTo, setRegTo] = useState('')
+  var [regPdfBusy, setRegPdfBusy] = useState(false)
+
+  async function exportSalaryRegisterPDF() {
+    if (regPdfBusy) return
+    if (!regFrom || !regTo) { alert('Pick a From and To date for the register'); return }
+    setRegPdfBusy(true)
+    try {
+      var { data, error } = await supabase.from('ledger_entries')
+        .select('party_uuid, entry_date, description, credit_paise, debit_paise, ref_type, metadata')
+        .eq('ledger_type', 'user_salary')
+        .is('deleted_at', null)
+        .gte('entry_date', regFrom)
+        .lte('entry_date', regTo)
+        .order('entry_date', { ascending: true })
+      if (error) { alert('Failed to load entries: ' + error.message); return }
+      var rows = data || []
+      if (rows.length === 0) { alert('No salary entries in that date range'); return }
+
+      var empNameById = {}, empCodeById = {}
+      ;(refData.employees || []).forEach(function (e) {
+        empNameById[e.id] = e.full_name || e.name || '—'
+        empCodeById[e.id] = e.employee_code || ''
+      })
+      var groups = {}
+      rows.forEach(function (r) {
+        var key = r.party_uuid
+        if (!groups[key]) groups[key] = []
+        groups[key].push(r)
+      })
+      var empIds = Object.keys(groups).sort(function (a, b) {
+        return (empNameById[a] || '').localeCompare(empNameById[b] || '')
+      })
+
+      var jsPDFmod = await import('jspdf')
+      var jsPDF = jsPDFmod.default || jsPDFmod.jsPDF
+      var autoTableMod = await import('jspdf-autotable')
+      var autoTable = autoTableMod.default || autoTableMod
+      var doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      var fontOk = await registerPdfFont(doc)
+      var FONT = fontOk ? 'NotoSans' : 'helvetica'
+      var pageW = doc.internal.pageSize.getWidth()
+      var pageH = doc.internal.pageSize.getHeight()
+      var mm = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+      function fmtD(iso) {
+        if (!iso) return '—'
+        var d = new Date(iso.length === 10 ? iso + 'T00:00:00' : iso)
+        return String(d.getDate()).padStart(2, '0') + '-' + mm[d.getMonth()] + '-' + d.getFullYear()
+      }
+      function fmtN(paise) {
+        return ((paise || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+      }
+
+      doc.setFont(FONT, 'bold'); doc.setFontSize(14)
+      doc.text('SALARY REGISTER', 10, 14)
+      doc.setFont(FONT, 'normal'); doc.setFontSize(8); doc.setTextColor(120)
+      doc.text('Generated ' + new Date().toLocaleString('en-IN'), pageW - 10, 14, { align: 'right' })
+      doc.setTextColor(0)
+      doc.setFontSize(9)
+      doc.setFont(FONT, 'bold'); doc.text('Period:', 10, 22)
+      doc.setFont(FONT, 'normal'); doc.text(fmtD(regFrom) + '  to  ' + fmtD(regTo) + '     (' + empIds.length + ' employees, ' + rows.length + ' entries)', 28, 22)
+
+      // One flat table — an employee-name header row, that employee's
+      // entries, a subtotal row, repeated per employee, a grand total at the
+      // end. Bold/shaded rows are tracked by index and painted in
+      // didParseCell rather than built as separate tables, so page breaks
+      // fall naturally in the middle of a long employee's entries instead of
+      // forcing one table per person.
+      var body = []
+      var rowKind = {}
+      var grandCr = 0, grandDb = 0
+      empIds.forEach(function (eid) {
+        var list = groups[eid].slice().sort(function (a, b) { return new Date(a.entry_date) - new Date(b.entry_date) })
+        var name = empNameById[eid] || 'Unknown'
+        var code = empCodeById[eid] || ''
+        rowKind[body.length] = 'header'
+        body.push([{ content: name + (code ? '  (' + code + ')' : ''), colSpan: 5 }])
+        var subCr = 0, subDb = 0
+        list.forEach(function (e) {
+          var meta = e.metadata || {}
+          var kind = meta.kind ? meta.kind : e.ref_type
+          subCr += (e.credit_paise || 0); subDb += (e.debit_paise || 0)
+          body.push([
+            fmtD(e.entry_date),
+            kind ? String(kind).toUpperCase().replace(/_/g, ' ') : '—',
+            e.description || '—',
+            e.debit_paise ? fmtN(e.debit_paise) : '',
+            e.credit_paise ? fmtN(e.credit_paise) : '',
+          ])
+        })
+        rowKind[body.length] = 'subtotal'
+        body.push(['', '', 'Subtotal — ' + name, fmtN(subDb), fmtN(subCr)])
+        grandCr += subCr; grandDb += subDb
+      })
+      rowKind[body.length] = 'grand'
+      body.push(['', '', 'GRAND TOTAL', fmtN(grandDb), fmtN(grandCr)])
+
+      autoTable(doc, {
+        startY: 27,
+        head: [['Date', 'Type', 'Description',
+          { content: 'Debit', styles: { halign: 'right' } },
+          { content: 'Credit', styles: { halign: 'right' } }]],
+        body: body,
+        styles: { font: FONT, fontSize: 8, cellPadding: 1.8, overflow: 'linebreak' },
+        headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold' },
+        columnStyles: {
+          0: { cellWidth: 22 },
+          1: { cellWidth: 26 },
+          2: { cellWidth: 'auto' },
+          3: { cellWidth: 24, halign: 'right', textColor: [180, 30, 30] },
+          4: { cellWidth: 24, halign: 'right', textColor: [16, 128, 60] },
+        },
+        margin: { left: 10, right: 10 },
+        didParseCell: function (data) {
+          if (data.section !== 'body') return
+          var kind = rowKind[data.row.index]
+          if (kind === 'header') {
+            data.cell.styles.fillColor = [235, 235, 245]
+            data.cell.styles.fontStyle = 'bold'
+            data.cell.styles.textColor = [30, 30, 60]
+          } else if (kind === 'subtotal') {
+            data.cell.styles.fillColor = [248, 248, 250]
+            data.cell.styles.fontStyle = 'bold'
+          } else if (kind === 'grand') {
+            data.cell.styles.fillColor = [50, 50, 50]
+            data.cell.styles.textColor = data.column.index >= 3 ? (data.column.index === 3 ? [255, 180, 180] : [180, 255, 200]) : 255
+            data.cell.styles.fontStyle = 'bold'
+          }
+        },
+        didDrawPage: function () {
+          doc.setFontSize(7); doc.setTextColor(120)
+          doc.text('Page ' + doc.internal.getCurrentPageInfo().pageNumber, pageW - 10, pageH - 6, { align: 'right' })
+          doc.text('Ambria Ops · Salary register', 10, pageH - 6)
+          doc.setTextColor(0)
+        },
+      })
+
+      await openOrSharePdf(doc, 'salary_register_' + regFrom + '_to_' + regTo + '.pdf')
+      try { await logActivity('SALARY_REGISTER_PDF_EXPORT', regFrom + ' to ' + regTo + ' | ' + empIds.length + ' employees, ' + rows.length + ' entries') } catch (_) {}
+    } catch (err) {
+      alert('PDF export failed: ' + (err.message || err))
+    } finally {
+      setRegPdfBusy(false)
+    }
+  }
 
   useEffect(function () {
     if (canView) loadEmployees()
@@ -145,6 +302,8 @@ function SalaryLedger({ profile, inAdmin }) {
     setSelectedEmp(emp)
     setView('detail')
     setShowDeleted(false)
+    setEntryFrom('')
+    setEntryTo('')
     await loadEntries(emp, false)
     try { logActivity('SALARY_LEDGER_VIEW', emp.employee_name + ' (' + emp.employee_code + ')') } catch (_) {}
   }
@@ -261,6 +420,29 @@ function SalaryLedger({ profile, inAdmin }) {
               className="px-3 py-2 text-xs font-bold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
               📅 Accrue Salaries
             </button>
+          </div>
+          {/* Payroll register — a dated PDF across every employee, not just
+              whoever the search/department filters below happen to show. */}
+          <div className="border-t border-gray-100 mt-3 pt-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Payroll register (PDF)</p>
+            <div className="flex flex-wrap items-end gap-2">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">From</label>
+                <input type="date" value={regFrom} onChange={function (e) { setRegFrom(e.target.value) }}
+                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">To</label>
+                <input type="date" value={regTo} onChange={function (e) { setRegTo(e.target.value) }}
+                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+                  style={{ fontSize: '16px' }} />
+              </div>
+              <button onClick={exportSalaryRegisterPDF} disabled={regPdfBusy || !regFrom || !regTo}
+                className="px-3 py-2 text-xs font-bold rounded-lg bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                {regPdfBusy ? 'Preparing…' : '⬇ Download PDF'}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -381,9 +563,169 @@ function SalaryLedger({ profile, inAdmin }) {
     return Object.assign({}, e, { runningBalance: e.deleted_at ? null : running })
   })
   var displayEntries = withRunning.slice().reverse()
+  // Running balance is computed over every entry above, unfiltered — only
+  // which rows actually show narrows with the date range, same as Vendor
+  // Ledger's own from/to filter.
+  var visibleEntries = displayEntries.filter(function (e) {
+    if (entryFrom && (!e.entry_date || e.entry_date < entryFrom)) return false
+    if (entryTo && (!e.entry_date || e.entry_date > entryTo)) return false
+    return true
+  })
 
   var currentBalance = running
   var balColor = currentBalance > 0 ? 'text-amber-800' : currentBalance < 0 ? 'text-red-700' : 'text-gray-500'
+
+  // ── PDF EXPORT: bank-statement style salary ledger ──
+  async function exportSalaryPDF() {
+    if (pdfBusy || !emp || !entries || entries.length === 0) return
+    setPdfBusy(true)
+    try {
+      var jsPDFmod = await import('jspdf')
+      var jsPDF = jsPDFmod.default || jsPDFmod.jsPDF
+      var autoTableMod = await import('jspdf-autotable')
+      var autoTable = autoTableMod.default || autoTableMod
+
+      var doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      var fontOk = await registerPdfFont(doc)
+      var FONT = fontOk ? 'NotoSans' : 'helvetica'
+      var pageW = doc.internal.pageSize.getWidth()
+      var pageH = doc.internal.pageSize.getHeight()
+
+      // withRunning is already chronological ascending with a running balance
+      // per non-deleted entry — the exact series the on-screen list is built
+      // from. Printed rows are that same series narrowed to the chosen date
+      // range; the opening balance is whatever the running total was just
+      // before the first printed row, so a filtered statement still reads
+      // correctly on its own.
+      var printed = withRunning.filter(function (e) {
+        if (e.deleted_at) return false
+        if (entryFrom && (!e.entry_date || e.entry_date < entryFrom)) return false
+        if (entryTo && (!e.entry_date || e.entry_date > entryTo)) return false
+        return true
+      })
+      var firstIdx = printed.length > 0 ? withRunning.indexOf(printed[0]) : -1
+      var opening = 0
+      for (var bi = firstIdx - 1; bi >= 0; bi--) {
+        if (withRunning[bi].runningBalance != null) { opening = withRunning[bi].runningBalance; break }
+      }
+      var totalCr = 0, totalDb = 0
+      printed.forEach(function (e) { totalCr += (e.credit_paise || 0); totalDb += (e.debit_paise || 0) })
+      var closing = printed.length > 0 ? printed[printed.length - 1].runningBalance : opening
+
+      var mm = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+      function fmtD(iso) {
+        if (!iso) return '—'
+        var d = new Date(iso.length === 10 ? iso + 'T00:00:00' : iso)
+        return String(d.getDate()).padStart(2, '0') + '-' + mm[d.getMonth()] + '-' + d.getFullYear()
+      }
+      function fmtN(paise) {
+        return ((paise || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+      }
+      function particularsLinesFor(e) {
+        var meta = e.metadata || {}
+        var kind = meta.kind ? meta.kind : e.ref_type
+        var lines = [{ kind: 'header', text: kind ? String(kind).toUpperCase().replace(/_/g, ' ') : '—' }]
+        lines.push({ kind: 'desc', text: e.description || '—' })
+        var chipParts = []
+        if (meta.mode) chipParts.push(meta.mode === 'cash' ? 'CASH' : 'BANK')
+        if (meta.salary_month) chipParts.push(meta.salary_month)
+        if (meta.reason) chipParts.push(meta.reason)
+        if (chipParts.length > 0) lines.push({ kind: 'chip', text: chipParts.join('   ·   ') })
+        return lines
+      }
+
+      var periodFrom = entryFrom || (printed[0] && printed[0].entry_date) || ''
+      var periodTo = entryTo || (printed[printed.length - 1] && printed[printed.length - 1].entry_date) || ''
+
+      doc.setFont(FONT, 'bold'); doc.setFontSize(14)
+      doc.text('SALARY STATEMENT', 10, 14)
+      doc.setFont(FONT, 'normal'); doc.setFontSize(8); doc.setTextColor(120)
+      doc.text('Generated ' + new Date().toLocaleString('en-IN'), pageW - 10, 14, { align: 'right' })
+      doc.setTextColor(0)
+
+      doc.setFontSize(9)
+      var y = 22
+      doc.setFont(FONT, 'bold'); doc.text('Employee:', 10, y)
+      doc.setFont(FONT, 'normal'); doc.text((emp.employee_name || '—') + '   (' + (emp.employee_code || '—') + ')', 32, y)
+      y += 5
+      doc.setFont(FONT, 'bold'); doc.text('Period:', 10, y)
+      doc.setFont(FONT, 'normal'); doc.text(fmtD(periodFrom) + '  to  ' + fmtD(periodTo) + '     (' + printed.length + ' entries)', 32, y)
+      y += 7
+
+      autoTable(doc, {
+        startY: y,
+        head: [['Opening Balance', 'Accrued (Credits)', 'Paid (Debits)', 'Closing Balance']],
+        body: [[fmtN(opening), '+' + fmtN(totalCr), '-' + fmtN(totalDb), fmtN(closing)]],
+        styles: { font: FONT, fontSize: 9, halign: 'right', cellPadding: 2 },
+        headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold', halign: 'right', fontSize: 8 },
+        columnStyles: {
+          0: { cellWidth: 47.5 },
+          1: { cellWidth: 47.5, textColor: [140, 90, 20] },
+          2: { cellWidth: 47.5, textColor: [16, 128, 60] },
+          3: { cellWidth: 47.5, fontStyle: 'bold' },
+        },
+        margin: { left: 10, right: 10 },
+      })
+
+      var dateMeta = []
+      var particularsMeta = []
+      var body = printed.map(function (e) {
+        var dm = { top: fmtD(e.entry_date), bottom: '' }
+        dateMeta.push(dm)
+        var pLines = particularsLinesFor(e)
+        particularsMeta.push(pLines)
+        var isCredit = (e.credit_paise || 0) > 0
+        return [
+          plainDateLines(dm, ''),
+          plainParticularsLines(pLines).join('\n'),
+          isCredit ? '' : fmtN(e.debit_paise || 0),
+          isCredit ? fmtN(e.credit_paise || 0) : '',
+          fmtN(e.runningBalance),
+        ]
+      })
+
+      var statementHooks = makeStatementCellHooks(doc, FONT, {
+        dateCol: 0, particularsCol: 1, dateMeta: dateMeta, particularsMeta: particularsMeta,
+        topLabel: 'DATE', bottomLabel: '',
+      })
+
+      autoTable(doc, {
+        startY: doc.lastAutoTable.finalY + 6,
+        head: [['Date', 'Particulars',
+          { content: 'Debit', styles: { halign: 'right' } },
+          { content: 'Credit', styles: { halign: 'right' } },
+          { content: 'Balance', styles: { halign: 'right' } }]],
+        body: body,
+        styles: { font: FONT, fontSize: 8, cellPadding: 1.5, overflow: 'linebreak', valign: 'top' },
+        headStyles: { font: FONT, fillColor: [50, 50, 50], textColor: 255, fontStyle: 'bold' },
+        columnStyles: {
+          0: { cellWidth: 26, fontSize: 7 },
+          1: { cellWidth: 'auto' },
+          2: { cellWidth: 22, halign: 'right', textColor: [180, 30, 30] },
+          3: { cellWidth: 22, halign: 'right', textColor: [16, 128, 60] },
+          4: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+        },
+        margin: { left: 10, right: 10 },
+        didParseCell: statementHooks.didParseCell,
+        willDrawCell: statementHooks.willDrawCell,
+        didDrawCell: statementHooks.didDrawCell,
+        didDrawPage: function () {
+          doc.setFontSize(7); doc.setTextColor(120)
+          doc.text('Page ' + doc.internal.getCurrentPageInfo().pageNumber, pageW - 10, pageH - 6, { align: 'right' })
+          doc.text('Ambria Ops · Salary statement for ' + (emp.employee_name || ''), 10, pageH - 6)
+          doc.setTextColor(0)
+        },
+      })
+
+      var safeName = (emp.employee_name || 'employee').replace(/[^a-z0-9]+/gi, '_')
+      await openOrSharePdf(doc, 'salary_' + safeName + '_' + new Date().toISOString().split('T')[0] + '.pdf')
+      try { await logActivity('SALARY_PDF_EXPORT', (emp.employee_name || '') + ' | ' + printed.length + ' entries') } catch (_) {}
+    } catch (err) {
+      alert('PDF export failed: ' + (err.message || err))
+    } finally {
+      setPdfBusy(false)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -416,6 +758,10 @@ function SalaryLedger({ profile, inAdmin }) {
               className="px-3 py-2 text-xs font-bold rounded-lg bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50">
               ± Adjust
             </button>
+            <button onClick={exportSalaryPDF} disabled={pdfBusy || entries.length === 0}
+              className="px-3 py-2 text-xs font-bold rounded-lg bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+              {pdfBusy ? 'Preparing…' : '⬇ PDF'}
+            </button>
           </div>
         </div>
         <div className="border-t border-gray-100 pt-3">
@@ -433,6 +779,29 @@ function SalaryLedger({ profile, inAdmin }) {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Date filter — narrows which entries show (and the PDF export below),
+          the running balance keeps counting from the employee's true opening. */}
+      <div className="flex flex-wrap items-end gap-2">
+        <div>
+          <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">From</label>
+          <input type="date" value={entryFrom} onChange={function (e) { setEntryFrom(e.target.value) }}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+            style={{ fontSize: '16px' }} />
+        </div>
+        <div>
+          <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">To</label>
+          <input type="date" value={entryTo} onChange={function (e) { setEntryTo(e.target.value) }}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-300"
+            style={{ fontSize: '16px' }} />
+        </div>
+        {(entryFrom || entryTo) && (
+          <button onClick={function () { setEntryFrom(''); setEntryTo('') }}
+            className="px-3 py-2 text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100">
+            Clear dates
+          </button>
+        )}
       </div>
 
       {/* Admin toggle: show deleted */}
@@ -464,11 +833,13 @@ function SalaryLedger({ profile, inAdmin }) {
       {/* Entries list */}
       {entriesLoading ? (
         <p className="text-gray-400 text-sm text-center py-8">Loading entries...</p>
-      ) : displayEntries.length === 0 ? (
-        <p className="text-gray-400 text-sm text-center py-8">No salary entries yet.</p>
+      ) : visibleEntries.length === 0 ? (
+        <p className="text-gray-400 text-sm text-center py-8">
+          {displayEntries.length === 0 ? 'No salary entries yet.' : 'No entries in that date range.'}
+        </p>
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          {displayEntries.map(function (e, idx) {
+          {visibleEntries.map(function (e, idx) {
             var isCredit = (e.credit_paise || 0) > 0
             var isDeleted = !!e.deleted_at
             var amt = isCredit ? (e.credit_paise || 0) : (e.debit_paise || 0)
@@ -480,7 +851,7 @@ function SalaryLedger({ profile, inAdmin }) {
               <div key={e.id}
                 onClick={function () { if (isExpRow) openExpenseDetail(Number(e.ref_id)) }}
                 className={"flex items-start gap-3 px-3 py-3 " +
-                  (idx < displayEntries.length - 1 ? "border-b border-gray-100 " : "") +
+                  (idx < visibleEntries.length - 1 ? "border-b border-gray-100 " : "") +
                   (isDeleted ? "opacity-50" : "") +
                   (isExpRow ? " cursor-pointer hover:bg-indigo-50/40 transition-colors" : "")}>
                 <div className={"w-2 h-2 rounded-full mt-1.5 flex-shrink-0 " + dotColor}></div>

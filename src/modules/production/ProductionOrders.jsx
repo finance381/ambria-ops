@@ -7,6 +7,7 @@ import EventDatePicker from '../../components/ui/EventDatePicker'
 import Icon from '../../components/ui/Icon'
 import CameraCapture from '../../components/ui/CameraCapture'
 import { appConfirm } from '../../components/ui/AppDialog'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 
 var STATUS_LABELS = {
   pending: 'Pending',
@@ -132,7 +133,7 @@ function ProductionOrders({ profile }) {
     if (!date) { setDateEvents([]); return }
     setDateEventsLoading(true)
     var { data } = await supabase.from('events_safe')
-      .select('id, contract_date, function_date, client_name, venue_name, event_name')
+      .select('id, contract_date, function_date, client_name, venue_name, location, event_name, created_user_name')
       .eq('function_date', date)
       .order('event_name')
     setDateEvents(data || [])
@@ -448,8 +449,9 @@ function ProductionOrders({ profile }) {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                       <option value="">Select event...</option>
                       {dateEvents.map(function (ev) {
+                        var venueBit = (ev.venue_name || '') + ((ev.location && ev.location !== ev.venue_name) ? ' / ' + ev.location : '')
                         return <option key={ev.id} value={ev.id}>
-                          {(ev.client_name || '') + ' — ' + (ev.venue_name || '') + ' — ' + (ev.event_name || '')}
+                          {(ev.client_name || '') + ' — ' + venueBit + ' — ' + (ev.event_name || '') + (ev.created_user_name ? ' (by ' + ev.created_user_name + ')' : '')}
                         </option>
                       })}
                     </select>
@@ -684,8 +686,8 @@ function ProductionOrders({ profile }) {
             {activeOrder.deadline && <div><strong className="text-gray-500">Deadline:</strong> {formatDate(activeOrder.deadline)}</div>}
             {activeOrder.cost_paise > 0 && <div><strong className="text-gray-500">Cost:</strong> {formatPaise(activeOrder.cost_paise)}</div>}
           </div>
-          {activeOrder.description && <p className="text-xs text-gray-500">{activeOrder.description}</p>}
-          {activeOrder.notes && <p className="text-xs text-gray-400 italic">{activeOrder.notes}</p>}
+          <DescriptionNote text={activeOrder.description} label="Description" truncate={false} />
+          <DescriptionNote text={activeOrder.notes} label="Notes" truncate={false} />
         </div>
 
         {/* Reference image */}
@@ -810,7 +812,7 @@ function ProductionOrders({ profile }) {
               <div className="flex items-start justify-between mb-2">
                 <div>
                   <p className="text-sm font-bold text-gray-800">{titleCase(o.item_name)}</p>
-                  {o.description && <p className="text-xs text-gray-500 mt-0.5">{o.description}</p>}
+                  <DescriptionNote text={o.description} className="mt-0.5" />
                 </div>
                 <span className={"text-[10px] px-2 py-0.5 rounded-full font-bold uppercase " + (STATUS_COLORS[o.status] || '')}>
                   {STATUS_LABELS[o.status]}

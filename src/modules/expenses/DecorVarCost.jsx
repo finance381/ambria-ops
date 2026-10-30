@@ -8,10 +8,14 @@ import { pushBack, goBack } from '../../lib/backNav'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import Icon from '../../components/ui/Icon'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import Modal from '../../components/ui/Modal'
 import { appConfirm } from '../../components/ui/AppDialog'
 import { buildDecorVarCostXlsx, deliverFile, exportFileName } from '../../lib/decorVarCostExport'
-import { deptCls, deptOrder } from '../../lib/ui'
+import { deptCls } from '../../lib/ui'
+import { funcKeyOf, buildContractBuckets, loadFunctionPickerPool } from '../../lib/functionPicker'
+import FunctionPickerGrid from '../../components/ui/FunctionPickerGrid'
+import { VENUE_LEGEND } from '../../lib/venueColors'
 import { cateringMenuLabel } from '../../lib/constants'
 import {
   SHEETS, getSheet, rowGroups, rowCalc, formulaHint, entryAmountPaise,
@@ -57,30 +61,10 @@ function shortDate(iso) {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ' · ' + d.toLocaleDateString('en-IN', { weekday: 'short' })
 }
 
-// Same grouping as the Expense form's function picker: one evening at one
-// venue can be up to four contracts (one per department), listed once with
-// its departments as chips.
-function funcKeyOf(r) {
-  return [r.client_name || '', r.venue_name || '', r.session || '', (r.event_name || '').trim().toLowerCase()].join('|')
-}
-function groupFunctions(rows) {
-  var byKey = {}
-  var order = []
-  rows.forEach(function (r) {
-    var k = funcKeyOf(r)
-    if (!byKey[k]) { byKey[k] = { key: k, contracts: [] }; order.push(k) }
-    byKey[k].contracts.push(r)
-  })
-  order.forEach(function (k) {
-    byKey[k].contracts.sort(function (a, b) { return deptOrder(a.department) - deptOrder(b.department) })
-  })
-  return order.map(function (k) { return byKey[k] })
-}
-
 function emptyHeader() {
   // Every new sheet starts on a date: then a booking from that day, or a
   // written detail when it isn't one.
-  return { is_function: true, function_date: '', event_id: '', venue_id: '', sub_venue_id: '', event_detail: '', sheet_code: '' }
+  return { is_function: true, function_date: '', event_id: '', extra_event_ids: [], venue_id: '', sub_venue_id: '', event_detail: '', sheet_code: '' }
 }
 
 // The list's groups (kind is the key's first letter):
@@ -183,6 +167,7 @@ function DecorVarCost({ profile, inAdmin }) {
   // ── setup ──
   var [hdr, setHdr] = useState(emptyHeader())
   var [events, setEvents] = useState([])
+  var [allEventRows, setAllEventRows] = useState([])
   var [eventsLoading, setEventsLoading] = useState(false)
   var [setupErr, setSetupErr] = useState('')
   var [setupSaving, setSetupSaving] = useState(false)
@@ -327,7 +312,7 @@ function DecorVarCost({ profile, inAdmin }) {
   async function loadList() {
     setListErr('')
     var q = supabase.from('decor_var_costs')
-      .select('id, serial_no, sheet_code, is_function, function_date, venue_id, sub_venue_id, event_detail, event_id, status, total_paise, created_at, submitted_at, created_by, profiles:created_by(name), event:event_id(event_name, client_name, session, venue_name, catering), decor_var_cost_entries(entry_date, amount_paise)')
+      .select('id, serial_no, sheet_code, is_function, function_date, venue_id, sub_venue_id, event_detail, event_id, extra_event_ids, status, total_paise, created_at, submitted_at, created_by, profiles:created_by(name), event:event_id(event_name, client_name, session, venue_name, catering, created_user_name), decor_var_cost_entries(entry_date, amount_paise)')
       .order('created_at', { ascending: false })
       .limit(300)
     if (scope === 'mine') q = q.eq('created_by', profile.id)
@@ -354,7 +339,7 @@ function DecorVarCost({ profile, inAdmin }) {
     if (rec.is_function && rec.function_date && !rec.event_id) {
       loadEventsByDate(rec.function_date)
     } else {
-      setEvents([])
+      setEvents([]); setAllEventRows([])
     }
     return rec
   }
@@ -366,13 +351,11 @@ function DecorVarCost({ profile, inAdmin }) {
   }
 
   async function loadEventsByDate(dateStr) {
-    if (!dateStr) { setEvents([]); return }
+    if (!dateStr) { setEvents([]); setAllEventRows([]); return }
     setEventsLoading(true)
-    var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, session, client_name, department')
-      .eq('function_date', dateStr)
-      .order('event_name')
-    setEvents(data || [])
+    var pool = await loadFunctionPickerPool(dateStr)
+    setEvents(pool.dateRows)
+    setAllEventRows(pool.allRows)
     setEventsLoading(false)
   }
 
@@ -380,7 +363,7 @@ function DecorVarCost({ profile, inAdmin }) {
   function startNew() {
     setCur(null)
     setHdr(emptyHeader())
-    setEvents([])
+    setEvents([]); setAllEventRows([])
     setSetupErr('')
     enterArea('setup')
   }
@@ -395,6 +378,7 @@ function DecorVarCost({ profile, inAdmin }) {
       h.is_function = true
       h.function_date = f.function_date || ''
       h.event_id = f.event_id ? String(f.event_id) : ''
+      h.extra_event_ids = (f.extra_event_ids || []).map(String)
       h.venue_id = f.venue_id ? String(f.venue_id) : ''
       h.sub_venue_id = f.sub_venue_id ? String(f.sub_venue_id) : ''
       if (g.kind === 'u') h.event_detail = (f.event_detail || '').trim()
@@ -415,7 +399,7 @@ function DecorVarCost({ profile, inAdmin }) {
     setCur(null)
     setHdr(h)
     setSetupErr('')
-    setEvents([])
+    setEvents([]); setAllEventRows([])
     goTo('setup')
   }
 
@@ -425,6 +409,7 @@ function DecorVarCost({ profile, inAdmin }) {
       is_function: !!c.is_function,
       function_date: c.function_date || '',
       event_id: c.event_id ? String(c.event_id) : '',
+      extra_event_ids: (c.extra_event_ids || []).map(String),
       venue_id: c.venue_id ? String(c.venue_id) : '',
       sub_venue_id: c.sub_venue_id ? String(c.sub_venue_id) : '',
       event_detail: c.event_detail || '',
@@ -488,6 +473,7 @@ function DecorVarCost({ profile, inAdmin }) {
       is_function: !!h.is_function,
       function_date: h.is_function ? (h.function_date || null) : null,
       event_id: h.is_function && h.event_id ? Number(h.event_id) : null,
+      extra_event_ids: (h.is_function && h.event_id && Array.isArray(h.extra_event_ids)) ? h.extra_event_ids.map(Number) : [],
       venue_id: h.is_function && h.venue_id ? Number(h.venue_id) : null,
       sub_venue_id: h.is_function && h.sub_venue_id ? Number(h.sub_venue_id) : null,
       // Not for a function, or a function that is not among the bookings.
@@ -904,15 +890,21 @@ function DecorVarCost({ profile, inAdmin }) {
   function groupInfo(g) {
     var n = g.records.length
     var sheets = n + (n === 1 ? ' sheet' : ' sheets')
-    var title, sub
+    var title, sub, salesPerson = ''
     if (g.kind === 'f') {
       // The function's name (booking, else venue), its date underneath.
       var f = g.first
       var ev = f.event
       var venue = venueLabel(f.venue_id, f.sub_venue_id) || (ev && ev.venue_name) || ''
+      // Raw LMS venue_name strings only cover the 4 main venues (the ones
+      // VENUE_LEGEND names) — a sub-venue match from our own venues master
+      // or an unlisted venue name just shows with no code suffix.
+      var vLeg = venue && VENUE_LEGEND.find(function (l) { return venue.indexOf(l.name) !== -1 })
+      var venueDisp = venue ? (venue + (vLeg ? ' (' + vLeg.code + ')' : '')) : ''
       var name = ev ? [ev.event_name || ev.client_name, ev.session].filter(Boolean).join(' · ') : ''
-      title = [name, venue].filter(Boolean).join(' · ') || 'Function'
+      title = [name, venueDisp].filter(Boolean).join(' · ') || 'Function'
       sub = 'Function · ' + formatDate(f.function_date) + ' · ' + sheets
+      salesPerson = (ev && ev.created_user_name) || ''
     } else if (g.kind === 'u') {
       var ud = (g.first.event_detail || '').trim()
       title = ud || 'Not linked to a function'
@@ -929,6 +921,7 @@ function DecorVarCost({ profile, inAdmin }) {
       anyDraft: g.records.some(function (r) { return r.status === 'draft' }),
       title: title,
       sub: sub,
+      salesPerson: salesPerson,
     }
   }
 
@@ -966,6 +959,11 @@ function DecorVarCost({ profile, inAdmin }) {
           <div className="min-w-0 flex-1">
             <p className="font-display text-[15px] font-extrabold tracking-[-0.015em] text-slate-900 leading-snug break-words">{info.title}</p>
             <p className="text-[11.5px] font-semibold text-slate-500">{info.sub}</p>
+            {info.salesPerson && (
+              <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5 truncate">
+                <Icon name="user" size={11} className="shrink-0" />{info.salesPerson}
+              </p>
+            )}
           </div>
           <div className="shrink-0 text-right">
             <p data-notranslate className="font-display text-[16px] font-extrabold tabular-nums tracking-[-0.02em] text-slate-900">{formatPoints(info.total)}</p>
@@ -1088,9 +1086,11 @@ function DecorVarCost({ profile, inAdmin }) {
     var editing = !!(cur && cur.id)
     var subs = hdr.venue_id ? venueSubs(hdr.venue_id) : []
     var fnDone = hdr.is_function ? !!hdr.function_date : true
-    var groups = groupFunctions(events)
-    var picked = hdr.event_id ? groups.filter(function (g) { return g.contracts.some(function (c) { return String(c.id) === hdr.event_id }) }) : []
-    var shown = picked.length === 1 ? picked : groups
+    function pickFunctionById(id) {
+      if (!id) { setH({ event_id: '', extra_event_ids: [] }); return }
+      var row = allEventRows.find(function (r) { return String(r.id) === id })
+      if (row) pickFunction(row)
+    }
     var problem = setupProblem(hdr)
     return (
       <div className="space-y-3">
@@ -1147,36 +1147,13 @@ function DecorVarCost({ profile, inAdmin }) {
               <div>
                 {stepLabel(1, 'Date', !!hdr.function_date)}
                 <EventDatePicker value={hdr.function_date} collapsible includePast placeholder="Pick the date"
-                  onChange={function (d) { setH({ function_date: d, event_id: '' }); loadEventsByDate(d) }} />
+                  onChange={function (d) { setH({ function_date: d, event_id: '', extra_event_ids: [] }); loadEventsByDate(d) }} />
                 {eventsLoading && <p className="mt-2 text-[12.5px] text-slate-500">Loading functions…</p>}
-                {hdr.function_date && !eventsLoading && events.length > 0 && (
+                {hdr.function_date && !eventsLoading && allEventRows.length > 0 && (
                   <div className="mt-2.5">
                     <p className="text-[11.5px] font-semibold text-slate-500 mb-1.5">Pick the function this sheet is for</p>
-                    <div className={'grid gap-2 grid-cols-1 sm:grid-cols-2' + (wide ? ' lg:grid-cols-3' : '')}>
-                      {shown.map(function (g) {
-                        var head = g.contracts[0]
-                        var sel = g.contracts.some(function (c) { return String(c.id) === hdr.event_id })
-                        return (
-                          <button key={g.key} type="button" onClick={function () { if (sel) setH({ event_id: '' }); else pickFunction(head) }}
-                            className={'text-left rounded-xl border px-2.5 py-2 transition-all ' +
-                              (sel ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500' : 'border-slate-200 bg-white hover:border-indigo-300')}>
-                            <span className="flex items-start justify-between gap-1.5">
-                              <span className={'min-w-0 flex-1 block text-[11.5px] font-bold uppercase tracking-[0.03em] leading-snug truncate ' + (sel ? 'text-indigo-900' : 'text-slate-900')}>{head.event_name}</span>
-                              <span className="shrink-0 flex items-center gap-1">
-                                {g.contracts.map(function (c) {
-                                  return <span key={c.id} className={'text-[10.5px] font-bold uppercase leading-none px-1.5 py-[3px] rounded ' + deptCls(c.department)}>{c.department}</span>
-                                })}
-                              </span>
-                            </span>
-                            {head.client_name && <span className={'block text-[11.5px] leading-snug truncate ' + (sel ? 'text-indigo-800' : 'text-slate-700')}>{head.client_name}</span>}
-                            <span className={'block text-[10.5px] leading-snug truncate ' + (sel ? 'text-indigo-600' : 'text-slate-500')}>{(head.venue_name || '') + (head.session ? ' · ' + head.session : '')}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                    {shown !== groups && groups.length > 1 && (
-                      <button type="button" onClick={function () { setH({ event_id: '' }) }} className="mt-1.5 text-[11.5px] font-bold text-indigo-600 px-1">Change function</button>
-                    )}
+                    <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={hdr.event_id} onPick={pickFunctionById}
+                      extraEventIds={hdr.extra_event_ids || []} onExtraChange={function (ids) { setH({ extra_event_ids: ids }) }} wide={wide} />
                   </div>
                 )}
                 {hdr.function_date && !eventsLoading && !hdr.event_id && (
@@ -1813,7 +1790,7 @@ function DecorVarCost({ profile, inAdmin }) {
                   <div className="min-w-0 flex-1">
                     <p className="font-display text-[14px] font-bold tracking-[-0.01em] text-slate-900">{shortDate(e.entry_date)}{isFn ? ' · Function' : ''}</p>
                     <p className="text-[12.5px] font-medium text-slate-500">{n + (n === 1 ? ' row' : ' rows')} · <span data-notranslate className="font-bold text-slate-800 tabular-nums">{formatPoints(e.amount_paise)}</span></p>
-                    {e.remark && <p className="mt-0.5 text-[13px] font-medium text-slate-600 italic break-words">{e.remark}</p>}
+                    <DescriptionNote text={e.remark} label="Remarks" truncate={false} className="mt-1" />
                   </div>
                   <Icon name={dayOpen ? 'chevronUp' : 'chevronDown'} size={16} className="shrink-0 text-slate-400" />
                   </button>

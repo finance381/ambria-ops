@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase, getImageUrl } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
@@ -7,6 +7,7 @@ import Modal from '../../components/ui/Modal'
 import InventoryForm from '../inventory/InventoryForm'
 import { getAdapter } from './adapters/index.jsx'
 import useReviewActions from './useReviewActions'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 var DOMAIN_META = {
   inventory:      { label: 'Inventory',       icon: 'ti-box' },
@@ -55,10 +56,25 @@ function DomainIcon({ domain, className }) {
 function ReviewCard({ item, onOpen, onToggleSelect, selected, selectMode }) {
   var adapter = getAdapter(item.domain)
   var imgUrl = getImageUrl((item.tags || {}).image_path)
+  var imgRef = useRef(null)
+  var [hoverPos, setHoverPos] = useState(null)
   function handleClick() {
     if (selectMode) { onToggleSelect(item); return }
     onOpen(item)
   }
+  // The thumbnail sits inside an overflow-hidden list container, so a CSS
+  // scale-on-hover would just get clipped at the card edge — show the full-size
+  // preview in a portal instead, positioned off the thumbnail's own rect.
+  function showPreview() {
+    if (!imgUrl || !imgRef.current) return
+    var r = imgRef.current.getBoundingClientRect()
+    var PREVIEW = 220
+    var left = r.right + 12
+    if (left + PREVIEW > window.innerWidth - 8) left = r.left - PREVIEW - 12
+    var top = Math.min(Math.max(r.top - PREVIEW / 2 + r.height / 2, 8), window.innerHeight - PREVIEW - 8)
+    setHoverPos({ left: left, top: top })
+  }
+  function hidePreview() { setHoverPos(null) }
   return (
     <div onClick={handleClick}
       className={"flex items-center gap-3 px-3 py-2.5 border-b border-gray-100 last:border-b-0 cursor-pointer hover:bg-indigo-50/30 " + (selected ? "bg-indigo-50" : "")}>
@@ -67,7 +83,16 @@ function ReviewCard({ item, onOpen, onToggleSelect, selected, selectMode }) {
           onClick={function (ev) { ev.stopPropagation() }} className="w-4 h-4 shrink-0" />
       )}
       {imgUrl ? (
-        <img src={imgUrl} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0 border border-gray-200 bg-gray-50" />
+        <>
+          <img ref={imgRef} src={imgUrl} alt="" onMouseEnter={showPreview} onMouseLeave={hidePreview}
+            className="w-8 h-8 rounded-lg object-cover shrink-0 border border-gray-200 bg-gray-50 cursor-zoom-in" />
+          {hoverPos && createPortal(
+            <div style={{ position: 'fixed', left: hoverPos.left, top: hoverPos.top, zIndex: 9999 }} className="pointer-events-none">
+              <img src={imgUrl} alt="" className="w-[220px] h-[220px] object-cover rounded-xl border-2 border-white shadow-2xl bg-white" />
+            </div>,
+            document.body
+          )}
+        </>
       ) : (
         <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 shrink-0">
           <DomainIcon domain={item.domain} className="text-[15px]" />
@@ -105,7 +130,9 @@ function ReviewTimeline({ domain, sourceId }) {
         setEvents(rows)
         var ids = Array.from(new Set(rows.map(function (e) { return e.actor_id })))
         if (ids.length === 0) { setLoading(false); return }
-        supabase.from('profiles').select('id, name').in('id', ids).then(function (r2) {
+        // fn_profile_names, not a direct select -- RLS on profiles only lets
+        // a user read their own row, and most actors here are someone else.
+        supabase.rpc('fn_profile_names', { p_ids: ids }).then(function (r2) {
           if (cancelled) return
           var names = {}
           ;(r2.data || []).forEach(function (p) { names[p.id] = p.name })
@@ -172,6 +199,8 @@ function ActionConfirmSheet({ action, item, onConfirm, onCancel, saving }) {
   var [notes, setNotes] = useState('')
   var needsNotes = !!ACTION_NEEDS_NOTES[action]
 
+  useBackButtonClose(true, onCancel)
+
   function confirm() {
     if (needsNotes && !notes.trim()) return
     onConfirm(notes.trim())
@@ -210,6 +239,8 @@ function ReviewDetailSheet({ item, onClose, onActioned, isMobile, profile }) {
   var [editingOpen, setEditingOpen] = useState(false)
   var [timelineKey, setTimelineKey] = useState(0)
   var actions = useReviewActions(function () { if (onActioned) onActioned() })
+
+  useBackButtonClose(true, onClose)
 
   var canApproveReject = APPROVABLE_DOMAINS.indexOf(item.domain) !== -1
   var canRequestChanges = WORKFLOW_DOMAINS.indexOf(item.domain) !== -1 && (item.status === 'pending' || item.status === 'changes_requested')

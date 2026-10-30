@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom'
 import Icon from './Icon'
 import { useBodyScrollLock } from '../../lib/useBodyScrollLock'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 // Portalled to <body>, not rendered in place. The admin shell wraps each page
 // in `relative isolate`, which makes a stacking context: everything inside it
@@ -13,6 +14,7 @@ function Modal({ open, onClose, title, subtitle, wide, children }) {
   // Before the early return: a hook cannot be called conditionally, and this
   // one already does nothing when it is not locked.
   useBodyScrollLock(open)
+  useBackButtonClose(open, onClose)
   if (!open) return null
 
   return createPortal((

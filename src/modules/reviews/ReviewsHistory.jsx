@@ -51,7 +51,9 @@ function ReviewsHistory({ profile }) {
 
     var actorIds = Array.from(new Set(rows.map(function (e) { return e.actor_id })))
     if (actorIds.length > 0) {
-      var pRes = await supabase.from('profiles').select('id, name').in('id', actorIds)
+      // fn_profile_names, not a direct select -- RLS on profiles only lets a
+      // user read their own row, and most actors here are someone else.
+      var pRes = await supabase.rpc('fn_profile_names', { p_ids: actorIds })
       var names = {}
       ;(pRes.data || []).forEach(function (p) { names[p.id] = p.name })
       setActorNames(names)

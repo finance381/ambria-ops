@@ -27,6 +27,20 @@ export var FINANCE_SCOPE_OPTIONS = [
   { value: 'own_expense_type', label: 'Expense Type', icon: 'ti-tag',      note: 'profiles.expense_type_ids' },
 ]
 
+// Inventory's own "View & Edit" row — same own_sub_dept/own_expense_type
+// values and profile fields Finance already reads, just relabelled for
+// this surface and matched against an item's own category chain
+// (category -> sub_department, category -> ... -> expense type) instead
+// of an expense's own allocation/type. Also what the expense form's Item
+// Name picker reads — it queries inventory_items/catering_store_items
+// directly, so the same RLS scope narrows that dropdown for free.
+export var INVENTORY_SCOPE_OPTIONS = [
+  { value: 'all',              label: 'All',           icon: 'ti-world',   note: 'No restriction' },
+  { value: 'own',              label: 'Mine',          icon: 'ti-user',    note: 'created_by = auth.uid()' },
+  { value: 'own_sub_dept',     label: 'Inventory Sub', icon: 'ti-sitemap', note: 'profiles.sub_category_ids (Assigned Sub-categories), matched directly on the item\'s own sub-category — the finest-grained assignment available' },
+  { value: 'own_expense_type', label: 'Expense Type',  icon: 'ti-tag',     note: 'profiles.expense_type_ids, matched via the item\'s category' },
+]
+
 // ---- Nested feature catalog (mirrors Shell.jsx + AdminShell.jsx UI) ----
 // Node fields:
 //   key        — new namespaced identifier (finance.wallet, finance.ledgers.expense)
@@ -43,7 +57,8 @@ export var PERM_GROUPS = [
   ]},
   { group: 'Inventory', icon: '📦', scope: 'both', children: [
     { key: 'inventory.add',        label: 'Add Items',         scope: 'both' },
-    { key: 'inventory.items',      label: 'View & Edit',       scope: 'both', dataScope: true,
+    { key: 'inventory.items',      label: 'View & Edit',       scope: 'both', dataScope: true, scopeOptions: INVENTORY_SCOPE_OPTIONS,
+      note: 'This scope also narrows the Item Name picker in the expense form (it queries inventory_items/catering_store_items directly) — not just the Inventory module itself.',
       optional: [{ key: 'inventory.items.delete', label: 'Delete items' }] },
     { key: 'inventory.production', label: 'Production Orders', scope: 'both', dataScope: true },
     { key: 'inventory.boxes',      label: 'Boxes',             scope: 'both' },
@@ -79,6 +94,8 @@ export var PERM_GROUPS = [
       note: 'F&B floor staff collecting extra plate revenue on event day' },
     { key: 'events.contracts',           label: 'Contracts',              scope: 'both',
       note: 'The raw per-contract list (balances, pax, venue rental/decor/entertainment breakdown) — separate from events.list so it can be restricted on its own' },
+    { key: 'events.sync_issues',         label: 'Sync Issues',            scope: 'desktop',
+      note: 'LMS contracts the sync job had to auto-cancel because LMS\'s own list stopped returning them — a known LMS-side gap, not something our sync can fix on its own' },
     { key: 'events.quote',               label: 'Quote Calculator',       scope: 'both' },
     { key: 'events.ratecard',            label: 'Rate Card Editor',       scope: 'both' },
   ]},
@@ -90,6 +107,8 @@ export var PERM_GROUPS = [
       ]},
     { key: 'procurement.purchase_orders', label: 'Purchase Orders', scope: 'both', dataScope: true },
     { key: 'procurement.vendors',         label: 'Vendors Master',  scope: 'both' },
+    { key: 'procurement.vendors.quick_create', label: 'Quick-add Vendor', scope: 'both',
+      note: 'Lets someone create a bare-name vendor stub on the fly — from the expense form\'s vendor field, or from Finance → Pay Vendor — without needing full Vendors Master access. The stub is marked "incomplete" until someone fills in GST/bank/categories later.' },
   ]},
   { group: 'Projects', icon: '🏗️', scope: 'both', children: [
     { key: 'projects.view',         label: 'Projects',            scope: 'both', dataScope: true },
@@ -108,6 +127,8 @@ export var PERM_GROUPS = [
         { key: 'finance.wallet.admin', label: 'Manage all wallets (cross-user)' },
         { key: 'finance.wallet.mark_checked', label: 'Mark entries as checked',
           note: 'Also applies to vendor/salary ledger entries (Vendor Ledger, Salary Ledger, Payments), not just Wallet' },
+        { key: 'finance.wallet.mark_checked2', label: 'Mark entries as checked (2nd check)',
+          note: 'A second, independent checked-mark — Transfer and Vendor Payment entries only — for a separate reviewer from whoever does the first check' },
         { key: 'finance.wallet.mark_entered', label: 'Mark entries as entered in Tally',
           note: 'A separate mark from Checked, same surfaces — for bookkeeping entry into Tally rather than finance review' },
         { key: 'finance.wallet.cancel_transfer', label: 'Cancel/reject transfers',
@@ -129,6 +150,8 @@ export var PERM_GROUPS = [
     { key: 'finance.salary_payouts', label: 'Salary Payouts', scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS,
       note: 'Also grant "See salaries" in HR → Employees' },
     { key: 'finance.cost_transfers', label: 'Cost Transfers', scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },
+    { key: 'finance.pay_vendor',     label: 'Pay Vendor',     scope: 'both',
+      note: 'Quick-pay shortcut — search any active vendor and pay them directly, without opening the full Vendor Ledger. Same balances and the same Pay Vendor action as Vendor Ledger\'s own detail view; grant Vendor Ledger too if they also need the full ledger/history.' },
     { key: 'finance.ledgers',        label: 'Ledgers',        scope: 'both', children: [
       { key: 'finance.ledgers.expense',       label: 'Expense Ledger',       scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },
       { key: 'finance.ledgers.event',         label: 'Event Ledger',         scope: 'both', dataScope: true, scopeOptions: FINANCE_SCOPE_OPTIONS },

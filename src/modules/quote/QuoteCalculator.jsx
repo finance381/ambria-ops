@@ -5,12 +5,15 @@ import { useLang } from '../../lib/i18n.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
 import { hasPerm } from '../../lib/permissions'
 import QuickSendDrawer from '../../components/broadcast/QuickSendDrawer'
+import { loadQuoteFormData } from './rateCardData'
 
 /* ═══════════════════════════════════════════════════════
    AMBRIA QUOTE CALCULATOR — Server-Side Pricing
    
-   All rate cards in quote_config table.
-   calculate_quote RPC returns computed values.
+   Rate cards live in the quote_* tables (quote_venues, quote_decor_rate_cards,
+   quote_rental_rate_cells, quote_dj_options, quote_menu_items, etc.) — migrated
+   off the old quote_config jsonb blob in 00144-00149.
+   calculate_quote_v2 RPC returns computed values.
    Client = pure input form + display layer.
    ═══════════════════════════════════════════════════════ */
 
@@ -58,6 +61,13 @@ function classifyDate(val, seasonDates) {
     if (seasonDates[mmdd] != null) return seasonDates[mmdd]
   }
   return 2
+}
+// Calendar days between today and the event date (negative if already past).
+function daysUntil(val) {
+  var d = new Date(val + 'T00:00:00')
+  if (isNaN(d)) return null
+  var today = new Date(); today.setHours(0, 0, 0, 0)
+  return Math.round((d - today) / 86400000)
 }
 // Parses the month threshold a TTD tier's label encodes ("Full rate" -> no
 // threshold/never expires, "3 months" -> 3, "1 month" -> 1). Reading this off
@@ -115,7 +125,19 @@ function fmtDate(val) {
 
 // ── Formatting ──
 function fmtL(n) { return '\u20B9' + (n % 1 === 0 ? n : n.toFixed(2)) + 'L' }
-function fmtRound(n) { return '\u20B9' + (Math.ceil(n * 2) / 2) + 'L' }
+// A quote's fractional lakh rounds to whichever of the three "real" prices \u2014
+// the whole number, the half, or the next whole number \u2014 it reads closest
+// to: .1-.2 down to the whole, .3-.6 to the half, .7-.9 up to the next whole.
+// Rounding frac to 3dp first keeps a value like 12.3 (12.3 - 12 = 0.29999999999999982
+// in floating point) from falling on the wrong side of the 0.3 boundary.
+function roundQuoteLakhs(n) {
+  var base = Math.floor(n)
+  var frac = Math.round((n - base) * 1000) / 1000
+  if (frac < 0.3) return base
+  if (frac < 0.7) return base + 0.5
+  return base + 1
+}
+function fmtRound(n) { return '\u20B9' + roundQuoteLakhs(n) + 'L' }
 function fmtK(n) { return n >= 1 ? '\u20B9' + n + 'L' : '\u20B9' + Math.round(n * 100) + 'K' }
 function fmtINR(n) { return '\u20B9' + Math.round(n * 100000).toLocaleString('en-IN') }
 function rd(n) { return Math.round(n * 100) / 100 }
@@ -1192,16 +1214,18 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
   var [venueList, setVenueList] = useState(null)
 
   useEffect(function () {
-    var CACHE_KEY = 'qc_config_v1'
+    // venues/event_types/inquiry_modes/season_dates moved to the quote_*
+    // tables (Phase 3) — RateCardEditor.jsx writes there now, so this reads
+    // from there too, or edits made in the admin tool would never reach
+    // this form. lms_locations is unrelated to RateCardEditor (synced by
+    // something else entirely) and stays on quote_config.
+    var CACHE_KEY = 'qc_config_v2'
     var TTL = 600000
-    function apply(rows) {
-      rows.forEach(function (row) {
-        if (row.key === 'inquiry_modes' && Array.isArray(row.value)) setInquiryModes(row.value)
-        if (row.key === 'event_types' && Array.isArray(row.value)) setEventTypes(row.value)
-        if (row.key === 'season_dates' && row.value) setSeasonDates(row.value)
-        if (row.key === 'venues' && Array.isArray(row.value)) setVenueList(row.value)
-        if (row.key === 'lms_locations' && row.value) setLmsLocations(row.value)
-      })
+    function apply(data) {
+      if (Array.isArray(data.inquiry_modes)) setInquiryModes(data.inquiry_modes)
+      if (Array.isArray(data.event_types)) setEventTypes(data.event_types)
+      if (data.season_dates) setSeasonDates(data.season_dates)
+      if (Array.isArray(data.venues)) setVenueList(data.venues)
     }
     var fresh = false
     try {
@@ -1211,11 +1235,15 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
         if (c && c.data) { apply(c.data); fresh = Date.now() - c.t < TTL }
       }
     } catch (e) {}
-    if (fresh) return
-    supabase.from('quote_config').select('key, value').in('key', ['inquiry_modes', 'event_types', 'season_dates', 'venues', 'lms_locations']).then(function (res) {
+    if (!fresh) {
+      loadQuoteFormData().then(function (data) {
+        apply(data)
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), data: data })) } catch (e) {}
+      })
+    }
+    supabase.from('quote_config').select('key, value').eq('key', 'lms_locations').then(function (res) {
       if (!res.data) return
-      apply(res.data)
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), data: res.data })) } catch (e) {}
+      res.data.forEach(function (row) { if (row.key === 'lms_locations' && row.value) setLmsLocations(row.value) })
     })
   }, [])
 
@@ -1284,7 +1312,11 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
     if (cached) { calcSeq.current++; setCalcResult(cached); setCalcLoading(false); return }
     var seq = ++calcSeq.current
     setCalcLoading(true)
-    var { data, error } = await supabase.rpc('calculate_quote', {
+    // v2 reads the relational quote_* tables instead of quote_config's
+    // jsonb — verified byte-identical to calculate_quote across every real
+    // venue/slot/date-category/decor-tier/DJ-option/menu/TTD combination
+    // before this switch (see the Phase 1 migrations, 00144-00149).
+    var { data, error } = await supabase.rpc('calculate_quote_v2', {
       p_venue_id: venueId,
       p_pax: pax,
       p_slot: slot,
@@ -1434,6 +1466,13 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
     setEventDate(val)
     setTtdIdx(autoTtdIdx(val, ttdData))
     var c = classifyDate(val, seasonDates)
+    // A King's Date this close in prices as Perfect Comp instead — there's
+    // no realistic lead time left to book it at a King's Date rate. Perfect
+    // Comp and Filler dates are left exactly as the calendar tags them. The
+    // calendar's own tag still shows separately as "(auto: ...)" next to the
+    // date, it just isn't what's applied.
+    var days = daysUntil(val)
+    if (c === 0 && days != null && days <= 45) c = 1
     if (c >= 0) setCatOverride(c)
   }
 

@@ -124,17 +124,24 @@ function InventoryLedger({ profile }) {
     try {
       var results = await Promise.all([
         fetchAll(supabase.from('inventory_items')
-          .select('id, name, inventory_id, qty, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
+          .select('id, name, inventory_id, qty, rate_paise, image_path, categories(id, name, sub_department_id), sub_categories(id, name)')
           .order('name', { ascending: true })),
         fetchAll(supabase.from('catering_store_items')
-          .select('id, name, inventory_id, qty, rate_paise, image_path, categories(id, name), sub_categories(id, name)')
+          .select('id, name, inventory_id, qty, rate_paise, image_path, categories(id, name, sub_department_id), sub_categories(id, name)')
           .order('name', { ascending: true })),
         fetchAll(supabase.from('v_item_purchase_history')
-          .select('item_id, item_source, vendor_name, qty, unit, rate_paise, amount_paise, txn_date, source_type, source_id, source_ref'))
+          .select('item_id, item_source, vendor_name, qty, unit, rate_paise, amount_paise, txn_date, source_type, source_id, source_ref')),
+        fetchAll(supabase.from('sub_departments').select('id, name, code').eq('active', true))
       ])
       var invRes = results[0] || []
       var csRes = results[1] || []
       var histRes = results[2] || []
+      var subDeptRes = results[3] || []
+      // "Source" here means the Inventory Master sub-department a category
+      // belongs to (ADI, CS, KE, ...) — the grouping one level above Category
+      // — not which of the two item tables the row lives in.
+      var subDeptById = {}
+      subDeptRes.forEach(function (sd) { subDeptById[sd.id] = (sd.code ? sd.code + ' — ' : '') + sd.name })
 
       // Creator name lookup: expenses.user_id (source_type='expense') + purchase_orders.created_by (source_type='po')
       var expIds = []
@@ -193,7 +200,10 @@ function InventoryLedger({ profile }) {
       }
       var nameById = {}
       if (allUserIds.length > 0) {
-        var { data: profRows } = await supabase.from('profiles').select('id, name').in('id', allUserIds)
+        // fn_profile_names, not a direct select -- RLS on profiles only lets
+        // a user read their own row, and most of this history is someone
+        // else's.
+        var { data: profRows } = await supabase.rpc('fn_profile_names', { p_ids: allUserIds })
         ;(profRows || []).forEach(function (p) { nameById[p.id] = p.name || null })
       }
       histRes = histRes.map(function (h) {
@@ -210,6 +220,7 @@ function InventoryLedger({ profile }) {
           _key: 'inventory:' + r.id, _source: 'inventory', id: r.id,
           name: r.name || '', code: r.inventory_id || '',
           cat: r.categories && r.categories.name || '', subcat: r.sub_categories && r.sub_categories.name || '',
+          subDept: (r.categories && subDeptById[r.categories.sub_department_id]) || '',
           rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0),
           img: r.image_path ? (supabase.storage.from('images').getPublicUrl(r.image_path).data?.publicUrl || '') : ''
         })
@@ -219,6 +230,7 @@ function InventoryLedger({ profile }) {
           _key: 'catering_store:' + r.id, _source: 'catering_store', id: r.id,
           name: r.name || '', code: r.inventory_id || '',
           cat: r.categories && r.categories.name || '', subcat: r.sub_categories && r.sub_categories.name || '',
+          subDept: (r.categories && subDeptById[r.categories.sub_department_id]) || '',
           rate_paise: r.rate_paise || 0, live_qty: Number(r.qty || 0),
           img: r.image_path ? (supabase.storage.from('images').getPublicUrl(r.image_path).data?.publicUrl || '') : ''
         })
@@ -334,19 +346,36 @@ function InventoryLedger({ profile }) {
     return Object.keys(s).sort()
   }, [history])
 
-  var allCats = useMemo(function () {
+  // Source (Inventory Master sub-department) is always every sub-dept any
+  // item actually belongs to — nothing narrows it from above.
+  var allSourceSubDepts = useMemo(function () {
     var s = {}
-    items.forEach(function (i) { if (i.cat) s[i.cat] = true })
+    items.forEach(function (i) { if (i.subDept) s[i.subDept] = true })
     return Object.keys(s).sort()
   }, [items])
+
+  // Category cascades from Source, Sub-category cascades from both Source
+  // and Category — each level only ever offers what the one(s) above it
+  // actually contain, same rule the Category → Sub-category step already
+  // used before Source existed.
+  var allCats = useMemo(function () {
+    var s = {}
+    items.forEach(function (i) {
+      if (i.cat && (sourceFilters.length === 0 || sourceFilters.indexOf(i.subDept) !== -1)) s[i.cat] = true
+    })
+    return Object.keys(s).sort()
+  }, [items, sourceFilters])
 
   var allSubCats = useMemo(function () {
     var s = {}
     items.forEach(function (i) {
-      if (i.subcat && (catFilters.length === 0 || catFilters.indexOf(i.cat) !== -1)) s[i.subcat] = true
+      if (!i.subcat) return
+      if (sourceFilters.length > 0 && sourceFilters.indexOf(i.subDept) === -1) return
+      if (catFilters.length > 0 && catFilters.indexOf(i.cat) === -1) return
+      s[i.subcat] = true
     })
     return Object.keys(s).sort()
-  }, [items, catFilters])
+  }, [items, sourceFilters, catFilters])
 
   // Everything the search and the four filters leave, with the no-history
   // rule applied or not. Asked both ways because "17 of 2,785" reads as the
@@ -356,7 +385,7 @@ function InventoryLedger({ profile }) {
     var q = search.trim().toLowerCase()
     return items.filter(function (i) {
       var rows = historyByItem[i._key] || []
-      if (sourceFilters.length > 0 && sourceFilters.indexOf(i._source) === -1) return false
+      if (sourceFilters.length > 0 && sourceFilters.indexOf(i.subDept) === -1) return false
       if (catFilters.length > 0 && catFilters.indexOf(i.cat) === -1) return false
       if (subCatFilters.length > 0 && subCatFilters.indexOf(i.subcat) === -1) return false
       if (vendorFilters.length > 0) {
@@ -785,32 +814,40 @@ function InventoryLedger({ profile }) {
             )}
           </div>
           <div className="grid grid-cols-1 @2xl:grid-cols-2 @4xl:grid-cols-5 gap-x-2 gap-y-3">
+          {/* Source = the Inventory Master sub-department a category belongs
+              to (ADI, CS, KE, ...), one level above Category. Choosing one
+              empties Category and Sub-category below it, same reasoning as
+              Category clearing Sub-category — a pick made before narrowing
+              might no longer belong under the new source. */}
           <FilterField label="Source" note={sourceFilters.length > 0 ? sourceFilters.length + ' chosen' : null}>
             <MultiSearchDropdown
-              items={[{ value: 'inventory', label: 'Inventory' }, { value: 'catering_store', label: 'Catering Store' }]}
+              items={allSourceSubDepts.map(function (s) { return { value: s, label: s } })}
               values={sourceFilters}
-              onChange={setSourceFilters}
+              onChange={function (next) { setSourceFilters(next); setCatFilters([]); setSubCatFilters([]) }}
               placeholder="All sources" />
           </FilterField>
           {/* Choosing a category empties the sub-categories on purpose — the
               ones that were chosen may not belong to it. Said here, because a
               field clearing itself with no explanation reads as a fault. */}
-          <FilterField label="Category" note={catFilters.length > 0 ? catFilters.length + ' chosen' : null}>
+          <FilterField label="Category"
+            note={catFilters.length > 0 ? catFilters.length + ' chosen'
+              : sourceFilters.length > 0 ? allCats.length + ' in that source' : null}
+            noteTone={catFilters.length > 0 ? 'active' : 'quiet'}>
             <MultiSearchDropdown
               items={allCats.map(function (c) { return { value: c, label: c } })}
               values={catFilters}
               onChange={function (next) { setCatFilters(next); setSubCatFilters([]) }}
-              placeholder="All categories" />
+              placeholder={sourceFilters.length > 0 && allCats.length === 0 ? 'None in that source' : 'All categories'} />
           </FilterField>
           <FilterField label="Sub-category"
             note={subCatFilters.length > 0 ? subCatFilters.length + ' chosen'
-              : catFilters.length > 0 ? allSubCats.length + ' in those categories' : null}
+              : (catFilters.length > 0 || sourceFilters.length > 0) ? allSubCats.length + ' in those categories' : null}
             noteTone={subCatFilters.length > 0 ? 'active' : 'quiet'}>
             <MultiSearchDropdown
               items={allSubCats.map(function (s) { return { value: s, label: s } })}
               values={subCatFilters}
               onChange={setSubCatFilters}
-              placeholder={catFilters.length > 0 && allSubCats.length === 0 ? 'None in those categories' : 'All sub-categories'} />
+              placeholder={(catFilters.length > 0 || sourceFilters.length > 0) && allSubCats.length === 0 ? 'None in those categories' : 'All sub-categories'} />
           </FilterField>
           <FilterField label="Vendor" note={vendorFilters.length > 0 ? vendorFilters.length + ' chosen' : null}>
             <MultiSearchDropdown

@@ -1,5 +1,6 @@
 import { supabase, getImageUrl } from '../../../lib/supabase'
 import { formatDate } from '../../../lib/format'
+import DescriptionNote from '../../../components/ui/DescriptionNote'
 
 async function fetchDetail(sourceId) {
   var res = await supabase.from('catering_store_items')
@@ -31,7 +32,7 @@ function renderDetailBody(row) {
         <div><p className="text-[10px] font-bold text-gray-400 uppercase">Department</p><p className="text-gray-900">{row.department || '—'}</p></div>
         <div><p className="text-[10px] font-bold text-gray-400 uppercase">Submitted by</p><p className="text-gray-900">{row.profiles ? row.profiles.name : '—'}</p></div>
       </div>
-      {row.notes && <p className="text-sm text-gray-500 italic">"{row.notes}"</p>}
+      <DescriptionNote text={row.notes} label="Notes" truncate={false} />
       {allocs.length > 0 && (
         <div>
           <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Venue allocations</p>

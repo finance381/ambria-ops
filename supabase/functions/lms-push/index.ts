@@ -21,30 +21,24 @@ const LEGACY_IDX_TO_ID: Record<number, string> = {
   0: "pushpanjali", 1: "emerald_green", 3: "aura", 4: "valencia",
 }
 
-// Walks nested venues config; returns parent's LMS venue id + name, plus leafId + parentId for tier-label lookups
-function resolveVenue(venuesConfig: any[] | null, q: any): { lmsVenueId: string; lmsVenueName: string; leafId: string; parentId: string } {
+// Resolves against the flat quote_venues table (Phase 3 of the quote
+// pricing migration moved venues off quote_config's nested jsonb) — a leaf
+// row's own parent_id already says which parent it belongs to, so no tree
+// walk is needed any more. Returns parent's LMS venue id + name, plus
+// leafId + parentId for tier-label lookups.
+function resolveVenue(venueRows: any[] | null, q: any): { lmsVenueId: string; lmsVenueName: string; leafId: string; parentId: string } {
   const fallback = { lmsVenueId: "3", lmsVenueName: "Ambria Pushpanjali", leafId: "", parentId: "" }
   let venueId: string | null = q.venue_id || null
   if (!venueId && q.venue_idx != null) venueId = LEGACY_IDX_TO_ID[q.venue_idx] || null
   if (!venueId) return fallback
-  if (!Array.isArray(venuesConfig)) return Object.assign({}, fallback, { leafId: venueId, parentId: venueId })
+  if (!Array.isArray(venueRows)) return Object.assign({}, fallback, { leafId: venueId, parentId: venueId })
 
-  for (const p of venuesConfig) {
-    const hasSubs = Array.isArray(p.sub_venues) && p.sub_venues.length > 0
-    if (!hasSubs && p.id === venueId) {
-      const id = String(p.lms_venue_id || "3")
-      return { lmsVenueId: id, lmsVenueName: VENUE_NAME_MAP[id] || p.name || fallback.lmsVenueName, leafId: venueId, parentId: p.id }
-    }
-    if (hasSubs) {
-      for (const s of p.sub_venues) {
-        if (s.id === venueId) {
-          const id = String(p.lms_venue_id || "3")
-          return { lmsVenueId: id, lmsVenueName: VENUE_NAME_MAP[id] || p.name || fallback.lmsVenueName, leafId: venueId, parentId: p.id }
-        }
-      }
-    }
-  }
-  return Object.assign({}, fallback, { leafId: venueId, parentId: venueId })
+  const leaf = venueRows.find((v) => v.id === venueId)
+  if (!leaf) return Object.assign({}, fallback, { leafId: venueId, parentId: venueId })
+  const parentId = leaf.parent_id || leaf.id
+  const parent = leaf.parent_id ? venueRows.find((v) => v.id === leaf.parent_id) : leaf
+  const id = String((parent && parent.lms_venue_id) || "3")
+  return { lmsVenueId: id, lmsVenueName: VENUE_NAME_MAP[id] || (parent && parent.name) || fallback.lmsVenueName, leafId: venueId, parentId: parentId }
 }
 
 const MENU_ID_MAP: Record<string, string> = {
@@ -82,13 +76,13 @@ const DJ_LABELS: Record<number, string> = {
   0: "DJ + LED", 1: "Std DJ - No LED",
 }
 
-// Looks up config.<section>[venueKey].labels[tierIdx]. Returns null if missing/empty.
-function lookupTierLabel(sectionCfg: any, venueKey: string, tierIdx: number): string | null {
-  if (!sectionCfg || !venueKey) return null
-  const sec = sectionCfg[venueKey]
-  if (!sec || !Array.isArray(sec.labels)) return null
-  const label = sec.labels[tierIdx]
-  return (typeof label === "string" && label.length > 0) ? label : null
+// Tier rows ordered by sort_order (quote_decor_rate_cards or
+// quote_dj_options — same shape, a tier_label column) — position tierIdx
+// in that order is exactly what decor_idx/dj_idx on the saved quote means.
+function tierLabelFromRows(rows: any[] | null, tierIdx: number): string | null {
+  if (!Array.isArray(rows) || rows.length === 0) return null
+  const row = rows[tierIdx]
+  return row && typeof row.tier_label === "string" && row.tier_label.length > 0 ? row.tier_label : null
 }
 
 // Converts paise to half-rupees for LMS (stores half the real figure).
@@ -159,27 +153,27 @@ serve(async (req) => {
     const phone = (q.guest_phone || "").replace(/\D/g, "").slice(-10)
     if (!phone || phone.length < 10) throw new Error("Valid 10-digit phone required")
 
-    // Load quote_config: venues (leaf→parent) + decor/dj (live tier labels)
-    const { data: cfgRows } = await db
-      .from("quote_config")
-      .select("key, value")
-      .in("key", ["venues", "decor", "dj"])
-    const cfg: Record<string, any> = {}
-    for (const r of (cfgRows || [])) cfg[r.key] = r.value
-    const venuesConfig = (cfg.venues as any[]) || null
-    const decorCfg = cfg.decor || {}
-    const djCfg = cfg.dj || {}
+    // Venues (leaf→parent) + decor/dj live tier labels — moved off
+    // quote_config's jsonb to real tables (Phase 3 of the quote pricing
+    // migration); venue has to resolve first since decor/dj are looked up
+    // per-venue.
+    const { data: venueRows } = await db.from("quote_venues").select("id, parent_id, name, lms_venue_id")
 
     // Build LMS payload
     const menuIdx = q.menu_idx ?? 3
     const menuKey = menuIdx + "-" + (q.food_pref ?? 0)
     const funcType = FUNC_TYPE_MAP[q.event_type] || "3"
     const slotTiming = SLOT_TIMING[q.slot ?? 0] || "18:00"
-    const { lmsVenueId: venueId, lmsVenueName: venueName, leafId, parentId } = resolveVenue(venuesConfig, q)
+    const { lmsVenueId: venueId, lmsVenueName: venueName, leafId, parentId } = resolveVenue(venueRows, q)
 
-    // Resolve live decor + DJ tier labels (fall back to hardcoded map if config lacks the tier)
-    const decorLabel = lookupTierLabel(decorCfg, leafId, q.decor_idx ?? 0) || DECOR_LABELS[q.decor_idx ?? 0] || "Premium"
-    const djLabel = lookupTierLabel(djCfg, parentId, q.dj_idx ?? 0) || DJ_LABELS[q.dj_idx ?? 0] || "DJ + LED"
+    const [{ data: decorRows }, { data: djRows }] = await Promise.all([
+      leafId ? db.from("quote_decor_rate_cards").select("tier_label").eq("venue_id", leafId).eq("is_lunch_override", false).order("sort_order") : Promise.resolve({ data: null }),
+      parentId ? db.from("quote_dj_options").select("tier_label:label").eq("parent_venue_id", parentId).order("sort_order") : Promise.resolve({ data: null }),
+    ])
+
+    // Resolve live decor + DJ tier labels (fall back to hardcoded map if the table lacks the tier)
+    const decorLabel = tierLabelFromRows(decorRows, q.decor_idx ?? 0) || DECOR_LABELS[q.decor_idx ?? 0] || "Premium"
+    const djLabel = tierLabelFromRows(djRows, q.dj_idx ?? 0) || DJ_LABELS[q.dj_idx ?? 0] || "DJ + LED"
 
     // Use deal breakdowns when negotiated, else quote tier
     const hasDeal = q.deal_value_paise != null && q.deal_value_paise > 0

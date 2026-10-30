@@ -33,6 +33,14 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}))
     const contractNo = (body.contract_no || "").toString().trim()
     if (!contractNo) throw new Error("Missing contract_no")
+    // LMS numbers each department's contracts in its own sequence (see
+    // sync-events: Venue/Decor/Catering/Entertainment each hit a separate
+    // get_*_contract_information_list endpoint) — contract_no is NOT unique
+    // across departments. Without a department filter, get_all_payment_collection
+    // matches pay_contractno against every department's records, so a Decor
+    // contract and an unrelated Venue contract sharing the same number both
+    // come back. Passed through from the caller's own events.department.
+    const department = (body.department || "").toString().trim()
 
     const lmsBase = Deno.env.get("LMS_API_BASE") || "https://gyv.inqcrm.in"
     const lmsUser = Deno.env.get("LMS_API_USER") || Deno.env.get("LMS_USER_ID") || "1"
@@ -59,7 +67,7 @@ serve(async (req) => {
         pay_from_date: lmsDate(fromDate),
         pay_pay_upto: lmsDate(uptoDate),
         pay_pay_mode: "",
-        pay_pay_dept: "",
+        pay_pay_dept: department,
         pay_pay_user: "",
         pay_guest_filter: "",
         pay_perpage: "",
@@ -72,14 +80,23 @@ serve(async (req) => {
     // LMS reports amounts as plain rupee decimals ("25000.0") — converted to
     // paise here so this matches the unit every other figure in Ambria Ops
     // already uses (formatPoints et al. all expect paise).
+    //
+    // Ambria Ops' own cash figures are always stored at a tenth of the real
+    // amount (the wallet, event_ledger — "cash ×10" toggles everywhere
+    // reveal the true one from that stored value). LMS's own API reports the
+    // real, un-hidden rupee amount for cash, so it's divided by 10 here, once,
+    // at the source — the same ×10 toggles already used for every other cash
+    // figure then reveal the true amount for these rows too, with no special
+    // casing needed anywhere that reads this response.
     const rows = Array.isArray(lmsData.data) ? lmsData.data : []
     const mapped = rows.map(function (r: any) {
+      const isCash = String(r.pr_paymode || "").toLowerCase().indexOf("cash") !== -1
       return {
         receive_id: r.pr_receive_id || null,
         date: r.pr_date || null,
-        amount_paise: Math.round(Number(r.pr_amount || 0) * 100),
-        deduct_paise: Math.round(Number(r.pr_deduct || 0) * 100),
-        net_amount_paise: Math.round(Number(r.pr_netamount || 0) * 100),
+        amount_paise: Math.round(Number(r.pr_amount || 0) * (isCash ? 10 : 100)),
+        deduct_paise: Math.round(Number(r.pr_deduct || 0) * (isCash ? 10 : 100)),
+        net_amount_paise: Math.round(Number(r.pr_netamount || 0) * (isCash ? 10 : 100)),
         pay_mode: r.pr_paymode || null,
         receive_type: r.pr_receive_typ || null,
         remarks: r.pr_remarks || null,
@@ -90,6 +107,26 @@ serve(async (req) => {
         receipt_url: r.attachpath || null,
       }
     })
+
+    // These rows now show up in EventLedger's own Transactions tab, where
+    // they can be marked Checked/Entered the same as a real wallet
+    // collection — that state lives in lms_payment_marks, keyed by receive_id.
+    const receiveIds = mapped.map(function (m: any) { return m.receive_id }).filter(Boolean)
+    if (receiveIds.length > 0) {
+      const { data: marks } = await authClient
+        .from("lms_payment_marks")
+        .select("receive_id, checked_by, checked_at, tally_entered_by, tally_entered_at")
+        .in("receive_id", receiveIds)
+      const markById: Record<string, any> = {}
+      ;(marks || []).forEach(function (m: any) { markById[m.receive_id] = m })
+      mapped.forEach(function (m: any) {
+        const mark = markById[m.receive_id]
+        m.checked_by = mark ? mark.checked_by : null
+        m.checked_at = mark ? mark.checked_at : null
+        m.tally_entered_by = mark ? mark.tally_entered_by : null
+        m.tally_entered_at = mark ? mark.tally_entered_at : null
+      })
+    }
 
     return new Response(
       JSON.stringify({ data: mapped }),

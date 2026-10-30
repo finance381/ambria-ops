@@ -6,6 +6,7 @@ import { useRealtime } from '../../lib/useRealtime'
 import { hasPerm } from '../../lib/permissions'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal'
 import Modal from '../../components/ui/Modal'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import InventoryForm from '../inventory/InventoryForm'
 
 var PAGE_SIZE = 20
@@ -53,8 +54,12 @@ function ItemReceipts({ profile, onCountChange }) {
 
   // Submitter list — one shot
   useEffect(function () {
-    supabase.from('profiles').select('id, name').eq('active', true).order('name').then(function (res) {
-      setSubmitterOptions(res.data || [])
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and this filter needs everyone. Not filtered
+    // to active=true (the RPC doesn't carry that column) -- a former
+    // employee's name staying selectable here is harmless.
+    supabase.rpc('fn_profile_names').then(function (res) {
+      setSubmitterOptions((res.data || []).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') }))
     })
   }, [])
 
@@ -203,7 +208,7 @@ function ItemReceipts({ profile, onCountChange }) {
               )}
               {ir.notes && <span className="text-[11px] text-gray-400 truncate">{ir.notes}</span>}
             </div>
-            {r.description && <p className="text-[11px] text-gray-400 truncate mt-1">Expense: {r.description}</p>}
+            <DescriptionNote text={r.description} label="Expense" className="mt-1" />
           </div>
         )
       })}
@@ -364,8 +369,7 @@ function ReceiveModal({ receipt, profile, onClose, onDone, onOpenExpense }) {
           </div>
           {receipt.description && (
             <div className="mt-2 pt-2 border-t border-gray-200">
-              <p className="text-[11px] text-gray-400 uppercase">Description</p>
-              <p className="text-xs text-gray-700 mt-0.5">{receipt.description}</p>
+              <DescriptionNote text={receipt.description} label="Description" truncate={false} className="" />
             </div>
           )}
           {onOpenExpense && (

@@ -8,6 +8,7 @@ import SearchDropdown from '../../components/ui/SearchDropdown'
 import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
 import ReverseDialog from '../../components/ui/ReverseDialog'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 var TYPE_LABEL = {
   advance: 'Advance', running_bill: 'Running Bill', retention: 'Retention',
@@ -32,6 +33,7 @@ function ProjectLedger({ profile, project, onBack }) {
   var [showAdd, setShowAdd] = useState(false)
   var [form, setForm] = useState({ entry_type: 'advance', vendor_id: '', amount_rupees: '', payment_mode: 'cash', reference: '', description: '' })
   var [saving, setSaving] = useState(false)
+  useBackButtonClose(showAdd, function () { if (!saving) setShowAdd(false) })
   var [error, setError] = useState('')
 
   useEffect(function () {

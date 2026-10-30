@@ -14,6 +14,7 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import Icon from '../../components/ui/Icon'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import EnteredMark from '../../components/ui/EnteredMark'
 import { T, CARD, FIELD_SEARCH, ON, OFF, BTN, STATUS_RAIL } from '../../lib/ui'
 import EventDatePicker from '../../components/ui/EventDatePicker'
@@ -230,8 +231,10 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
       setSubDeptOptions(sds)
       setDeptOptions(res[1].data || [])
     })
-    supabase.from('profiles').select('id, name').order('name').then(function (res) {
-      var rows = res.data || []
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and this list/filter needs everyone.
+    supabase.rpc('fn_profile_names').then(function (res) {
+      var rows = (res.data || []).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') })
       if (showApproveTab) setUserOptions(rows)
       var m = {}
       rows.forEach(function (p) { m[p.id] = p.name || '' })
@@ -1093,9 +1096,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
                       ? exp.expense_types.name + (exp.expense_sub_types?.name ? ' › ' + exp.expense_sub_types.name : '')
                       : 'Expense'}
                   </p>
-                  {exp.description && (
-                    <p className="text-[12px] text-slate-600 leading-snug truncate">{exp.description}</p>
-                  )}
+                  <DescriptionNote text={exp.description} />
                   {/* status chip rides the meta line rather than claiming a
                       second row in the amount column */}
                   <p className="mt-1 flex items-center gap-1.5 min-w-0">

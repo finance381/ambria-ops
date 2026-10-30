@@ -10,6 +10,7 @@ import QuickSendDrawer from '../../components/broadcast/QuickSendDrawer'
 import SubscriberCard from '../../components/ui/SubscriberCard'
 import Icon from '../../components/ui/Icon'
 import { appConfirm } from '../../components/ui/AppDialog'
+import EventDatePicker from '../../components/ui/EventDatePicker'
 
 var lastSyncTime = 0
 var SYNC_COOLDOWN = 5 * 60 * 1000
@@ -97,10 +98,14 @@ function Events({ profile }) {
   var [search, setSearch] = useState('')
   var [venueFilter, setVenueFilter] = useState('')
   var [deptFilter, setDeptFilter] = useState('')
+  var [dateFrom, setDateFrom] = useState('')
+  var [dateTo, setDateTo] = useState('')
+  var [tentativeFilter, setTentativeFilter] = useState('')
+  var [showGroupLedger, setShowGroupLedger] = useState(false)
   var [departments, setDepartments] = useState([])
   var [page, setPage] = useState(1)
   var [perPage, setPerPage] = useState(24)
-  var [showLedger, setShowLedger] = useState(false)
+  var [filtersOpen, setFiltersOpen] = useState(false)
   var [extraPlateSummary, setExtraPlateSummary] = useState(null)
   var [linkedProjects, setLinkedProjects] = useState([])
   var refData = useReferenceData()
@@ -295,11 +300,20 @@ function Events({ profile }) {
     var matchVenue = !venueFilter || g.venues.includes(venueFilter) ||
       g.functions.some(function (f) { return f.venue_name === venueFilter })
     var matchDept = !deptFilter || g.functions.some(function (f) { return f.department === deptFilter })
-    return matchSearch && matchVenue && matchDept
+    var matchTentative = !tentativeFilter || (tentativeFilter === 'yes'
+      ? g.functions.some(function (f) { return f.is_tentative })
+      : g.functions.every(function (f) { return !f.is_tentative }))
+    // A group spans date_start..date_end (its earliest to latest function) —
+    // it matches when that span overlaps the picked range at all, so a
+    // multi-day booking still shows up for a "From" that lands mid-event.
+    var matchDate = (!dateFrom || !g.date_end || g.date_end >= dateFrom) &&
+      (!dateTo || !g.date_start || g.date_start <= dateTo)
+    return matchSearch && matchVenue && matchDept && matchTentative && matchDate
   })
 
   var totalPages = Math.ceil(filtered.length / perPage)
   var paged = filtered.slice((page - 1) * perPage, page * perPage)
+  var eventsFilterCount = [venueFilter, deptFilter, tentativeFilter, dateFrom, dateTo].filter(Boolean).length
 
   if (loading) {
     return <p className="text-slate-500 text-[13px] text-center py-10">Loading events…</p>
@@ -325,8 +339,10 @@ function Events({ profile }) {
 
   return (
     <div className="space-y-4">
-      {/* Toolbar: search and the two filters on one line, the sync tools
-          and page size at its end; the counts and the last sync under it. */}
+      {/* Toolbar: search, a single Filters button holding venue/dept/dates,
+          the sync tools and page size at its end; the counts and the last
+          sync under it. Four controls spread across the row each said "All"
+          most of the time — the button now says how many are actually set. */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] p-3 space-y-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[220px]">
@@ -337,28 +353,14 @@ function Events({ profile }) {
               className={CTL + ' w-full pl-9 pr-3 placeholder:text-slate-400'}
               style={{ fontSize: '16px' }} />
           </div>
-          <div className="relative w-full sm:w-56">
-            <Icon name="mapPin" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <select value={venueFilter}
-              onChange={function (e) { setVenueFilter(e.target.value); setPage(1) }}
-              aria-label="Venue"
-              className={CTL + ' w-full pl-8 pr-8 appearance-none ' + (venueFilter ? '' : 'text-slate-500')}>
-              <option value="">All venues</option>
-              {venueNames.map(function (v) { return <option key={v} value={v}>{venueMap[v] ? (venueMap[v] + ' — ' + v) : v}</option> })}
-            </select>
-            <Icon name="chevronDown" size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          </div>
-          <div className="relative w-[calc(50%-4px)] sm:w-44">
-            <Icon name="tag" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <select value={deptFilter}
-              onChange={function (e) { setDeptFilter(e.target.value); setPage(1) }}
-              aria-label="Department"
-              className={CTL + ' w-full pl-8 pr-8 appearance-none ' + (deptFilter ? '' : 'text-slate-500')}>
-              <option value="">All depts</option>
-              {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
-            </select>
-            <Icon name="chevronDown" size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          </div>
+          <button type="button" onClick={function () { setFiltersOpen(!filtersOpen) }} aria-expanded={filtersOpen}
+            className={'relative h-10 px-3.5 rounded-xl border text-[13px] font-bold inline-flex items-center gap-1.5 whitespace-nowrap transition-colors ' +
+              (filtersOpen || eventsFilterCount > 0 ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')}>
+            <Icon name="filter" size={14} />Filters
+            {eventsFilterCount > 0 && (
+              <span data-notranslate className="px-1.5 rounded-md bg-indigo-600 text-white text-[11px] tabular-nums">{eventsFilterCount}</span>
+            )}
+          </button>
           <span className="inline-flex items-center gap-2 ml-auto">
             <button onClick={function () { syncFromLMS(false) }} disabled={syncing}
               className="h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-[13px] font-bold text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1.5 disabled:opacity-60 whitespace-nowrap">
@@ -384,6 +386,69 @@ function Events({ profile }) {
             </span>
           </span>
         </div>
+
+        {filtersOpen && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 grid gap-2.5 sm:grid-cols-3">
+            <div className="relative">
+              <Icon name="mapPin" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <select value={venueFilter}
+                onChange={function (e) { setVenueFilter(e.target.value); setPage(1) }}
+                aria-label="Venue"
+                className={CTL + ' w-full pl-8 pr-8 appearance-none bg-white ' + (venueFilter ? '' : 'text-slate-500')}>
+                <option value="">All venues</option>
+                {venueNames.map(function (v) { return <option key={v} value={v}>{venueMap[v] ? (venueMap[v] + ' — ' + v) : v}</option> })}
+              </select>
+              <Icon name="chevronDown" size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
+            <div className="relative">
+              <Icon name="tag" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <select value={deptFilter}
+                onChange={function (e) { setDeptFilter(e.target.value); setPage(1) }}
+                aria-label="Department"
+                className={CTL + ' w-full pl-8 pr-8 appearance-none bg-white ' + (deptFilter ? '' : 'text-slate-500')}>
+                <option value="">All depts</option>
+                {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
+              </select>
+              <Icon name="chevronDown" size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
+            <div className="relative">
+              <Icon name="alert" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <select value={tentativeFilter}
+                onChange={function (e) { setTentativeFilter(e.target.value); setPage(1) }}
+                aria-label="Tentative"
+                className={CTL + ' w-full pl-8 pr-8 appearance-none bg-white ' + (tentativeFilter ? '' : 'text-slate-500')}>
+                <option value="">Tentative: all</option>
+                <option value="yes">Tentative only</option>
+                <option value="no">Confirmed only</option>
+              </select>
+              <Icon name="chevronDown" size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
+            <div className="flex items-stretch bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <div className="flex-1 min-w-0">
+                <EventDatePicker value={dateFrom} placeholder="From" collapsible includePast plain
+                  onChange={function (v) { setDateFrom(v); setPage(1) }} />
+              </div>
+              <span aria-hidden="true" className="shrink-0 self-stretch my-2 w-px bg-slate-200" />
+              <div className="flex-1 min-w-0">
+                <EventDatePicker value={dateTo} placeholder="To" collapsible includePast plain
+                  onChange={function (v) { setDateTo(v); setPage(1) }} />
+              </div>
+              {(dateFrom || dateTo) && (
+                <button type="button" onClick={function () { setDateFrom(''); setDateTo(''); setPage(1) }}
+                  aria-label="Clear dates"
+                  className="shrink-0 px-2 text-slate-400 hover:text-slate-600">
+                  <Icon name="close" size={14} />
+                </button>
+              )}
+            </div>
+            {eventsFilterCount > 0 && (
+              <button type="button" onClick={function () { setVenueFilter(''); setDeptFilter(''); setTentativeFilter(''); setDateFrom(''); setDateTo(''); setPage(1) }}
+                className="sm:col-span-3 justify-self-start inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12.5px] font-semibold text-slate-600 hover:bg-white hover:text-red-600 transition-colors">
+                <Icon name="refresh" size={13} />Clear filters
+              </button>
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-2 px-0.5">
           <span className="inline-flex items-center gap-1.5 text-[12.5px] text-slate-500">
             <span className="h-6 px-2 rounded-md bg-slate-100 inline-flex items-center"><b className="text-slate-800 tabular-nums">{filtered.length}</b>&nbsp;guests</span>
@@ -416,7 +481,7 @@ function Events({ profile }) {
           var showLocation = group.location && !group.venues.some(function (v) { return v.toLowerCase().indexOf(group.location.toLowerCase()) !== -1 || group.location.toLowerCase().indexOf(v.toLowerCase()) !== -1 })
           elements.push(
             <div key={group.id}
-              onClick={function () { setSelectedGroup(group) }}
+              onClick={function () { setSelectedGroup(group); setShowGroupLedger(false) }}
               className="group bg-white border border-slate-200 rounded-2xl p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-indigo-300 hover:shadow-[0_6px_18px_rgba(15,23,42,0.07)] cursor-pointer transition-all">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -430,7 +495,7 @@ function Events({ profile }) {
 
               <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-slate-500">
                 <span className="inline-flex items-center gap-1"><Icon name="calendar" size={13} className="text-slate-400" />{dateRange}</span>
-                {group.venues.map(function (v) { return <span key={v} className="inline-flex items-center gap-1"><Icon name="building" size={13} className="text-slate-400" />{v}</span> })}
+                {group.venues.map(function (v) { return <span key={v} className="inline-flex items-center gap-1"><Icon name="building" size={13} className="text-slate-400" />{venueMap[v] ? (venueMap[v] + ' — ' + v) : v}</span> })}
                 {showLocation && <span className="inline-flex items-center gap-1"><Icon name="mapPin" size={13} className="text-slate-400" />{group.location}</span>}
               </p>
 
@@ -524,7 +589,7 @@ function Events({ profile }) {
       )}
 
       {/* ═══ GROUP DETAIL MODAL ═══ */}
-      <Modal open={!!selectedGroup && !selectedFunction} onClose={function () { setSelectedGroup(null) }}
+      <Modal open={!!selectedGroup && !selectedFunction} onClose={function () { setSelectedGroup(null); setShowGroupLedger(false) }}
         title={selectedGroup ? titleCase(selectedGroup.client_name) : ''} wide>
         {selectedGroup && (
           <div className="space-y-5">
@@ -557,7 +622,7 @@ function Events({ profile }) {
               <div className="space-y-2">
                 {selectedGroup.functions.map(function (f) {
                   return (
-                    <div key={f.id} onClick={function () { setSelectedFunction(f); setShowLedger(false) }}
+                    <div key={f.id} onClick={function () { setSelectedFunction(f) }}
                       className="bg-white border border-gray-200 rounded-lg p-3 hover:bg-indigo-50 cursor-pointer transition-colors active:bg-indigo-100">
                       <div className="flex items-center justify-between">
                         <div className="flex-1 min-w-0">
@@ -568,7 +633,7 @@ function Events({ profile }) {
                           </div>
                           <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-gray-500 mt-1">
                             <span>{formatDate(f.function_date || f.contract_date)}</span>
-                            {f.venue_name && <span>· {f.venue_name}</span>}
+                            {f.venue_name && <span>· {venueMap[f.venue_name] ? (venueMap[f.venue_name] + ' — ' + f.venue_name) : f.venue_name}</span>}
                             {f.session && <span>· {f.session}</span>}
                           </div>
                         </div>
@@ -579,12 +644,30 @@ function Events({ profile }) {
                 })}
               </div>
             </div>
+
+            {/* Financials are contract-level, not per function — a function
+                picked above never had its own separate ledger, so this lives
+                here once, outside the functions list, split by department
+                the same way EventLedger already groups a multi-contract
+                client (DeptChip). */}
+            <div>
+              <button type="button"
+                onClick={function () { setShowGroupLedger(!showGroupLedger) }}
+                className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                {showGroupLedger ? '− Hide financials' : '+ Show financials'}
+              </button>
+              {showGroupLedger && (
+                <div className="mt-3">
+                  <EventLedger eventId={selectedGroup.functions[0].id} />
+                </div>
+              )}
+            </div>
           </div>
         )}
       </Modal>
 
       {/* ═══ FUNCTION DETAIL MODAL ═══ */}
-      <Modal open={!!selectedFunction} onClose={function () { setSelectedFunction(null); setShowLedger(false) }}
+      <Modal open={!!selectedFunction} onClose={function () { setSelectedFunction(null) }}
         title={selectedFunction?.event_name || ''} wide>
         {selectedFunction && (
           <div className="space-y-5">
@@ -597,6 +680,7 @@ function Events({ profile }) {
             )}
             <div className="bg-gray-50 rounded-lg p-4 space-y-2">
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
+                {selectedFunction.client_name && <span><strong>Guest:</strong> {titleCase(selectedFunction.client_name)}</span>}
                 {selectedFunction.contract_no && <span><strong>Contract:</strong> #{selectedFunction.contract_no}</span>}
                 {(selectedFunction.function_date || selectedFunction.contract_date) && <span><strong>Event Date:</strong> {formatDate(selectedFunction.function_date || selectedFunction.contract_date)}</span>}
                 {selectedFunction.contract_type && <span><strong>Venue:</strong> {venueTypeLabel(selectedFunction.contract_type)}</span>}
@@ -604,7 +688,7 @@ function Events({ profile }) {
                 {selectedFunction.function_type && <span><strong>Function:</strong> {selectedFunction.function_type}</span>}
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
-                {selectedFunction.venue_name && <span><strong>Venue:</strong> {selectedFunction.venue_name}</span>}
+                {selectedFunction.venue_name && <span><strong>Venue:</strong> {venueMap[selectedFunction.venue_name] ? (venueMap[selectedFunction.venue_name] + ' — ' + selectedFunction.venue_name) : selectedFunction.venue_name}</span>}
                 {selectedFunction.location && <span><strong>Location:</strong> {selectedFunction.location}</span>}
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
@@ -696,20 +780,6 @@ function Events({ profile }) {
                 </div>
               </div>
             )}
-
-            {/* Financial details — hidden by default */}
-            <div>
-              <button type="button"
-                onClick={function () { setShowLedger(!showLedger) }}
-                className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
-                {showLedger ? '− Hide financials' : '+ Show financials'}
-              </button>
-              {showLedger && (
-                <div className="mt-3">
-                  <EventLedger eventId={selectedFunction.id} />
-                </div>
-              )}
-            </div>
 
             {selectedFunction.synced_at && (
               <p className="text-xs text-gray-400 text-right">Last synced: {formatDate(selectedFunction.synced_at)}</p>

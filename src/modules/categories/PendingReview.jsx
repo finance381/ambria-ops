@@ -3,6 +3,7 @@ import { supabase, getImageUrl, fetchAll } from '../../lib/supabase'
 import { titleCase, formatDate } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import Modal from '../../components/ui/Modal'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import InventoryForm from '../inventory/InventoryForm'
 
 function PendingReview({ profile }) {
@@ -393,10 +394,8 @@ function PendingReview({ profile }) {
                           </div>
                         )}
                         {item.location && <p className="text-[11px] text-gray-400 mt-1">📍 {item.location}</p>}
-                        {item.notes && <p className="text-[12px] text-gray-400 mt-1 italic line-clamp-2">"{item.notes}"</p>}
-                        {item.description && (
-                          <p className="text-[12px] text-gray-400 mt-1 line-clamp-2">{item.description}</p>
-                        )}
+                        <DescriptionNote text={item.notes} label="Notes" />
+                        <DescriptionNote text={item.description} label="Description" />
                         <div className="flex flex-wrap gap-x-3 text-[11px] text-gray-400 mt-1">
                         <span>By: <span className="font-medium text-gray-600">{item.profiles?.name || '—'}</span></span>
                         <span>{formatDate(item.entry_date || item.created_at)}</span>

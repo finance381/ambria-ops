@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
+import { stopAllVoice } from '../../lib/voiceRegistry'
+import { useVoice } from '../../hooks/useVoice'
 import { titleCase, formatDate, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { useRealtime } from '../../lib/useRealtime'
@@ -18,6 +20,8 @@ import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import CameraCapture from '../../components/ui/CameraCapture'
 import { appConfirm } from '../../components/ui/AppDialog'
+import DescriptionNote from '../../components/ui/DescriptionNote'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -130,8 +134,10 @@ function Requisitions({ profile, onBack }) {
       setSubDeptOptions(res.data || [])
     })
     if (hasReqApprove) {
-      supabase.from('profiles').select('id, name').order('name').then(function (res) {
-        setUserOptions(res.data || [])
+      // fn_profile_names, not a direct select -- RLS on profiles only lets a
+      // user read their own row, and this filter needs everyone.
+      supabase.rpc('fn_profile_names').then(function (res) {
+        setUserOptions((res.data || []).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') }))
       })
     }
   }, [])
@@ -680,6 +686,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [expReceipt, setExpReceipt] = useState(null)
   var [cameraOpen, setCameraOpen] = useState(false)
   var [expReceiptZoom, setExpReceiptZoom] = useState('')
+  useBackButtonClose(!!expReceiptZoom, function () { setExpReceiptZoom('') })
   var [expSubTypeId, setExpSubTypeId] = useState(editReq?.expense_sub_type_id ? String(editReq.expense_sub_type_id) : '')
   var [expSubTypeFields, setExpSubTypeFields] = useState([])
   var [expFieldValues, setExpFieldValues] = useState({})
@@ -698,12 +705,13 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     var arr = editReq.expense_alloc_json
     return arr.length > 1 || arr.some(function (a) { return !!a.venue_id })
   })
-  var [listening, setListening] = useState(false)
+  var voice = useVoice('en-IN')
   var searchContainerRef = useRef(null)
-  var recognitionRef = useRef(null)
 
   var isEditing = !!editReq
-  var SpeechRec = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null
+  // toggleDictation's mic button is hidden entirely on a browser with no
+  // speech API, rather than shown and alerting on click.
+  var speechSupported = typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition)
 
   function emptyCartItem() {
     return { mode: 'existing', item_id: null, item_name: '', category_id: '', qty: '1', unit: 'Pieces', notes: '', _source: 'new', search: '', estimated_cost: '', allocations: [{ venue_id: '', qty: '' }], showAllocations: false }
@@ -753,38 +761,14 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     }
   }, [])
 
-  // Stop dictation on unmount
-  useEffect(function () {
-    return function () { if (recognitionRef.current) { try { recognitionRef.current.stop() } catch (_) {} } }
-  }, [])
-
   function toggleDictation() {
-    if (!SpeechRec) return
-    if (listening) {
-      if (recognitionRef.current) { try { recognitionRef.current.stop() } catch (_) {} }
-      return
-    }
-    var rec = new SpeechRec()
-    rec.lang = 'en-IN'
-    rec.interimResults = false
-    rec.continuous = true
-    rec.onresult = function (e) {
-      var txt = ''
-      for (var i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) txt += e.results[i][0].transcript
-      }
-      if (txt.trim()) {
-        setPurpose(function (prev) {
-          var next = (prev ? prev + ' ' : '') + txt.trim()
-          return next.slice(0, 500)
-        })
-      }
-    }
-    rec.onerror = function () { setListening(false) }
-    rec.onend = function () { setListening(false); recognitionRef.current = null }
-    recognitionRef.current = rec
-    rec.start()
-    setListening(true)
+    if (voice.listening) { voice.stop(); return }
+    voice.start(function (text) {
+      setPurpose(function (prev) {
+        var next = (prev ? prev + ' ' : '') + text.trim()
+        return next.slice(0, 500)
+      })
+    })
   }
 
   async function loadLookups() {
@@ -827,7 +811,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
     if (!dateStr) { setEvents([]); setEventId(''); return }
     setEventsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, contract_date, function_date, contract_type, venue_name, session, client_name')
+      .select('id, event_name, contract_date, function_date, contract_type, venue_name, location, session, client_name, created_user_name')
       .eq('function_date', dateStr)
       .is('lms_cancelled_at', null)
       .order('event_name')
@@ -1014,6 +998,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   async function handleSubmit() {
     if (saving) return
     if (!validate()) return
+    stopAllVoice()
     setSaving(true)
 
     try {
@@ -1283,11 +1268,11 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
               rows="2" maxLength="500" placeholder="e.g. Monthly stationery restock, new workstation setup..."
               className={"w-full px-3 py-2 pr-11 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none " + (errors.purpose ? "border-red-300" : "border-gray-300")}
               style={{ fontSize: '16px' }} />
-            {SpeechRec && (
+            {speechSupported && (
               <button type="button" onClick={toggleDictation}
-                title={listening ? 'Stop' : 'Dictate'}
-                className={"absolute right-2 bottom-2 w-8 h-8 rounded-full flex items-center justify-center text-sm transition-colors " + (listening ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-500 hover:bg-gray-200")}>
-                {listening ? '■' : '🎤'}
+                title={voice.listening ? 'Stop' : 'Dictate'}
+                className={"absolute right-2 bottom-2 w-8 h-8 rounded-full flex items-center justify-center text-sm transition-colors " + (voice.listening ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-500 hover:bg-gray-200")}>
+                {voice.listening ? '■' : '🎤'}
               </button>
             )}
           </div>
@@ -1315,7 +1300,10 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                 style={{ fontSize: '16px' }}>
                 <option value="">Select event...</option>
-                {events.map(function (ev) { return <option key={ev.id} value={String(ev.id)}>{ev.event_name + ' · ' + (ev.venue_name || '')}</option> })}
+                {events.map(function (ev) {
+                  var venueBit = (ev.venue_name || '') + ((ev.location && ev.location !== ev.venue_name) ? ' / ' + ev.location : '')
+                  return <option key={ev.id} value={String(ev.id)}>{ev.event_name + ' · ' + venueBit}</option>
+                })}
               </select>
             )}
             {(function () {
@@ -1328,8 +1316,10 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                     {sel.function_date && <span>📅 {sel.function_date}</span>}
                     {sel.contract_type && <span>🎉 {sel.contract_type}</span>}
                     {sel.venue_name && <span>📍 {sel.venue_name}</span>}
+                    {sel.location && sel.location !== sel.venue_name && <span>📍 {sel.location}</span>}
                     {sel.session && <span>🕐 {sel.session}</span>}
                     {sel.client_name && <span>👤 {sel.client_name}</span>}
+                    {sel.created_user_name && <span>💼 By {sel.created_user_name}</span>}
                   </div>
                 </div>
               )
@@ -1856,12 +1846,14 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
   var [rejectMode, setRejectMode] = useState(false)
   var [rejectReason, setRejectReason] = useState('')
   var [zoomImg, setZoomImg] = useState('')
+  useBackButtonClose(!!zoomImg, function () { setZoomImg('') })
   var [poStatuses, setPoStatuses] = useState({})
   var [stockQty, setStockQty] = useState({})
   var [stockLoading, setStockLoading] = useState(false)
   var [fulfillChoices, setFulfillChoices] = useState({})
   var [dispatchNote, setDispatchNote] = useState('')
   var [confirmAction, setConfirmAction] = useState(null)
+  useBackButtonClose(confirmAction === 'expense', function () { setConfirmAction(null) })
   var [deleteMode, setDeleteMode] = useState(false)
   var [deleteReason, setDeleteReason] = useState('')
   var refData = useReferenceData()
@@ -1999,6 +1991,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
 
   async function reject() {
     if (!rejectReason.trim()) return
+    stopAllVoice()
     setSaving(true)
     var { error } = await supabase.from('requisitions').update({
       status: 'rejected',
@@ -2113,6 +2106,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
 
   async function deleteReq() {
     if (saving) return
+    stopAllVoice()
     setSaving(true)
     var { error } = await supabase.from('requisitions').update({
       status: 'deleted',
@@ -2203,8 +2197,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
             )}
             {req.purpose && (
               <div className="border-t border-gray-100 pt-3">
-                <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Purpose</span>
-                <p className="text-sm text-gray-800 mt-1">{req.purpose}</p>
+                <DescriptionNote text={req.purpose} label="Purpose" truncate={false} className="" />
               </div>
             )}
           </div>
@@ -2297,9 +2290,7 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
                   {li.estimated_cost_paise && <p className="text-[11px] text-gray-400">~₹{(li.estimated_cost_paise / 100).toLocaleString('en-IN')}</p>}
                 </div>
               </div>
-              {li.notes && (
-                <p className="text-[11px] text-gray-500 mt-1">{li.notes}</p>
-              )}
+              <DescriptionNote text={li.notes} label="Notes" className="mt-1" />
 
               {/* Stock availability + fulfillment choice — admin approval view */}
               {canAdminApprove && !stockLoading && li._source !== 'new' && li.item_id && (function () {

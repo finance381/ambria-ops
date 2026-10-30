@@ -30,7 +30,11 @@ function ImageLightbox({ url, alt, onClose }) {
   return createPortal(
     <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center p-4"
       onClick={goBack}>
-      <button type="button" onClick={goBack} aria-label="Close"
+      {/* stopPropagation — without it this click also bubbles to the
+          backdrop's own onClick={goBack} below, firing goBack() twice and
+          popping two levels off the back-stack (closing whatever view this
+          lightbox was opened from too, not just the image). */}
+      <button type="button" onClick={function (ev) { ev.stopPropagation(); goBack() }} aria-label="Close"
         className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors">
         <Icon name="close" size={18} />
       </button>

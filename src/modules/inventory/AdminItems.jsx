@@ -1490,6 +1490,16 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
                           onChange={function (v) { setMenuZoneFilter(v); setPage(1) }} options={zones} />
                       : disabledBox('No menu zones recorded')}
                   </div>
+                  <div>
+                    <label className={FL}>Status</label>
+                    <FilterDropdown value={statusFilter} placeholder="All Statuses" multi
+                      onChange={function (v) { setStatusFilter(v); setPage(1) }}
+                      options={[
+                        { label: 'Approved', value: 'approved' },
+                        { label: 'Pending (dept)', value: 'pending_dept' },
+                        { label: 'Pending (final)', value: 'pending' },
+                      ]} />
+                  </div>
                 </>
               ))}
             </div>
@@ -1601,6 +1611,12 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
                       <p className="min-w-0 text-[18px] font-semibold text-slate-900 leading-snug">{item.name}</p>
                       <span className="shrink-0 mt-1 px-1.5 py-0.5 rounded-md bg-slate-100 text-[12px] font-semibold text-slate-600 font-mono">{item.inventory_id || '—'}</span>
                     </div>
+                    {item.status && item.status !== 'approved' && (
+                      <span className={"inline-flex mt-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full " +
+                        (item.status === 'pending_dept' ? "bg-sky-100 text-sky-700" : "bg-amber-100 text-amber-700")}>
+                        {item.status === 'pending_dept' ? 'Pending dept review' : 'Pending approval'}
+                      </span>
+                    )}
                     {item.name_hindi && <p className="text-[14px] font-normal text-slate-500">{item.name_hindi}</p>}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[13px] font-normal text-slate-500">
                       <span className="inline-flex items-center gap-1">

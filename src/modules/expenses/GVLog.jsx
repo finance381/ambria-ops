@@ -4,6 +4,7 @@ import { formatDate, formatDateTime, formatPoints } from '../../lib/format'
 import { hasPerm } from '../../lib/permissions'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import SearchField from '../../components/ui/SearchField'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 
 function GVLog({ profile }) {
   var permsNew = (profile && profile.permsNew) || []
@@ -54,7 +55,10 @@ function GVLog({ profile }) {
       if (g.expense_id && expenseIds.indexOf(g.expense_id) === -1) expenseIds.push(g.expense_id)
     })
     if (creatorIds.length > 0) {
-      supabase.from('profiles').select('id, name').in('id', creatorIds).then(function (res) {
+      // fn_profile_names, not a direct select -- RLS on profiles only lets a
+      // user read their own row, and most GVs here were raised by someone
+      // else.
+      supabase.rpc('fn_profile_names', { p_ids: creatorIds }).then(function (res) {
         var m = {}
         ;(res.data || []).forEach(function (p) { m[p.id] = p.name || '' })
         setCreatorMap(m)
@@ -219,7 +223,7 @@ function GVLog({ profile }) {
                                   {r.venue_id && (
                                     <p className="text-[10px] text-gray-500">Venue #{r.venue_id}{r.sub_venue_id ? ' › SV#' + r.sub_venue_id : ''}</p>
                                   )}
-                                  {r.remarks && <p className="text-[10px] text-gray-500 italic">"{r.remarks}"</p>}
+                                  <DescriptionNote text={r.remarks} label="Remarks" truncate={false} className="mt-1" />
                                 </div>
                               )
                             })}

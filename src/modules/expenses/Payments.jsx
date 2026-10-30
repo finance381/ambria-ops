@@ -8,6 +8,7 @@ import { hasPerm } from '../../lib/permissions'
 import { filterVisibleVendors } from '../../lib/vendorGating'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchField from '../../components/ui/SearchField'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 function daysBetween(d1, d2) {
   var ms = new Date(d2) - new Date(d1)
@@ -53,6 +54,7 @@ function Payments({ profile }) {
   var [payTarget, setPayTarget] = useState(null)
   var [payLockedMode, setPayLockedMode] = useState('')
   var [lightbox, setLightbox] = useState(null)
+  useBackButtonClose(!!lightbox, function () { setLightbox(null) })
   var refData = useReferenceData()
 
   function openLightbox(paths, startIdx) {

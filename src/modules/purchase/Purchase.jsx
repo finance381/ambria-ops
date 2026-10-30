@@ -15,6 +15,8 @@ import { hasPerm } from '../../lib/permissions'
 import { filterVisibleVendors } from '../../lib/vendorGating'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { appConfirm } from '../../components/ui/AppDialog'
+import DescriptionNote from '../../components/ui/DescriptionNote'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 var PO_STATUS_LABELS = {
   draft: 'Draft',
@@ -1022,7 +1024,7 @@ function Purchase({ profile, mode }) {
                       {po.profiles?.name || '—'}
                       {assigneeName ? ' · 🛒 ' + assigneeName : ' · Unassigned'}
                     </p>
-                    {po.notes && <p className="text-[11px] text-gray-400 mt-0.5 truncate">{po.notes}</p>}
+                    <DescriptionNote text={po.notes} label="Notes" className="mt-0.5" />
                   </div>
                 )
               })}
@@ -1100,7 +1102,7 @@ function Purchase({ profile, mode }) {
                       {po.profiles?.name || '—'}
                       {assigneeName ? ' · 🛒 ' + assigneeName : ' · Unassigned'}
                     </p>
-                    {po.notes && <p className="text-[11px] text-gray-400 mt-0.5 truncate">{po.notes}</p>}
+                    <DescriptionNote text={po.notes} label="Notes" className="mt-0.5" />
                   </div>
                 )
               })}
@@ -1307,6 +1309,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
   var [multiOpen, setMultiOpen] = useState(false)
   var [multiForm, setMultiForm] = useState({ vendor: '', vendorContact: '', receipt: null, items: {} })
   var [multiProcessing, setMultiProcessing] = useState(false)
+  useBackButtonClose(multiOpen, function () { if (!multiProcessing) setMultiOpen(false) })
   var [multiProgress, setMultiProgress] = useState(null)
   var [rateHistory, setRateHistory] = useState([])
   var [rateLoading, setRateLoading] = useState(false)

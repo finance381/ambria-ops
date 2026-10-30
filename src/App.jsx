@@ -68,13 +68,20 @@ function App() {
     })
   }
 
+  // A notificationclick with no app tab already open (src/sw.js) opens this
+  // URL with the short-code link it was given tacked on as `notif` — read it
+  // once here and hand it to whichever shell mounts, same string format
+  // navigateFromNotification already resolves for NotificationBell's own
+  // in-app click.
+  var _initialNotif = params.get('notif') || null
+
   var _isPrivileged = isPrivilegedRole(profile)
   var _hasDesktopPerms = (profile.desktop_permissions || []).some(function (k) { return k !== 'personal.profile' })
   if (params.get('view') === 'admin' && (_isPrivileged || _hasDesktopPerms)) {
-    return <LangProvider><ReferenceDataProvider><AdminShell profile={surfaceProfile(profile, 'desktop')} onSignOut={signOut} /><UpdateBanner /><PullToRefresh /></ReferenceDataProvider></LangProvider>
+    return <LangProvider><ReferenceDataProvider><AdminShell profile={surfaceProfile(profile, 'desktop')} onSignOut={signOut} initialNotifLink={_initialNotif} /><UpdateBanner /><PullToRefresh /></ReferenceDataProvider></LangProvider>
   }
 
-  return <LangProvider><ReferenceDataProvider><Shell profile={surfaceProfile(profile, 'mobile')} onSignOut={signOut} /><UpdateBanner /><PullToRefresh /></ReferenceDataProvider></LangProvider>
+  return <LangProvider><ReferenceDataProvider><Shell profile={surfaceProfile(profile, 'mobile')} onSignOut={signOut} initialNotifLink={_initialNotif} /><UpdateBanner /><PullToRefresh /></ReferenceDataProvider></LangProvider>
 }
 
 export default App

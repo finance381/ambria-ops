@@ -95,7 +95,7 @@ function MultiSearchDropdown({ items, values, onChange, placeholder }) {
         )}
       </div>
       {open && filtered.length > 0 && (
-        <div className="absolute z-30 left-0 right-0 mt-1.5 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)] py-1">
+        <div className="absolute z-[10000] left-0 right-0 mt-1.5 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)] py-1">
           {filtered.slice(0, 100).map(function (i, idx) {
             var isHl = idx === hlIdx
             return (
@@ -116,7 +116,7 @@ function MultiSearchDropdown({ items, values, onChange, placeholder }) {
         </div>
       )}
       {open && filtered.length === 0 && query && (
-        <div className="absolute z-30 left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)] px-3 py-2.5 text-[13px] font-medium text-slate-400">
+        <div className="absolute z-[10000] left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)] px-3 py-2.5 text-[13px] font-medium text-slate-400">
           No matches
         </div>
       )}

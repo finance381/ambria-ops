@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase, getImageUrl } from '../../lib/supabase'
+import { stopAllVoice } from '../../lib/voiceRegistry'
+import { useVoice } from '../../hooks/useVoice'
 import { prepUpload } from '../../lib/uploadHelper'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import Icon from '../../components/ui/Icon'
@@ -14,6 +16,7 @@ import { filterUserCategories } from '../../lib/categories'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { reconcileStockBatches, stockValuePaise, placeRates } from '../../lib/stockBatches'
+import { appConfirm } from '../../components/ui/AppDialog'
 
 var UNITS = [
   'Inches','Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens',
@@ -128,7 +131,8 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   var [cropSrc, setCropSrc] = useState(null)
   var [cameraOpen, setCameraOpen] = useState(false)
   var [listeningField, setListeningField] = useState(null)
-  var recognitionRef = useRef(null)
+  var voice = useVoice()
+  useEffect(function () { if (!voice.listening) setListeningField(null) }, [voice.listening])
   var [saving, setSaving] = useState(false)
   var [errors, setErrors] = useState({})
   var itemSearchTimer = useRef(null)
@@ -161,11 +165,60 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   // written to the batches on save. A batch saved before rates were kept
   // shows ₹0 until it is given one here.
   var [batchRateEdits, setBatchRateEdits] = useState({})
+  // Quantities typed in for the item's batches (batch id → qty as typed) —
+  // lets a wrong quantity entered on a batch (e.g. opening stock typed as 4
+  // when it was really 5) be corrected directly, rather than only being
+  // fixable by changing the item's overall on-hand qty and letting
+  // reconcileStockBatches decide which batch absorbs the difference (always
+  // oldest-first, which may not be the one that was actually wrong).
+  var [batchQtyEdits, setBatchQtyEdits] = useState({})
   var effBatches = itemBatches.map(function (b) {
-    if (!Object.prototype.hasOwnProperty.call(batchRateEdits, b.id)) return b
-    var v = batchRateEdits[b.id]
-    return Object.assign({}, b, { rate_paise: v === '' || v == null ? null : Math.round(Number(v) * 100) })
+    var out = b
+    if (Object.prototype.hasOwnProperty.call(batchRateEdits, b.id)) {
+      var rv = batchRateEdits[b.id]
+      out = Object.assign({}, out, { rate_paise: rv === '' || rv == null ? null : Math.round(Number(rv) * 100) })
+    }
+    if (Object.prototype.hasOwnProperty.call(batchQtyEdits, b.id)) {
+      var qv = batchQtyEdits[b.id]
+      out = Object.assign({}, out, { qty: qv === '' || qv == null ? 0 : Number(qv) })
+    }
+    return out
   })
+  // Two batches that should have been one (e.g. opening stock and a same-day
+  // "new stock" entry that was really the same delivery) — moves the whole
+  // source batch into the target and zeroes the source out, rather than
+  // requiring two separate qty edits that net to the same thing. Doesn't
+  // touch the overall qty field: it's a pure transfer, the total is
+  // unchanged. Rate carries over as a qty-weighted average of whichever
+  // side(s) actually have one; a side with no rate yet contributes nothing
+  // to the average rather than dragging it toward zero.
+  function mergeBatchInto(fromIdx, toIdx) {
+    var fromB = effBatches[fromIdx]
+    var toB = effBatches[toIdx]
+    if (!fromB || !toB || fromB.id === toB.id) return
+    var fromQty = Number(fromB.qty) || 0
+    var toQty = Number(toB.qty) || 0
+    appConfirm('Move this batch’s ' + fromQty + ' ' + unit + ' into Batch ' + (toIdx + 1) + '? This batch will be removed once you save.').then(function (ok) {
+      if (!ok) return
+      var mergedQty = Math.round((fromQty + toQty) * 1000) / 1000
+      var fromRate = fromB.rate_paise || null
+      var toRate = toB.rate_paise || null
+      var mergedRate = (fromRate && toRate)
+        ? Math.round((fromQty * fromRate + toQty * toRate) / (mergedQty || 1))
+        : (toRate || fromRate || null)
+      setBatchQtyEdits(function (prev) {
+        var n = Object.assign({}, prev)
+        n[fromB.id] = '0'
+        n[toB.id] = String(mergedQty)
+        return n
+      })
+      setBatchRateEdits(function (prev) {
+        var n = Object.assign({}, prev)
+        n[toB.id] = mergedRate ? String(mergedRate / 100) : ''
+        return n
+      })
+    })
+  }
   var [newStockQty, setNewStockQty] = useState('')
   var [newStockRate, setNewStockRate] = useState('')
   var [newStockAllocs, setNewStockAllocs] = useState([{ venue_id: '', sub_venue_id: '', qty: '' }])
@@ -501,12 +554,12 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   }
 
   function startSpeech(fieldId) {
-    var SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { alert('Speech not supported'); return }
-    if (recognitionRef.current) { recognitionRef.current.stop(); recognitionRef.current = null; setListeningField(null); return }
-    var recognition = new SR(); recognition.lang = fieldId === 'nameHindi' ? 'hi-IN' : 'en-IN'; recognition.interimResults = false
-    recognition.onresult = function (ev) { var transcript = ev.results[0][0].transcript; if (fieldId === 'description') { setDescription(function (prev) { return prev ? prev + ' ' + transcript : transcript }) } else if (fieldId === 'nameHindi') { setNameHindi(function (prev) { return prev ? prev + ' ' + transcript : transcript }) }; setListeningField(null); recognitionRef.current = null }
-    recognition.onend = function () { setListeningField(null); recognitionRef.current = null }; recognition.onerror = function () { setListeningField(null); recognitionRef.current = null }
-    recognitionRef.current = recognition; setListeningField(fieldId); recognition.start()
+    if (voice.listening) { voice.stop(); return }
+    setListeningField(fieldId)
+    voice.start(function (text) {
+      if (fieldId === 'description') { setDescription(function (prev) { return prev ? prev + ' ' + text : text }) }
+      else if (fieldId === 'nameHindi') { setNameHindi(function (prev) { return prev ? prev + ' ' + text : text }) }
+    }, fieldId === 'nameHindi' ? 'hi-IN' : 'en-IN')
   }
 
   async function uploadImage(itemId, prefix) {
@@ -567,7 +620,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   }
 
   async function handleSubmit(e) {
-    e.preventDefault(); if (saving) return; if (!validate()) return; setSaving(true)
+    e.preventDefault(); if (saving) return; if (!validate()) return; stopAllVoice(); setSaving(true)
     var effectiveName = resolvedNameRef.current || name.trim()
     var hindiName = nameHindi.trim()
     if (effectiveName && !hindiName) {
@@ -598,6 +651,14 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
     Object.keys(batchRateEdits).forEach(function (id) {
       var v = batchRateEdits[id]
       rateOverrides[id] = v === '' || v == null ? null : Math.round(Number(v) * 100)
+    })
+    // Batch quantities typed in the form, for reconcile to write — the
+    // qty field above was already nudged by the same amount as each edit
+    // (see updateQty), so totalQty below already accounts for these.
+    var qtyOverrides = {}
+    Object.keys(batchQtyEdits).forEach(function (id) {
+      var v = batchQtyEdits[id]
+      qtyOverrides[id] = v === '' || v == null ? 0 : Math.round(Number(v) * 1000) / 1000
     })
     var addRatePaise = newStockRate ? Math.round(Number(newStockRate) * 100) : (latestBatchRate || itemRatePaise)
     var savedRatePaise = itemBatches.length > 0 ? ((addQty > 0 && addRatePaise) ? addRatePaise : (latestBatchRate || itemRatePaise)) : itemRatePaise
@@ -777,7 +838,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
           var venueRows = allocsForSave.filter(function (a) { return a.venue_id && Number(a.qty) > 0 }).map(function (a) { return { item_id: item.id, venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, sub_department_id: a.sub_department_id ? Number(a.sub_department_id) : null, qty: Number(a.qty) } })
           if (venueRows.length > 0) { var { error: vaErr } = await supabase.from(allocTable).insert(venueRows); if (vaErr) throw new Error('Allocation save failed: ' + vaErr.message) }
           await saveStockBatch(item.id, addQty, addRatePaise, addAllocs, false)
-          await reconcileStockBatches(supabase, { itemId: item.id, itemSource: isCatStore ? 'catering_store' : 'inventory', finalQty: totalQty, finalAllocs: venueRows, ratePaise: itemRatePaise, userId: profile?.id, rateOverrides: rateOverrides })
+          await reconcileStockBatches(supabase, { itemId: item.id, itemSource: isCatStore ? 'catering_store' : 'inventory', finalQty: totalQty, finalAllocs: venueRows, ratePaise: itemRatePaise, userId: profile?.id, rateOverrides: rateOverrides, qtyOverrides: qtyOverrides })
           if (imageFile) { var path = await uploadImage(item.id, imgPrefix); if (path) await supabase.from(tableName).update({ image_path: path }).eq('id', item.id) }
         }
       }
@@ -1098,31 +1159,71 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
         </div>
       )
     })()}
-      {/* Batch rates: each batch's unit rate, editable — a batch saved
-          before rates were kept has none (₹0) until it is given one. */}
+      {/* Batches: each one's own quantity and rate, editable — corrects a
+          typo on a specific batch directly, rather than only being fixable
+          by changing the item's overall on-hand qty and letting
+          reconcileStockBatches decide which batch absorbs the difference
+          (always oldest-first, which may not be the one that was wrong).
+          Editing a batch's qty here also nudges the overall qty field above
+          by the same amount, so the two never fall out of sync. A batch
+          saved before rates were kept has none (₹0) until it is given one. */}
       {itemBatches.length > 0 && (
         <div className="mt-4">
-          <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.07em] text-slate-500">Batch rates</p>
+          <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.07em] text-slate-500">Batches</p>
           <div className="rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
             {effBatches.map(function (b, bi) {
+              // Merged away (qty edited down to 0) — gone from view the
+              // instant it's merged rather than lingering as an empty row
+              // until save; reconcileStockBatches deletes it for real then.
+              if (Number(b.qty) <= 0) return null
               var bq = Number(b.qty) || 0
               var missing = !b.rate_paise
-              var typed = Object.prototype.hasOwnProperty.call(batchRateEdits, b.id) ? batchRateEdits[b.id] : (itemBatches[bi].rate_paise ? String(itemBatches[bi].rate_paise / 100) : '')
+              var typedRate = Object.prototype.hasOwnProperty.call(batchRateEdits, b.id) ? batchRateEdits[b.id] : (itemBatches[bi].rate_paise ? String(itemBatches[bi].rate_paise / 100) : '')
+              var origQty = Number(itemBatches[bi].qty) || 0
+              var typedQty = Object.prototype.hasOwnProperty.call(batchQtyEdits, b.id) ? batchQtyEdits[b.id] : String(origQty)
+              var otherIdxs = []
+              effBatches.forEach(function (ob, oi) { if (oi !== bi && Number(ob.qty) > 0) otherIdxs.push(oi) })
+              function updateQty(v) {
+                setBatchQtyEdits(function (prev) {
+                  var n = Object.assign({}, prev)
+                  n[b.id] = v
+                  return n
+                })
+                var newQty = v === '' ? 0 : Number(v)
+                if (isNaN(newQty)) return
+                var prevQty = Object.prototype.hasOwnProperty.call(batchQtyEdits, b.id) ? Number(batchQtyEdits[b.id] || 0) : origQty
+                var delta = Math.round((newQty - prevQty) * 1000) / 1000
+                if (delta !== 0) setQty(function (prevTotal) { return String(Math.round(((Number(prevTotal) || 0) + delta) * 1000) / 1000) })
+              }
               return (
                 <div key={b.id} className={"flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-2.5 " + (missing ? "bg-amber-50/60" : "")}>
                   <span className="flex-1 min-w-[160px]">
                     <span className="block text-[13px] font-semibold text-slate-800">Batch {bi + 1} · {b.is_opening ? 'Opening stock' : 'New stock'}</span>
-                    <span className="block text-[11.5px] text-slate-500 tabular-nums">{bq} {unit} · {new Date(b.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    <span className="block text-[11.5px] text-slate-500 tabular-nums">{new Date(b.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                   </span>
                   <label className="flex items-center gap-1.5">
+                    <span className="text-[12px] font-semibold text-slate-500">Qty</span>
+                    <input type="number" min="0" step="any" inputMode="decimal" value={typedQty}
+                      onChange={function (e) { updateQty(e.target.value) }}
+                      className="w-20 h-9 px-2.5 bg-white border border-slate-300 rounded-lg text-[14px] font-semibold text-slate-900 tabular-nums focus:outline-none focus:ring-4 focus:ring-[#3B4668]/10 focus:border-[#A9B1CB]" />
+                    <span className="text-[12px] text-slate-500">{unit}</span>
+                  </label>
+                  <label className="flex items-center gap-1.5">
                     <span className="text-[12px] font-semibold text-slate-500">Rate ₹</span>
-                    <input type="number" min="0" step="any" inputMode="decimal" value={typed} placeholder="0"
+                    <input type="number" min="0" step="any" inputMode="decimal" value={typedRate} placeholder="0"
                       onChange={function (e) { var v = e.target.value; setBatchRateEdits(function (prev) { var n = Object.assign({}, prev); n[b.id] = v; return n }) }}
                       className={"w-24 h-9 px-2.5 bg-white border rounded-lg text-[14px] font-semibold text-slate-900 tabular-nums focus:outline-none focus:ring-4 focus:ring-[#3B4668]/10 " + (missing ? "border-amber-300" : "border-slate-300 focus:border-[#A9B1CB]")} />
                   </label>
                   <span className={"w-[104px] text-right text-[14px] font-bold tabular-nums " + (missing ? "text-amber-700" : "text-slate-900")}>
                     {missing ? 'Rate missing' : formatPaise(Math.round(bq * b.rate_paise))}
                   </span>
+                  {otherIdxs.length > 0 && (
+                    <select value="" onChange={function (e) { if (e.target.value !== '') mergeBatchInto(bi, Number(e.target.value)) }}
+                      className="h-9 px-2 bg-white border border-slate-300 rounded-lg text-[12px] font-semibold text-slate-600 focus:outline-none focus:ring-4 focus:ring-[#3B4668]/10 focus:border-[#A9B1CB]">
+                      <option value="">Merge into…</option>
+                      {otherIdxs.map(function (oi) { return <option key={oi} value={oi}>Batch {oi + 1}</option> })}
+                    </select>
+                  )}
                 </div>
               )
             })}

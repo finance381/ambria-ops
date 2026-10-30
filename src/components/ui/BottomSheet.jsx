@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom'
 import { useBodyScrollLock } from '../../lib/useBodyScrollLock'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 // Portalled to <body>, not rendered in place. The admin shell wraps each page
 // in `relative isolate`, which makes a stacking context: everything inside it
@@ -12,6 +13,7 @@ function BottomSheet({ open, onClose, title, children }) {
   // sheet opened over another overlay unlocked the page when only the sheet
   // closed.
   useBodyScrollLock(open)
+  useBackButtonClose(open, onClose)
 
   if (!open) return null
 

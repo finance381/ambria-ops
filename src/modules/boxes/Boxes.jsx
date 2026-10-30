@@ -5,6 +5,7 @@ import { logActivity } from '../../lib/logger'
 import { isPrivilegedRole } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { appConfirm } from '../../components/ui/AppDialog'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 
 var STATUS_COLORS = {
   stored: 'bg-gray-100 text-gray-600',
@@ -438,7 +439,7 @@ function Boxes({ profile }) {
             {activeBox.categories?.name && <span><strong>Category:</strong> {activeBox.categories.name}</span>}
             {activeBox.venues && <span><strong>Venue:</strong> {activeBox.venues.code + ' — ' + activeBox.venues.name}</span>}
           </div>
-          {activeBox.notes && <p className="text-xs text-gray-400 mt-2">{activeBox.notes}</p>}
+          <DescriptionNote text={activeBox.notes} label="Notes" className="mt-2" />
         </div>
 
         {/* Add item */}

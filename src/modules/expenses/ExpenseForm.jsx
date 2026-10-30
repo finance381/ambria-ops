@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
+import { stopAllVoice } from '../../lib/voiceRegistry'
 import { logActivity } from '../../lib/logger'
-import { formatPoints } from '../../lib/format'
+import { formatPoints, formatDate } from '../../lib/format'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import AllocationRows from '../../components/ui/AllocationRows'
 import ysFixWebmDuration from 'fix-webm-duration'
@@ -12,10 +13,15 @@ import { compressImage } from '../../lib/imageCompress'
 import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
 import CameraCapture from '../../components/ui/CameraCapture'
+import ImageCropper from '../../components/ui/ImageCropper'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
-import { deptCls, deptInk, deptOrder } from '../../lib/ui'
+import { deptInk } from '../../lib/ui'
+import { buildContractBuckets, loadFunctionPickerPool } from '../../lib/functionPicker'
+import FunctionPickerGrid from '../../components/ui/FunctionPickerGrid'
 import { appConfirm } from '../../components/ui/AppDialog'
+import BottomSheet from '../../components/ui/BottomSheet'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -55,44 +61,6 @@ function PanelHead({ icon, sub, right, children }) {
       {right}
     </div>
   )
-}
-
-// One evening at one venue is booked as up to four contracts — one per
-// department — and every one of them carries the same client, venue and
-// session. Listed flat, or grouped under department headers, the picker repeats
-// "ENGAGEMENT — Rao Yashvardhan · Ambria Pushpanjali" once per department and
-// the operator scrolls past four near-identical lines to find the right one.
-//
-// So the picker lists each function once and hangs its contracts off it as
-// department chips — the function reads once, and the departments read as
-// colours on a single row.
-//
-// Not a silent merge: event_id lands on the expense row, so which contract the
-// cost is tagged to has to stay a deliberate tap.
-function funcKeyOf(r) {
-  return [r.client_name || '', r.venue_name || '', r.session || '', (r.event_name || '').trim().toLowerCase()].join('|')
-}
-
-function groupFunctions(rows) {
-  var byKey = {}
-  var order = []
-  for (var i = 0; i < rows.length; i++) {
-    var r = rows[i]
-    var k = funcKeyOf(r)
-    if (!byKey[k]) {
-      byKey[k] = {
-        key: k,
-        label: r.event_name + (r.client_name ? ' — ' + r.client_name : '') + ' · ' + (r.venue_name || '') + (r.session ? ' · ' + r.session : ''),
-        contracts: [],
-      }
-      order.push(k)
-    }
-    byKey[k].contracts.push(r)
-  }
-  order.forEach(function (k) {
-    byKey[k].contracts.sort(function (a, b) { return deptOrder(a.department) - deptOrder(b.department) })
-  })
-  return order.map(function (k) { return byKey[k] })
 }
 
 function makeEntry() {
@@ -214,7 +182,9 @@ function makeItem() {
     itemQty: '',
     itemUnit: 'Pieces',
     itemNotes: '',
-    itemRate: ''
+    itemRate: '',
+    itemLastPurchase: null,
+    itemLastPurchaseLoading: false
   }
 }
 
@@ -255,7 +225,9 @@ function hydrateEntry(exp) {
       itemQty: it.qty != null ? String(it.qty) : '',
       itemUnit: it.unit || 'Pieces',
       itemNotes: it.notes || '',
-      itemRate: it.rate_paise != null ? String(it.rate_paise / 100) : ''
+      itemRate: it.rate_paise != null ? String(it.rate_paise / 100) : '',
+      itemLastPurchase: null,
+      itemLastPurchaseLoading: false
     }
   }) : []
 
@@ -307,6 +279,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   var expenseTypes = refData.expenseTypes.filter(function (t) { return t.active })
   var expenseSubTypes = refData.expenseSubTypes.filter(function (t) { return t.active })
   var venues = refData.venues.filter(function (v) { return v.active }).slice().sort(byName)
+  var canCreateTentativeEvent = hasPerm(profile?.permsNew, 'events.list.create_tentative')
   var [departments, setDepartments] = useState([])
   var [subDepartments, setSubDepartments] = useState([])
   var [itemCategories, setItemCategories] = useState([])
@@ -322,13 +295,27 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   var [isFunction, setIsFunction] = useState(!!(editExp && editExp.event_id))
   var [eventDate, setEventDate] = useState(editExp && editExp.event_id ? (editExp.expense_date || '') : '')
   var [eventId, setEventId] = useState(editExp && editExp.event_id ? String(editExp.event_id) : '')
+  // Other functions in the same contract this entry also covers — tags
+  // only, never a split of the amount (see FunctionPickerGrid).
+  var [extraEventIds, setExtraEventIds] = useState((editExp && editExp.extra_event_ids || []).map(String))
   var [events, setEvents] = useState([])
+  var [allEventRows, setAllEventRows] = useState([])
   var [eventsLoading, setEventsLoading] = useState(false)
   var voice = useVoice()
   var [error, setError] = useState('')
   var [success, setSuccess] = useState('')
   var [zoomImg, setZoomImg] = useState('')
+  useBackButtonClose(!!zoomImg, function () { setZoomImg('') })
   var [cameraTarget, setCameraTarget] = useState(null) // entry idx currently capturing for, or null
+  var [cropTarget, setCropTarget] = useState(null) // { idx, rIdx, url } of the receipt being cropped, or null
+  var [tentativeModal, setTentativeModal] = useState(false)
+  var [tentativeGuestName, setTentativeGuestName] = useState('')
+  var [tentativeVenue, setTentativeVenue] = useState('')
+  var [tentativeVenueOther, setTentativeVenueOther] = useState('')
+  var [tentativePax, setTentativePax] = useState('')
+  var [tentativeFunctionType, setTentativeFunctionType] = useState('')
+  var [tentativeSaving, setTentativeSaving] = useState(false)
+  var [eventTypeOptions, setEventTypeOptions] = useState([])
   var [itemSearchKey, setItemSearchKey] = useState('')
   var [itemMatches, setItemMatches] = useState([])
   var itemSearchTimer = useRef(null)
@@ -355,6 +342,24 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     if (isEditing && editExp && editExp.event_id && editExp.expense_date) {
       loadEventsByDate(editExp.expense_date)
     }
+  }, [])
+
+  // Editing an existing item-purchase expense hydrates items already
+  // matched to a catalog item (from the saved item_receipts) — those never
+  // went through pickItemMatch in this session, so the last-purchase
+  // lookup it triggers never ran for them. Firing it once here on mount
+  // keeps the hint consistent whether the match just happened or was
+  // loaded from a prior save.
+  useEffect(function () {
+    if (!isEditing) return
+    entries.forEach(function (e, eIdx) {
+      ;(e.items || []).forEach(function (it, iIdx) {
+        if (it.itemMode !== 'new' && it.itemMatchedId) {
+          loadLastPurchase(eIdx, iIdx, { id: it.itemMatchedId, _source: it.itemMatchedSource })
+        }
+      })
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ─── Draft: check localStorage on mount ───
@@ -469,18 +474,57 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   }
 
   async function loadEventsByDate(dateStr) {
-    if (!dateStr) { setEvents([]); setEventId(''); return }
+    if (!dateStr) { setEvents([]); setAllEventRows([]); setEventId(''); setExtraEventIds([]); return }
     setEventsLoading(true)
-    var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, contract_type, venue_name, session, client_name, department, contract_no, created_user_name')
-      .eq('function_date', dateStr)
-      .is('lms_cancelled_at', null)
-      .order('event_name')
-    var rows = data || []
+    var pool = await loadFunctionPickerPool(dateStr)
+    var rows = pool.dateRows
     setEvents(rows)
+    setAllEventRows(pool.allRows)
     setEventsLoading(false)
     if (rows.length === 1) setEventId(String(rows[0].id))
-    else if (!rows.some(function (r) { return String(r.id) === eventId })) setEventId('')
+    else if (!pool.allRows.some(function (r) { return String(r.id) === eventId })) { setEventId(''); setExtraEventIds([]) }
+  }
+
+  // Same tentative-event escape hatch WalletManager's Collect flow already
+  // offers when a real LMS contract for a booking hasn't synced in yet —
+  // gated behind the same permission, calling the same RPC, so a tentative
+  // event created from either screen behaves identically and merges into
+  // the real contract the same way once it syncs.
+  function openTentativeModal() {
+    setTentativeGuestName('')
+    setTentativeVenue('')
+    setTentativeVenueOther('')
+    setTentativePax('')
+    setTentativeFunctionType('')
+    setTentativeModal(true)
+    if (eventTypeOptions.length === 0) {
+      // Moved off quote_config to quote_event_types (Phase 3 of the quote
+      // pricing migration) — RateCardEditor.jsx's Event Types tab writes
+      // there now.
+      supabase.from('quote_event_types').select('label, icon').order('sort_order')
+        .then(function (res) { setEventTypeOptions(res.data || []) })
+    }
+  }
+
+  async function submitTentativeEvent() {
+    var venueIsOther = tentativeVenue === '__other__'
+    if (tentativeSaving || !eventDate || !tentativeGuestName.trim() || !tentativeFunctionType) return
+    if (!venueIsOther && !tentativeVenue) return
+    if (venueIsOther && !tentativeVenueOther.trim()) return
+    setTentativeSaving(true)
+    var { data: newId, error } = await supabase.rpc('fn_create_tentative_event', {
+      p_client_name: tentativeGuestName.trim(),
+      p_venue_id: venueIsOther ? null : Number(tentativeVenue),
+      p_function_date: eventDate,
+      p_pax: tentativePax ? Number(tentativePax) : null,
+      p_function_type: tentativeFunctionType,
+      p_venue_name_other: venueIsOther ? tentativeVenueOther.trim() : null,
+    })
+    if (error) { alert('Could not create event: ' + error.message); setTentativeSaving(false); return }
+    setTentativeSaving(false)
+    setTentativeModal(false)
+    await loadEventsByDate(eventDate)
+    if (newId != null) setEventId(String(newId))
   }
 
   // The date-then-function picker the toggle reveals.
@@ -501,98 +545,23 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         onChange={function (dateStr) { setEventDate(dateStr); loadEventsByDate(dateStr) }} />
       {eventsLoading && <p className="text-[12px] text-slate-500">Loading events...</p>}
       {eventDate && !eventsLoading && events.length === 0 && <p className="text-[12px] text-slate-500">No events on this date</p>}
+      {eventDate && !eventsLoading && canCreateTentativeEvent && (
+        <button type="button" onClick={openTentativeModal}
+          className="w-full py-2 text-[12px] font-semibold text-indigo-600 border border-dashed border-indigo-300 rounded-lg hover:bg-indigo-50 transition-colors">
+          + Booking not in the list? Create tentative event
+        </button>
+      )}
       {/* A card list, not a <select>: one function needs THREE department
           colours on the same row, and a native option can only carry one
           (the iOS wheel ignores even that). Real markup gets the chips —
-          and it matches the Extra Plates and Wallet function pickers. */}
-      {events.length > 0 && (function () {
-        var groups = groupFunctions(events)
-        // Once a function is chosen the other cards have done their job.
-        // Keeping them on screen pushed the amount, category and receipt
-        // fields a full phone-height down the form; the choice collapses
-        // to the one card that matters, with a way back beside it.
-        var picked = eventId ? groups.filter(function (g) {
-          return g.contracts.some(function (c) { return String(c.id) === eventId })
-        }) : null
-        var shown = (picked && picked.length === 1) ? picked : groups
-        return (
-        /* ═══ a grid of tiles, not a stack of bars ═════════════════════════
-           Full-width rows spent the whole column on one function and pushed
-           the amount and receipt fields a screen down. Four across, and the
-           fifth starts a new row.
-
-           A grid rather than a scrolling row: the count is whatever the date
-           returns, and a row hides everything past the fourth tile behind a
-           gesture — with six bookings you could not tell there were six.
-
-           Column count is gated on the wide flag, not on lg alone. The phone shell is
-           a 540px column inside whatever viewport the laptop happens to have,
-           so a bare lg:grid-cols-4 fires inside it and hands the phone four
-           120px tiles. */
-        <div className="space-y-2">
-        <div className={"grid gap-2 grid-cols-1 sm:grid-cols-2" + (wide ? " lg:grid-cols-4" : "")}>
-          {shown.map(function (g) {
-            var head = g.contracts[0]
-            var sel = g.contracts.filter(function (c) { return String(c.id) === eventId })[0] || null
-            return (
-              /* The tile picks the function, nothing finer. event_id takes the
-                 first contract in running order (Venue → Decor → Catering →
-                 Entertainment); the cost's own department is set per-allocation
-                 further down the form, so the contract row this hangs off does
-                 not need to be chosen here. */
-              <button key={g.key} type="button" onClick={function () { setEventId(String(head.id)) }}
-                className={"text-left rounded-xl border px-2.5 py-2 transition-all duration-150 " +
-                  (sel
-                    ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
-                    : "border-slate-200 bg-white hover:border-indigo-300 hover:shadow-[0_2px_8px_rgba(15,23,42,0.06)]")}>
-                <span className="flex items-start justify-between gap-1.5">
-                  <span className={"min-w-0 flex-1 block text-[11px] font-bold uppercase tracking-[0.03em] leading-snug truncate " +
-                    (sel ? "text-indigo-900" : "text-slate-900")}>
-                    {head.event_name}
-                  </span>
-                  {/* Which departments this evening is booked under — read only,
-                      and never wrapped: a second row of chips is what made these
-                      tall in the first place. */}
-                  <span className="shrink-0 flex flex-nowrap items-center gap-1">
-                    {g.contracts.map(function (c) {
-                      return (
-                        /* 10px is the floor the rest of the form uses, so the chip
-                           shrinks by losing padding and its border rather than its
-                           type. The border was a second edge inside a tile that
-                           already has one. */
-                        <span key={c.id}
-                          className={"text-[10px] font-bold uppercase tracking-[0.03em] leading-none px-1.5 py-[3px] rounded " + deptCls(c.department)}>
-                          {c.department}
-                        </span>
-                      )
-                    })}
-                  </span>
-                </span>
-                {head.client_name && (
-                  <span className={"block text-[11px] leading-snug truncate " + (sel ? "text-indigo-800" : "text-slate-700")}>
-                    {head.client_name}
-                  </span>
-                )}
-                {/* Venue and session stay. They are half of what tells two
-                    bookings on the same evening apart — funcKeyOf groups on
-                    them — so a tile without them can be a twin of the one
-                    beside it. */}
-                <span className={"block text-[10px] leading-snug truncate " + (sel ? "text-indigo-600" : "text-slate-500")}>
-                  {(head.venue_name || '') + (head.session ? ' · ' + head.session : '')}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-          {shown !== groups && groups.length > 1 && (
-            <button type="button" onClick={function () { setEventId('') }}
-              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 px-1">
-              Change function
-            </button>
-          )}
-        </div>
-        )
-      })()}
+          and it matches the Extra Plates and Wallet function pickers. A
+          contract running more than one function (same day or different
+          days) reads as one tile; opening it lists its functions with their
+          own dates so the pick into a specific one stays deliberate. */}
+      {allEventRows.length > 0 && (
+        <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={eventId} onPick={setEventId}
+          extraEventIds={extraEventIds} onExtraChange={setExtraEventIds} wide={wide} />
+      )}
     </div>
     )
   }
@@ -655,7 +624,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
 
   function toggleFunction(val) {
     setIsFunction(val)
-    if (!val) { setEventId(''); setEventDate(''); setEvents([]) }
+    if (!val) { setEventId(''); setExtraEventIds([]); setEventDate(''); setEvents([]) }
   }
 
   // ── Lookup data loader ──
@@ -671,7 +640,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       // Fetches employees, not departments — filtered by field.allowed_dept_ids at render time (dept overlap).
       items = refData.employees.filter(function (e) { return ['probation', 'active', 'on_leave'].indexOf(e.status) !== -1 })
     } else if (source === 'staff') {
-      var { data: pData } = await supabase.from('profiles').select('id, name').order('name')
+      // fn_profile_names, not a direct select -- RLS on profiles only lets a
+      // user read their own row, and this picker needs everyone.
+      var { data: pData } = await supabase.rpc('fn_profile_names')
+      pData = (pData || []).slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '') })
       items = (pData || []).map(function (p) { return { label: p.name || '—', value: String(p.id) } })
     } else if (source === 'categories') {
       var { data: cData } = await supabase.from('categories').select('id, name').order('name')
@@ -762,6 +734,97 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         })
       })
     })
+  }
+
+  async function applyCropToReceipt(blob) {
+    if (!cropTarget) return
+    var target = cropTarget
+    setCropTarget(null)
+    var oldFile = entries[target.idx] && entries[target.idx].receiptFiles[target.rIdx]
+    var name = (oldFile && oldFile.name) || ('receipt_' + Date.now() + '.jpg')
+    var file = await compressImage(new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() }), 100)
+    var newUrl = URL.createObjectURL(file)
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== target.idx) return e
+        var oldUrl = e.receiptPreviews[target.rIdx]
+        if (oldUrl) URL.revokeObjectURL(oldUrl)
+        return Object.assign({}, e, {
+          receiptFiles: e.receiptFiles.map(function (f, j) { return j === target.rIdx ? file : f }),
+          receiptPreviews: e.receiptPreviews.map(function (u, j) { return j === target.rIdx ? newUrl : u })
+        })
+      })
+    })
+  }
+
+  function renderTentativeModal() {
+    if (!tentativeModal) return null
+    var tentativeVenueIsOther = tentativeVenue === '__other__'
+    var canSubmitTentative = !tentativeSaving && tentativeGuestName.trim() && tentativeFunctionType &&
+      (tentativeVenueIsOther ? tentativeVenueOther.trim() : tentativeVenue)
+    return (
+      <BottomSheet open={true} onClose={function () { setTentativeModal(false) }} title="Create Tentative Event">
+        <div className="space-y-4">
+          <p className="text-xs text-gray-500">
+            For a booking that hasn't been contracted in LMS yet. It'll get its own ledger right away —
+            once the real LMS event syncs in, an admin can merge this into it.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Guest Name</label>
+            <input type="text" value={tentativeGuestName}
+              onChange={function (e) { setTentativeGuestName(e.target.value) }}
+              placeholder="e.g. Himanshu Vats"
+              className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
+            <select value={tentativeVenue} onChange={function (e) { setTentativeVenue(e.target.value) }}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              style={{ fontSize: '16px' }}>
+              <option value="">Select venue...</option>
+              {venues.map(function (v) { return <option key={v.id} value={v.id}>{(v.code ? v.code + ' — ' : '') + v.name}</option> })}
+              <option value="__other__">Others</option>
+            </select>
+            {tentativeVenueIsOther && (
+              <input type="text" value={tentativeVenueOther}
+                onChange={function (e) { setTentativeVenueOther(e.target.value) }}
+                placeholder="Enter venue name"
+                className="w-full mt-2 px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                style={{ fontSize: '16px' }} />
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Pax</label>
+              <input type="number" min="0" inputMode="numeric" value={tentativePax}
+                onChange={function (e) { setTentativePax(e.target.value) }}
+                placeholder="0"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                style={{ fontSize: '16px' }} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Function Type</label>
+              <select value={tentativeFunctionType} onChange={function (e) { setTentativeFunctionType(e.target.value) }}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                style={{ fontSize: '16px' }}>
+                <option value="">Select...</option>
+                {eventTypeOptions.map(function (t, i) { return <option key={t.label + i} value={t.label}>{(t.icon ? t.icon + ' ' : '') + t.label}</option> })}
+              </select>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400">Function date: {formatDate(eventDate)}</p>
+          <div className="flex gap-3 pt-2">
+            <button onClick={function () { setTentativeModal(false) }}
+              className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-semibold">Cancel</button>
+            <button onClick={submitTentativeEvent} disabled={!canSubmitTentative}
+              className="flex-1 py-3 text-sm text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors font-semibold">
+              {tentativeSaving ? 'Creating...' : 'Create Event'}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
+    )
   }
 
   var mediaRecorders = useRef({})
@@ -932,6 +995,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
             itemMatchedId: null,
             itemMatchedSource: null,
             itemMatchedCategoryId: null,
+            itemLastPurchase: null,
+            itemLastPurchaseLoading: false,
           })
         })
         return Object.assign({}, e, { items: newItems, _editingItemIdx: itemIdx })
@@ -955,6 +1020,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
             ic.itemMatchedId = null
             ic.itemMatchedSource = null
             ic.itemMatchedCategoryId = null
+            ic.itemLastPurchase = null
+            ic.itemLastPurchaseLoading = false
           }
           return ic
         })
@@ -991,6 +1058,40 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     }, 300)
   }
 
+  // Patches the one item at [entryIdx][itemIdx], but only if it's still
+  // matched to the same item id — guards against a slow lookup landing
+  // after the user has already picked (or cleared) a different match.
+  function patchItemIfStillMatched(entryIdx, itemIdx, itemId, patch) {
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== entryIdx) return e
+        var copy = Object.assign({}, e)
+        copy.items = e.items.map(function (it, j) {
+          if (j !== itemIdx || it.itemMatchedId !== itemId) return it
+          return Object.assign({}, it, patch)
+        })
+        return copy
+      })
+    })
+  }
+
+  function loadLastPurchase(entryIdx, itemIdx, item) {
+    patchItemIfStillMatched(entryIdx, itemIdx, item.id, { itemLastPurchaseLoading: true })
+    supabase.from('v_item_purchase_history')
+      .select('rate_paise, vendor_name, txn_date')
+      .eq('item_id', item.id)
+      .eq('item_source', item._source)
+      .order('txn_date', { ascending: false })
+      .limit(1)
+      .then(function (res) {
+        var row = (res.data || [])[0] || null
+        patchItemIfStillMatched(entryIdx, itemIdx, item.id, {
+          itemLastPurchase: row,
+          itemLastPurchaseLoading: false
+        })
+      })
+  }
+
   function pickItemMatch(entryIdx, itemIdx, item) {
     setEntries(function (prev) {
       return prev.map(function (e, i) {
@@ -1004,7 +1105,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
             itemMatchedId: item.id,
             itemMatchedSource: item._source,
             itemMatchedCategoryId: item.category_id || null,
-            itemUnit: item.unit || it.itemUnit
+            itemUnit: item.unit || it.itemUnit,
+            itemLastPurchase: null,
+            itemLastPurchaseLoading: true
           })
         })
         return copy
@@ -1012,6 +1115,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     })
     setItemMatches([])
     setItemSearchKey('')
+    loadLastPurchase(entryIdx, itemIdx, item)
   }
 
   function duplicateEntry(idx) {
@@ -1323,6 +1427,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         items = lookupCache[field.source] || []
       }
       var isVendors = field.source === 'vendors'
+      var canQuickAddVendor = isVendors && hasPerm(profile?.permsNew, 'procurement.vendors.quick_create')
       return (
         <SearchDropdown
           key={field.key}
@@ -1331,8 +1436,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           value={value || ''}
           onChange={onChange}
           placeholder={'Select ' + field.label + '...'}
-          allowAdd={isVendors}
-          onAdd={isVendors ? function (typed) { return addVendorStub(typed, entry, onChange) } : undefined}
+          allowAdd={canQuickAddVendor}
+          onAdd={canQuickAddVendor ? function (typed) { return addVendorStub(typed, entry, onChange) } : undefined}
         />
       )
     }
@@ -1493,6 +1598,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   async function handleSubmit() {
     if (saving || submitLockRef.current) return
     submitLockRef.current = true
+    stopAllVoice()
     try {
     setError('')
     setSuccess('')
@@ -1553,7 +1659,63 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       var newPaise = newBasePaise + newTaxPaise
       try {
         var editMeta = Object.assign({}, e0.fieldValues)
+        // e0.fieldValues.item_receipts is the array exactly as it was when the
+        // form loaded — editing an item (qty, rate, name...) in the form only
+        // ever updated e0.items, the separate UI-editable copy built from it
+        // in hydrateEntry. Without re-serializing e0.items back in here, every
+        // item edit on an existing expense was silently discarded on save:
+        // the request still carried the untouched original item_receipts.
+        // Matched by index (same order hydrateEntry read them in) rather than
+        // by matched_item_id, so a "new" line with no id yet still lines up
+        // with its own original row.
+        if (e0.isItemPurchase) {
+          var _origItems = Array.isArray(editMeta.item_receipts) ? editMeta.item_receipts : []
+          editMeta.item_receipts = e0.items.map(function (im, _ii) {
+            var qtyN = Number(im.itemQty) || 0
+            var rateN = Number(im.itemRate) || 0
+            var _orig = _origItems[_ii] || {}
+            return {
+              query: (im.itemQuery || '').trim(),
+              matched_item_id: im.itemMode === 'new' ? null : im.itemMatchedId,
+              matched_source: im.itemMode === 'new' ? 'new' : im.itemMatchedSource,
+              matched_category_id: im.itemMatchedCategoryId,
+              qty: qtyN,
+              unit: im.itemUnit,
+              notes: (im.itemNotes || '').trim() || null,
+              rate_paise: Math.round(rateN * 100),
+              line_total_paise: Math.round(qtyN * rateN * 100),
+              // These three only ever get set once an item has actually been
+              // received into inventory — editing the form never touches
+              // them, and itemsLocked already prevents editing items at all
+              // once any of them are set, so carrying them over unchanged
+              // from the original row (by position) is always correct.
+              resulting_item_id: _orig.resulting_item_id || null,
+              received_by: _orig.received_by || null,
+              received_at: _orig.received_at || null,
+              cancel_reason: _orig.cancel_reason || null,
+            }
+          })
+        }
         var keepPaths = existingReceipts.filter(function (p) { return removedReceipts.indexOf(p) === -1 })
+        // Same resolution as the create path below (search "Resolve legacy
+        // vendor_name column") — without it, editing a saved expense wrote
+        // the raw vendor ID string (e.g. "73") into vendor_name instead of
+        // the vendor's actual name, since the lookup field's key happens to
+        // be named "vendor_name" too and metadata stores it as an ID.
+        var editVendorLegacyName = null
+        var editSubTypeRow = expenseSubTypes.find(function (s) { return s.id === Number(e0.expenseSubTypeId) })
+        if (editSubTypeRow && editSubTypeRow.extra_fields) {
+          var editVendorField = editSubTypeRow.extra_fields.find(function (f) {
+            return f.type === 'lookup' && f.source === 'vendors'
+          })
+          if (editVendorField) {
+            var editVId = e0.fieldValues[editVendorField.key]
+            if (editVId) {
+              var editVRow = (lookupCache.vendors || []).find(function (v) { return String(v.id) === String(editVId) })
+              if (editVRow) editVendorLegacyName = editVRow.name
+            }
+          }
+        }
         var _editSplit = getEntrySplit(e0)
         var editPayload = {
           expense_type_id: Number(e0.expenseTypeId),
@@ -1570,8 +1732,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           description: e0.description.trim(),
           expense_date: e0.expenseDate,
           event_id: eventId ? Number(eventId) : null,
+          extra_event_ids: extraEventIds.length > 0 ? extraEventIds.map(Number) : null,
           metadata: editMeta,
-          vendor_name: e0.fieldValues.vendor_name || null,
+          vendor_name: editVendorLegacyName,
           travel_from: e0.fieldValues.travel_from || null,
           travel_to: e0.fieldValues.travel_to || null,
           travel_mode: e0.fieldValues.travel_mode || null,
@@ -1791,6 +1954,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
             expense_date: e.expenseDate,
             status: 'recorded',
             event_id: eventId ? Number(eventId) : null,
+            extra_event_ids: extraEventIds.length > 0 ? extraEventIds.map(Number) : null,
             metadata: meta,
             vendor_name: vendorLegacyName,
             travel_from: e.fieldValues.travel_from || null,
@@ -2570,8 +2734,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                     return (
                                       <div key={im._key} className={"border rounded-xl px-3 py-2.5 flex items-center gap-2 transition-colors " + (complete ? "bg-white border-slate-200" : "bg-amber-50/40 border-amber-200")}>
                                         <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">{iIdx + 1}</span>
-                                        <button type="button" onClick={function () { if (!isEditing) setItemEditing(idx, iIdx) }}
-                                          className={"flex-1 min-w-0 flex items-center gap-2 text-left " + (isEditing ? "cursor-default" : "hover:opacity-70")}>
+                                        <button type="button" onClick={function () { if (!entry.itemsLocked) setItemEditing(idx, iIdx) }}
+                                          className={"flex-1 min-w-0 flex items-center gap-2 text-left " + (entry.itemsLocked ? "cursor-default" : "hover:opacity-70")}>
                                           <div className="min-w-0 flex-1">
                                             <p className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-900 truncate">
                                               {im.itemQuery ? im.itemQuery : <span className="font-normal text-slate-400">Unnamed item</span>}
@@ -2591,7 +2755,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                             <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">Incomplete</span>
                                           )}
                                         </button>
-                                        {!isEditing && (
+                                        {!entry.itemsLocked && (
                                           <button type="button" onClick={function () { removeItem(idx, iIdx) }}
                                             className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors" title="Delete item" aria-label="Delete item"><Icon name="trash" className="w-4 h-4" /></button>
                                         )}
@@ -2603,7 +2767,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                     // so filling in the last value does not fold the card away
                                     // from under the caret.
                                     <div key={im._key} className="ambria-rise border border-slate-200 rounded-xl bg-white p-3 space-y-2.5"
-                                      onFocusCapture={function () { if (editingIdx !== iIdx && !isEditing) setItemEditing(idx, iIdx) }}>
+                                      onFocusCapture={function () { if (editingIdx !== iIdx && !entry.itemsLocked) setItemEditing(idx, iIdx) }}>
                                       <div className="flex items-center justify-between">
                                         <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{'Item ' + (iIdx + 1)}</span>
                                         <div className="flex items-center gap-2">
@@ -2682,9 +2846,18 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                         </div>
                                         <div>
                                           <label htmlFor={'item-unit-' + idx + '-' + iIdx} className="block text-[11px] font-semibold text-slate-600 mb-1">Unit</label>
-                                          <select id={'item-unit-' + idx + '-' + iIdx} value={im.itemUnit}
+                                          {/* Locked once matched to an existing inventory item — its unit is
+                                              already established from past purchases, and letting this form
+                                              override it per-expense is what let the same item get logged in
+                                              Pieces one time and Kg the next, scrambling its rate/qty history
+                                              in the Inventory Ledger. A "new" item (not yet in the catalog)
+                                              still picks its own unit freely here, since there's nothing to
+                                              conflict with yet. */}
+                                          <select id={'item-unit-' + idx + '-' + iIdx} value={im.itemUnit} disabled={!!im.itemMatchedId}
                                             onChange={function (e) { updateItem(idx, iIdx, 'itemUnit', e.target.value) }}
-                                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }}>
+                                            title={im.itemMatchedId ? 'Locked to this item\'s established unit' : undefined}
+                                            className={"w-full px-3 py-2.5 border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 " +
+                                              (im.itemMatchedId ? "bg-slate-50 text-slate-500 cursor-not-allowed" : "bg-white hover:border-slate-300")} style={{ fontSize: '16px' }}>
                                             {['Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens', 'Kg', 'Grams', 'Liters', 'ML', 'Meters', 'Feet', 'Rolls', 'Packets', 'Bags', 'Boxes', 'Cartons', 'Bottles', 'Sheets', 'Reams'].map(function (u) {
                                               return <option key={u} value={u}>{u}</option>
                                             })}
@@ -2699,6 +2872,23 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                         </div>
                                       </div>
 
+                                      {/* Last purchase rate/vendor, from the same purchase
+                                          history the Inventory Ledger reads (v_item_purchase_history)
+                                          — a reference point so the rate just typed above isn't
+                                          picked blind against what this item has actually sold for. */}
+                                      {im.itemMatchedId && (
+                                        <p className="text-[11px] text-slate-500 -mt-1">
+                                          {im.itemLastPurchaseLoading ? 'Checking last purchase…' : (
+                                            im.itemLastPurchase ? (
+                                              <>Last purchased at <b className="text-slate-700 tabular-nums">{formatPoints(im.itemLastPurchase.rate_paise)}</b>
+                                                {im.itemLastPurchase.vendor_name ? ' from ' + im.itemLastPurchase.vendor_name : ''}
+                                                {im.itemLastPurchase.txn_date ? ' · ' + formatDate(im.itemLastPurchase.txn_date) : ''}
+                                              </>
+                                            ) : 'No prior purchase on record'
+                                          )}
+                                        </p>
+                                      )}
+
                                       <div>
                                         <label htmlFor={'item-notes-' + idx + '-' + iIdx} className="block text-[11px] font-semibold text-slate-600 mb-1">Notes <span className="font-normal text-slate-500">(brand, size, spec)</span></label>
                                         {/* Collapse rides the Notes row as a bare arrow. A
@@ -2711,7 +2901,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                             onChange={function (e) { updateItem(idx, iIdx, 'itemNotes', e.target.value) }}
                                             placeholder="e.g. White ceramic, 10-inch round"
                                             className="flex-1 min-w-0 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
-                                          {!isEditing && (
+                                          {!entry.itemsLocked && (
                                             <button type="button" onClick={function () { setItemDone(idx) }}
                                               title={complete ? 'Done — collapse this item' : 'Collapse this item'}
                                               aria-label={complete ? 'Done, collapse this item' : 'Collapse this item'}
@@ -3257,6 +3447,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                 onClick={function () { setZoomImg(url) }}
                                 className="h-24 w-full rounded-lg border border-slate-200 object-cover cursor-pointer active:opacity-80" />
                             )}
+                            {!isPdf && (
+                              <button type="button" onClick={function () { setCropTarget({ idx: idx, rIdx: rIdx, url: url }) }}
+                                title="Crop" aria-label="Crop this receipt"
+                                className="absolute bottom-1 right-1 w-6 h-6 bg-black/60 backdrop-blur text-white rounded-md flex items-center justify-center hover:bg-black/75"><Icon name="crop" size={13} /></button>
+                            )}
                             <button type="button" onClick={function () { removeReceipt(idx, rIdx) }}
                               className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center shadow-sm hover:bg-red-600"><Icon name="close" size={12} /></button>
                           </div>
@@ -3512,6 +3707,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           onClose={function () { setCameraTarget(null) }}
         />
       )}
+
+      {cropTarget && (
+        <ImageCropper imageUrl={cropTarget.url} onCancel={function () { setCropTarget(null) }} onDone={applyCropToReceipt} />
+      )}
+
+      {renderTentativeModal()}
     </div>
   )
 }

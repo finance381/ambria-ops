@@ -6,7 +6,9 @@ import { isPrivilegedRole } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import Icon from '../../components/ui/Icon'
-import { deptCls, deptOrder } from '../../lib/ui'
+import DescriptionNote from '../../components/ui/DescriptionNote'
+import { buildContractBuckets, loadFunctionPickerPool } from '../../lib/functionPicker'
+import FunctionPickerGrid from '../../components/ui/FunctionPickerGrid'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -50,34 +52,6 @@ function makeAlloc() {
   return { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8), departmentId: '', expenseTypeId: '', expenseSubTypeId: '', venueId: '', subVenueId: '', amountPts: '', remarks: '' }
 }
 
-// One evening at one venue is booked as up to four contracts — one per
-// department. Grouped so the picker lists each function once and hangs its
-// contracts off it as department chips (mirrors ExpenseForm's picker).
-function funcKeyOf(r) {
-  return [r.client_name || '', r.venue_name || '', r.session || '', (r.event_name || '').trim().toLowerCase()].join('|')
-}
-
-function groupFunctions(rows) {
-  var byKey = {}
-  var order = []
-  for (var i = 0; i < rows.length; i++) {
-    var r = rows[i]
-    var k = funcKeyOf(r)
-    if (!byKey[k]) {
-      byKey[k] = {
-        key: k,
-        contracts: [],
-      }
-      order.push(k)
-    }
-    byKey[k].contracts.push(r)
-  }
-  order.forEach(function (k) {
-    byKey[k].contracts.sort(function (a, b) { return deptOrder(a.department) - deptOrder(b.department) })
-  })
-  return order.map(function (k) { return byKey[k] })
-}
-
 function GVForm({ exp, profile, onCancel, onSaved }) {
   var isAdmin = isPrivilegedRole(profile)
   var [reason, setReason] = useState('')
@@ -99,7 +73,9 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
   var [isFunction, setIsFunction] = useState(!!exp.event_id)
   var [eventDate, setEventDate] = useState(exp.event_id ? (exp.expense_date || '') : '')
   var [eventId, setEventId] = useState(exp.event_id ? String(exp.event_id) : '')
+  var [extraEventIds, setExtraEventIds] = useState((exp.extra_event_ids || []).map(String))
   var [events, setEvents] = useState([])
+  var [allEventRows, setAllEventRows] = useState([])
   var [eventsLoading, setEventsLoading] = useState(false)
   // Optional: buy item(s) as part of this adjustment — same input as
   // ExpenseForm's own "Item select", feeding the same
@@ -214,23 +190,20 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
   }, [])
 
   async function loadEventsByDate(dateStr) {
-    if (!dateStr) { setEvents([]); setEventId(''); return }
+    if (!dateStr) { setEvents([]); setAllEventRows([]); setEventId(''); setExtraEventIds([]); return }
     setEventsLoading(true)
-    var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, session, client_name, department')
-      .eq('function_date', dateStr)
-      .is('lms_cancelled_at', null)
-      .order('event_name')
-    var rows = data || []
+    var pool = await loadFunctionPickerPool(dateStr)
+    var rows = pool.dateRows
     setEvents(rows)
+    setAllEventRows(pool.allRows)
     setEventsLoading(false)
     if (rows.length === 1) setEventId(String(rows[0].id))
-    else if (!rows.some(function (r) { return String(r.id) === eventId })) setEventId('')
+    else if (!pool.allRows.some(function (r) { return String(r.id) === eventId })) { setEventId(''); setExtraEventIds([]) }
   }
 
   function toggleFunction(val) {
     setIsFunction(val)
-    if (!val) { setEventId(''); setEventDate(''); setEvents([]) }
+    if (!val) { setEventId(''); setExtraEventIds([]); setEventDate(''); setEvents([]); setAllEventRows([]) }
   }
 
   function renderFunctionPicker() {
@@ -240,61 +213,10 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
           onChange={function (dateStr) { setEventDate(dateStr); loadEventsByDate(dateStr) }} />
         {eventsLoading && <p className="text-[12px] text-slate-500">Loading events...</p>}
         {eventDate && !eventsLoading && events.length === 0 && <p className="text-[12px] text-slate-500">No events on this date</p>}
-        {events.length > 0 && (function () {
-          var groups = groupFunctions(events)
-          var picked = eventId ? groups.filter(function (g) {
-            return g.contracts.some(function (c) { return String(c.id) === eventId })
-          }) : null
-          var shown = (picked && picked.length === 1) ? picked : groups
-          return (
-            <div className="space-y-2">
-              <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
-                {shown.map(function (g) {
-                  var head = g.contracts[0]
-                  var sel = g.contracts.filter(function (c) { return String(c.id) === eventId })[0] || null
-                  return (
-                    <button key={g.key} type="button" onClick={function () { setEventId(String(head.id)) }}
-                      className={"text-left rounded-xl border px-2.5 py-2 transition-all duration-150 " +
-                        (sel
-                          ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500"
-                          : "border-slate-200 bg-white hover:border-indigo-300 hover:shadow-[0_2px_8px_rgba(15,23,42,0.06)]")}>
-                      <span className="flex items-start justify-between gap-1.5">
-                        <span className={"min-w-0 flex-1 block text-[11px] font-bold uppercase tracking-[0.03em] leading-snug truncate " +
-                          (sel ? "text-indigo-900" : "text-slate-900")}>
-                          {head.event_name}
-                        </span>
-                        <span className="shrink-0 flex flex-nowrap items-center gap-1">
-                          {g.contracts.map(function (c) {
-                            return (
-                              <span key={c.id}
-                                className={"text-[10px] font-bold uppercase tracking-[0.03em] leading-none px-1.5 py-[3px] rounded " + deptCls(c.department)}>
-                                {c.department}
-                              </span>
-                            )
-                          })}
-                        </span>
-                      </span>
-                      {head.client_name && (
-                        <span className={"block text-[11px] leading-snug truncate " + (sel ? "text-indigo-800" : "text-slate-700")}>
-                          {head.client_name}
-                        </span>
-                      )}
-                      <span className={"block text-[10px] leading-snug truncate " + (sel ? "text-indigo-600" : "text-slate-500")}>
-                        {(head.venue_name || '') + (head.session ? ' · ' + head.session : '')}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-              {shown !== groups && groups.length > 1 && (
-                <button type="button" onClick={function () { setEventId('') }}
-                  className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 px-1">
-                  Change function
-                </button>
-              )}
-            </div>
-          )
-        })()}
+        {allEventRows.length > 0 && (
+          <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={eventId} onPick={setEventId}
+            extraEventIds={extraEventIds} onExtraChange={setExtraEventIds} />
+        )}
       </div>
     )
   }
@@ -457,6 +379,16 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
       return
     }
 
+    // extra_event_ids is a plain tag, not one of the audited fields
+    // fn_create_gv controls — same direct-update precedent as the
+    // item_receipts append below — so it only needs updating here when the
+    // function pick itself changed.
+    if (eventChanged) {
+      try {
+        await supabase.from('expenses').update({ extra_event_ids: extraEventIds.length > 0 ? extraEventIds.map(Number) : null }).eq('id', exp.id)
+      } catch (_) {}
+    }
+
     // Same item_receipts shape and item_receipt_status ExpenseForm.jsx writes
     // on a new expense — a JV's item purchase joins the parent expense's own
     // list rather than starting a separate one, so the (not yet built)
@@ -515,7 +447,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
           <button onClick={onCancel} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 mb-2">← Cancel</button>
           <h2 className="text-lg font-bold text-gray-900">Raise Journal Voucher</h2>
           <p className="text-xs text-gray-500">Adjust expense #{exp.id} · {formatPoints(exp.amount_paise)}</p>
-          {exp.description && <p className="text-xs text-gray-400 mt-0.5 truncate max-w-md">{exp.description}</p>}
+          <DescriptionNote text={exp.description} className="mt-1 max-w-md" />
         </div>
       </div>
 

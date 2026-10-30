@@ -9,9 +9,11 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
 import CheckedStamp from '../../components/ui/CheckedStamp'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import EnteredMark from '../../components/ui/EnteredMark'
 import ReverseDialog from '../../components/ui/ReverseDialog'
 import { appConfirm } from '../../components/ui/AppDialog'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 // Label left, value right, hairline between. A py-2 row plus a divider costs
 // ~34px where the old space-y-3 pair cost ~44px, and the rule makes a long
@@ -41,6 +43,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
   var [allocations, setAllocations] = useState([])
   var [allocVenues, setAllocVenues] = useState({})
   var [imgFullscreen, setImgFullscreen] = useState('')
+  useBackButtonClose(!!imgFullscreen, function () { setImgFullscreen(''); setFullscreenIdx(-1) })
   var [fullscreenIdx, setFullscreenIdx] = useState(-1)
   var [imgRotations, setImgRotations] = useState({})
   var [lookupLabels, setLookupLabels] = useState({})
@@ -80,7 +83,9 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
     if (exp.penalized_by && ids.indexOf(exp.penalized_by) === -1) ids.push(exp.penalized_by)
     if (exp.acknowledged_by && ids.indexOf(exp.acknowledged_by) === -1) ids.push(exp.acknowledged_by)
     if (ids.length === 0) { setReviewerName(''); setPenalizerName(''); setAcknowledgerName(''); return }
-    supabase.from('profiles').select('id, name').in('id', ids).then(function (res) {
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and these are rarely the viewer.
+    supabase.rpc('fn_profile_names', { p_ids: ids }).then(function (res) {
       var map = {}
       ;(res.data || []).forEach(function (p) { map[p.id] = p.name || '' })
       setReviewerName(exp.reviewed_by ? (map[exp.reviewed_by] || '—') : '')
@@ -103,8 +108,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
     setCheckedByName('')
     if (!exp.checked_by) return
     var cancelled = false
-    supabase.from('profiles').select('name').eq('id', exp.checked_by).maybeSingle().then(function (res) {
-      if (!cancelled) setCheckedByName((res.data && res.data.name) || '')
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and the checker is rarely the viewer.
+    supabase.rpc('fn_profile_names', { p_ids: [exp.checked_by] }).then(function (res) {
+      if (!cancelled) setCheckedByName(((res.data || [])[0] && res.data[0].name) || '')
     })
     return function () { cancelled = true }
   }, [exp.checked_by])
@@ -113,8 +120,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
     setEnteredByName('')
     if (!exp.tally_entered_by) return
     var cancelled = false
-    supabase.from('profiles').select('name').eq('id', exp.tally_entered_by).maybeSingle().then(function (res) {
-      if (!cancelled) setEnteredByName((res.data && res.data.name) || '')
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and the Tally-enterer is rarely the viewer.
+    supabase.rpc('fn_profile_names', { p_ids: [exp.tally_entered_by] }).then(function (res) {
+      if (!cancelled) setEnteredByName(((res.data || [])[0] && res.data[0].name) || '')
     })
     return function () { cancelled = true }
   }, [exp.tally_entered_by])
@@ -148,7 +157,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         var creatorIds = []
         rows.forEach(function (g) { if (g.created_by && creatorIds.indexOf(g.created_by) === -1) creatorIds.push(g.created_by) })
         if (creatorIds.length > 0) {
-          supabase.from('profiles').select('id, name').in('id', creatorIds).then(function (r2) {
+          // fn_profile_names, not a direct select -- RLS on profiles only
+          // lets a user read their own row, and most GVs here were raised
+          // by someone else.
+          supabase.rpc('fn_profile_names', { p_ids: creatorIds }).then(function (r2) {
             var map = {}
             ;(r2.data || []).forEach(function (p) { map[p.id] = p.name || '' })
             setGvCreators(map)
@@ -185,7 +197,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
           .then(function (r) { return { src: src, rows: (r.data || []).map(function (v) { return { id: String(v.id), label: v.name } }) } })
       }
       if (src === 'staff') {
-        return supabase.from('profiles').select('id, name').in('id', ids)
+        // fn_profile_names, not a direct select -- RLS on profiles only lets
+        // a user read their own row, and the staff member on a lookup field
+        // is usually not the viewer.
+        return supabase.rpc('fn_profile_names', { p_ids: ids })
           .then(function (r) { return { src: src, rows: (r.data || []).map(function (p) { return { id: String(p.id), label: p.name || '—' } }) } })
       }
       if (src === 'categories') {
@@ -401,7 +416,20 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
       penalized_at: new Date().toISOString(),
     }).eq('id', exp.id)
     if (error) { alert('Deduction failed: ' + error.message); setSaving(false); return }
-    // Salary ledger debit is written automatically by trg_expense_deduction_to_salary_ledger
+    // Used to also post a salary ledger debit via trg_expense_deduction_to_
+    // salary_ledger (dropped in migration 00123) — the deduction now only
+    // ever moves money in the wallet, the same way a full "flag" already
+    // refunds the whole amount in flag() above. Only part of what they
+    // spent is being disallowed, so only that part comes back.
+    try {
+      await supabase.rpc('wallet_admin_credit', {
+        p_user_id: exp.user_id,
+        p_amount_paise: deductionPaise,
+        p_description: 'Deduction credited back: expense #' + exp.id + ' — ' + rejectReason.trim(),
+        p_ref_type: 'expense_refund',
+        p_ref_id: String(exp.id),
+      })
+    } catch (_) {}
     try { await logActivity('EXPENSE_DEDUCT', (exp.description || 'Expense') + ' | Deduction ' + formatPoints(deductionPaise) + ' | ' + rejectReason.trim()) } catch (_) {}
     setSaving(false)
     onUpdated()
@@ -735,7 +763,13 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         {exp.expense_types?.name && (
           <Row label="Type" value={exp.expense_types.name + (exp.expense_sub_types?.name ? ' › ' + exp.expense_sub_types.name : '')} />
         )}
-        {exp.vendor_name && <Row label="Vendor" value={exp.vendor_name} />}
+        {/* exp.vendor_name is the resolved form of whatever the sub-type's own
+            vendor lookup extra field holds (see ExpenseForm.jsx's vendorLegacyName) —
+            a sub-type with one of those already shows it below via the extra_fields
+            loop, under its own real label, so showing the generic "Vendor" row too
+            would just repeat the exact same value twice. */}
+        {exp.vendor_name && !(exp.expense_sub_types?.extra_fields || []).some(function (f) { return f.type === 'lookup' && f.source === 'vendors' }) &&
+          <Row label="Vendor" value={exp.vendor_name} />}
         {/* Split-payment purchases put part of the bill on vendor credit
             rather than debiting the wallet in full — worth showing here,
             not just in the vendor ledger, since the headline Total alone
@@ -812,9 +846,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                             <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">New item</span>
                           )}
                         </div>
-                        {it.notes && (
-                          <p className="text-[11px] text-slate-500 italic mt-0.5 truncate">"{it.notes}"</p>
-                        )}
+                        <DescriptionNote text={it.notes} label="Notes" className="mt-1" />
                       </div>
                       {subtotal > 0 && <span className="text-sm font-bold text-slate-900 shrink-0">{formatPoints(subtotal)}</span>}
                     </div>
@@ -880,9 +912,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                       </span>
                     )}
                   </div>
-                  {a.remarks && (
-                    <p className="mt-2 border-l-2 border-slate-200 pl-2.5 text-[12.5px] leading-snug text-slate-600">{a.remarks}</p>
-                  )}
+                  <DescriptionNote text={a.remarks} label="Remarks" truncate={false} className="mt-2" />
                 </div>
               )
             })}
@@ -979,7 +1009,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                                     {r.venue_id && (
                                       <p className="text-[10px] text-slate-500">Venue #{r.venue_id}{r.sub_venue_id ? ' › SV#' + r.sub_venue_id : ''}</p>
                                     )}
-                                    {r.remarks && <p className="text-[10px] text-slate-500 italic">"{r.remarks}"</p>}
+                                    <DescriptionNote text={r.remarks} label="Remarks" truncate={false} className="mt-1" />
                                   </div>
                                 )
                               })}

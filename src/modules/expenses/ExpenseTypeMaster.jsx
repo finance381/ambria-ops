@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import VoiceInput from '../../components/ui/VoiceInput'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import { appConfirm } from '../../components/ui/AppDialog'
 
 var FIELD_TYPES = [
@@ -440,7 +441,7 @@ function SubTypeList({ expenseType, onBack }) {
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-bold">OFF</span>
                   )}
                 </div>
-                {st.description && <p className="text-xs text-gray-400 mt-0.5">{st.description}</p>}
+                <DescriptionNote text={st.description} />
               </div>
               <div className="flex gap-1">
                 <button onClick={function () { setFieldView(st) }}
@@ -700,7 +701,7 @@ function ExpenseTypeMaster({ onBack }) {
                                 return sd ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-bold">{sd.name}</span> : null
                               })()}
                             </div>
-                            {t.description && <p className="text-xs text-gray-400 mt-0.5">{t.description}</p>}
+                            <DescriptionNote text={t.description} />
                           </div>
                           <div className="flex gap-1">
                             <button onClick={function () { setSubView(t) }}

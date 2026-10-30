@@ -27,6 +27,7 @@ import { ON, OFF } from '../../lib/ui'
 import { useBodyScrollLock } from '../../lib/useBodyScrollLock'
 import ReverseDialog from '../../components/ui/ReverseDialog'
 import { appConfirm } from '../../components/ui/AppDialog'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -618,6 +619,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
   var [mergeTargetId, setMergeTargetId] = useState('')
   var [mergeSearch, setMergeSearch] = useState('')
   var [mergeSaving, setMergeSaving] = useState(false)
+  useBackButtonClose(showMergeModal, function () { if (!mergeSaving) setShowMergeModal(false) })
 
   var [view, setView] = useState('list')  // 'list' | 'detail'
   var [vendors, setVendors] = useState([])
@@ -706,8 +708,12 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
   var [entryFrom, setEntryFrom] = useState('')
   var [entryTo, setEntryTo] = useState('')
   // Which entries have their amount-breakdown/allocation panel expanded —
-  // collapsed by default so a vendor with many purchases fits more rows.
+  // expanded by default (the detail is usually what someone opened this
+  // vendor to check), collapsed only once someone explicitly clicks to
+  // shrink it. The map tracks the exception (collapsed), not the default,
+  // so an entry never seen before still reads as expanded.
   var [expandedEntryIds, setExpandedEntryIds] = useState({})
+  function isEntryExpanded(id) { return expandedEntryIds[id] !== false }
   // Which panel has just been opened, so the effect below can bring it into
   // view once React has actually put it on the page. A ref would not do: the
   // scroll has to happen after the commit that renders the panel, and only an
@@ -716,8 +722,8 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
 
   function toggleEntryExpanded(id, ev) {
     if (ev) ev.stopPropagation()
-    var willExpand = !expandedEntryIds[id]
-    setExpandedEntryIds(function (prev) { var next = Object.assign({}, prev); next[id] = !next[id]; return next })
+    var willExpand = !isEntryExpanded(id)
+    setExpandedEntryIds(function (prev) { var next = Object.assign({}, prev); next[id] = willExpand; return next })
     setJustExpandedId(willExpand ? id : null)
   }
 
@@ -888,8 +894,10 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
         .select('id, receipt_paths, receipt_path, amount_paise, tax_paise, user_id, acknowledged_by, checked_by, checked_at, tally_entered_by, tally_entered_at, expense_allocations(department, department_id, venue_id, amount_paise, remarks, expense_type_id, expense_sub_type_id)')
         .in('id', expIds)
       : Promise.resolve({ data: [] })
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and most of these are someone else's.
     var namesP = entryProfileIds.length > 0
-      ? supabase.from('profiles').select('id, name').in('id', entryProfileIds)
+      ? supabase.rpc('fn_profile_names', { p_ids: entryProfileIds })
       : Promise.resolve({ data: [] })
     var both = await Promise.all([expsP, namesP])
 
@@ -945,7 +953,8 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
     Object.keys(acknowledgerIdByExpId).forEach(function (eid) { wantName(acknowledgerIdByExpId[eid]) })
     Object.keys(expCheckByExpId).forEach(function (eid) { wantName(expCheckByExpId[eid].checked_by); wantName(expCheckByExpId[eid].tally_entered_by) })
     if (extraIds.length > 0) {
-      var { data: pRows } = await supabase.from('profiles').select('id, name').in('id', extraIds)
+      // fn_profile_names, not a direct select -- same RLS gap as above.
+      var { data: pRows } = await supabase.rpc('fn_profile_names', { p_ids: extraIds })
       ;(pRows || []).forEach(function (p) { profileNameById[p.id] = p.name || null })
     }
 
@@ -2401,11 +2410,11 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                       )}
                       {e._breakdown && (
                         <button type="button" onClick={function (ev) { toggleEntryExpanded(e.id, ev) }}
-                          aria-expanded={!!expandedEntryIds[e.id]}
+                          aria-expanded={isEntryExpanded(e.id)}
                           className="flex-1 min-w-[200px] flex items-center gap-3 text-left h-[52px] px-3 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50 transition-colors">
                           <span className="min-w-0 flex-1">
                             <span className="block text-[13px] font-bold text-slate-800 leading-tight truncate">
-                              {expandedEntryIds[e.id] ? 'Hide details' : 'Amount & allocation details'}
+                              {isEntryExpanded(e.id) ? 'Hide details' : 'Amount & allocation details'}
                             </span>
                             <span className="block mt-0.5 text-[11.5px] text-slate-500 leading-tight truncate">
                               View purchase amount, item allocation and more
@@ -2416,12 +2425,12 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
                               turn is what says it is the same control in two
                               states. */}
                           <Icon name="chevronRight" size={16}
-                            className={"shrink-0 text-slate-400 transition-transform duration-150 " + (expandedEntryIds[e.id] ? "rotate-90" : "")} />
+                            className={"shrink-0 text-slate-400 transition-transform duration-150 " + (isEntryExpanded(e.id) ? "rotate-90" : "")} />
                         </button>
                       )}
                     </div>
                   )}
-                  {e._breakdown && !!expandedEntryIds[e.id] && (function () {
+                  {e._breakdown && isEntryExpanded(e.id) && (function () {
                     var b = e._breakdown
                     var totalPaise = b.amount_paise
                     var taxPaise = b.tax_paise || 0

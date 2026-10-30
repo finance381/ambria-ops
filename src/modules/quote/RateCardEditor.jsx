@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { hasPerm } from '../../lib/permissions'
 import { appConfirm } from '../../components/ui/AppDialog'
+import { loadRateCardConfig, saveRateCardKey } from './rateCardData'
 
 /* ═══════════════════════════════════════════════════════
    RATE CARD EDITOR — Fully dynamic, admin-only
@@ -505,6 +506,25 @@ function VenuesEditor({ config, onSave, saving }) {
 //  RENTALS EDITOR
 // ══════════════════════════════════════
 
+function CollapsibleSection({ title, subtitle, defaultOpen, children }) {
+  var [open, setOpen] = useState(!!defaultOpen)
+  return (
+    <div style={{ marginBottom: 14, borderRadius: 9, background: '#FFF8F0', border: '1px solid ' + C.border, overflow: 'hidden' }}>
+      <button onClick={function () { setOpen(!open) }} style={{
+        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+        padding: 10, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left',
+      }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.maroon, letterSpacing: 0.5 }}>{title}</div>
+          {subtitle && <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>{subtitle}</div>}
+        </div>
+        <span style={{ fontSize: 11, fontWeight: 700, color: C.maroon2, flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>▾</span>
+      </button>
+      {open && <div style={{ padding: '0 10px 10px' }}>{children}</div>}
+    </div>
+  )
+}
+
 function RentalsEditor({ config, onSave, saving }) {
   var rentals = config.rentals || {}
   var venues = config.venues || []
@@ -520,13 +540,41 @@ function RentalsEditor({ config, onSave, saving }) {
   // rather than hardcoded index 0/1 so reordering categories doesn't
   // silently repoint it.
   var [offset, setOffset] = useState(config.rental_perfect_offset != null ? config.rental_perfect_offset : 0)
+  // Perfect -> Filler is the same kind of flat ₹L offset as King's -> Perfect,
+  // chained one category further: editing Perfect (directly, or because it
+  // just got cascaded from King's) autofills Filler as Perfect − this.
+  var [offsetPF, setOffsetPF] = useState(config.rental_filler_offset != null ? config.rental_filler_offset : 0)
+  // Pushpanjali's own grid is the base; Manaktala's and Exotica's sub-venues
+  // are each a flat ₹L subtraction off Pushpanjali's matching cell (every
+  // category, tier and slot) — same flat-offset idea, but across venues
+  // instead of across categories.
+  var [offsetPM, setOffsetPM] = useState(config.rental_pushpanjali_manaktala_offset != null ? config.rental_pushpanjali_manaktala_offset : 0)
+  var [offsetPE, setOffsetPE] = useState(config.rental_pushpanjali_exotica_offset != null ? config.rental_pushpanjali_exotica_offset : 0)
   var [tierPct, setTierPct] = useState(clone(config.rental_tier_pct || {}))
+  // Lunch-session overrides: the same four flat-₹L cascades, but applied
+  // only to the Lunch slot's own column instead of every slot — Lunch
+  // pricing doesn't have to track the main (Dinner/Sundowner) cascade.
+  var [offsetLunch, setOffsetLunch] = useState(config.rental_perfect_offset_lunch != null ? config.rental_perfect_offset_lunch : 0)
+  var [offsetPFLunch, setOffsetPFLunch] = useState(config.rental_filler_offset_lunch != null ? config.rental_filler_offset_lunch : 0)
+  var [offsetPMLunch, setOffsetPMLunch] = useState(config.rental_pushpanjali_manaktala_offset_lunch != null ? config.rental_pushpanjali_manaktala_offset_lunch : 0)
+  var [offsetPELunch, setOffsetPELunch] = useState(config.rental_pushpanjali_exotica_offset_lunch != null ? config.rental_pushpanjali_exotica_offset_lunch : 0)
   var kingsIdx = 0
   var perfectIdx = 1
+  var fillerIdx = 2
   for (var _ci = 0; _ci < cats.length; _ci++) {
     var _lbl = (cats[_ci].label || '').toLowerCase()
     if (_lbl.indexOf('king') !== -1) kingsIdx = _ci
     if (_lbl.indexOf('perfect') !== -1) perfectIdx = _ci
+    if (_lbl.indexOf('filler') !== -1) fillerIdx = _ci
+  }
+  var lunchIdx = -1
+  for (var _si0 = 0; _si0 < slots.length; _si0++) {
+    if ((slots[_si0] || '').toLowerCase().indexOf('lunch') !== -1) { lunchIdx = _si0; break }
+  }
+  // Picks the Lunch override for the Lunch slot column, the normal offset
+  // everywhere else.
+  function offsetForSlot(si, normal, lunch) {
+    return (lunchIdx !== -1 && si === lunchIdx) ? lunch : normal
   }
 
   function getTierPct(vid) {
@@ -536,7 +584,14 @@ function RentalsEditor({ config, onSave, saving }) {
 
   useEffect(function () { setDraft(clone(config.rentals || {})) }, [config.rentals])
   useEffect(function () { setOffset(config.rental_perfect_offset != null ? config.rental_perfect_offset : 0) }, [config.rental_perfect_offset])
+  useEffect(function () { setOffsetPF(config.rental_filler_offset != null ? config.rental_filler_offset : 0) }, [config.rental_filler_offset])
+  useEffect(function () { setOffsetPM(config.rental_pushpanjali_manaktala_offset != null ? config.rental_pushpanjali_manaktala_offset : 0) }, [config.rental_pushpanjali_manaktala_offset])
+  useEffect(function () { setOffsetPE(config.rental_pushpanjali_exotica_offset != null ? config.rental_pushpanjali_exotica_offset : 0) }, [config.rental_pushpanjali_exotica_offset])
   useEffect(function () { setTierPct(clone(config.rental_tier_pct || {})) }, [config.rental_tier_pct])
+  useEffect(function () { setOffsetLunch(config.rental_perfect_offset_lunch != null ? config.rental_perfect_offset_lunch : 0) }, [config.rental_perfect_offset_lunch])
+  useEffect(function () { setOffsetPFLunch(config.rental_filler_offset_lunch != null ? config.rental_filler_offset_lunch : 0) }, [config.rental_filler_offset_lunch])
+  useEffect(function () { setOffsetPMLunch(config.rental_pushpanjali_manaktala_offset_lunch != null ? config.rental_pushpanjali_manaktala_offset_lunch : 0) }, [config.rental_pushpanjali_manaktala_offset_lunch])
+  useEffect(function () { setOffsetPELunch(config.rental_pushpanjali_exotica_offset_lunch != null ? config.rental_pushpanjali_exotica_offset_lunch : 0) }, [config.rental_pushpanjali_exotica_offset_lunch])
 
   // Group venues by parent; each group holds one or more leaf items
   var groups = venues.map(function (p) {
@@ -548,6 +603,18 @@ function RentalsEditor({ config, onSave, saving }) {
   })
   var leaves = []
   groups.forEach(function (g) { g.items.forEach(function (it) { leaves.push(it) }) })
+
+  // Matched by parent-venue name (case-insensitive, partial) rather than a
+  // hardcoded id so renaming/reordering venues doesn't silently break it.
+  var pushLeafId = null
+  var manaktalaIds = []
+  var exoticaIds = []
+  groups.forEach(function (g) {
+    var gName = (g.parent || '').toLowerCase()
+    if (gName.indexOf('pushpanjali') !== -1 && g.items.length > 0) pushLeafId = g.items[0].id
+    if (gName.indexOf('manaktala') !== -1) g.items.forEach(function (it) { manaktalaIds.push(it.id) })
+    if (gName.indexOf('exotica') !== -1) g.items.forEach(function (it) { exoticaIds.push(it.id) })
+  })
 
   useEffect(function () {
     if (!selV && leaves.length > 0) {
@@ -588,10 +655,12 @@ function RentalsEditor({ config, onSave, saving }) {
 
   // Cascades one slot's just-edited value outward: Quote -> Target -> Floor
   // is a chain (Target off Quote, then Floor off that Target — not off
-  // Quote directly), and whichever tiers just changed also cascade to
-  // King's -> Perfect (flat ₹L offset) if the edited category is King's.
+  // Quote directly), and whichever tiers just changed also cascade along
+  // the King's -> Perfect -> Filler flat-₹L chain: editing King's cascades
+  // to Perfect (which then cascades on to Filler); editing Perfect directly
+  // cascades only to Filler.
   // Mutates vd in place — callers clone first.
-  function cascadeSlot(vd, tier, catIdx, slotIdx, offV, targetPctV, floorPctV) {
+  function cascadeSlot(vd, tier, catIdx, slotIdx, offV, offPFV, targetPctV, floorPctV) {
     var touchedTiers = [tier]
     if (tier === 'q' && vd.t[catIdx] && vd.f[catIdx]) {
       var qv = vd.q[catIdx][slotIdx] || 0
@@ -604,10 +673,19 @@ function RentalsEditor({ config, onSave, saving }) {
       vd.f[catIdx][slotIdx] = roundHalf(tv2 * (1 - floorPctV))
       touchedTiers = ['t', 'f']
     }
+    var cascadedToPerfect = false
     if (catIdx === kingsIdx && perfectIdx !== kingsIdx) {
       touchedTiers.forEach(function (tt) {
         if (vd[tt] && vd[tt][kingsIdx] && vd[tt][perfectIdx]) {
           vd[tt][perfectIdx][slotIdx] = roundHalf((vd[tt][kingsIdx][slotIdx] || 0) - offV)
+        }
+      })
+      cascadedToPerfect = true
+    }
+    if ((catIdx === perfectIdx || cascadedToPerfect) && fillerIdx !== perfectIdx) {
+      touchedTiers.forEach(function (tt) {
+        if (vd[tt] && vd[tt][perfectIdx] && vd[tt][fillerIdx]) {
+          vd[tt][fillerIdx][slotIdx] = roundHalf((vd[tt][perfectIdx][slotIdx] || 0) - offPFV)
         }
       })
     }
@@ -616,14 +694,39 @@ function RentalsEditor({ config, onSave, saving }) {
   // Re-applies the offsets across an entire venue's grid (every category,
   // every slot) — used both for the "Apply to all venues" bulk action and
   // for live-recomputing the currently open venue the instant an offset
-  // field itself changes, rather than only on the next cell edit.
-  function applyOffsetsToVenueData(vd, offV, targetPctV, floorPctV) {
+  // field itself changes, rather than only on the next cell edit. The
+  // Lunch slot column uses offVLunch/offPFVLunch instead of offV/offPFV.
+  function applyOffsetsToVenueData(vd, offV, offPFV, offVLunch, offPFVLunch, targetPctV, floorPctV) {
     var d = clone(vd)
     for (var ci = 0; ci < cats.length; ci++) {
       for (var si = 0; si < slots.length; si++) {
-        cascadeSlot(d, 'q', ci, si, offV, targetPctV, floorPctV)
+        cascadeSlot(d, 'q', ci, si, offsetForSlot(si, offV, offVLunch), offsetForSlot(si, offPFV, offPFVLunch), targetPctV, floorPctV)
       }
     }
+    return d
+  }
+
+  // Subtracts a flat ₹L amount from every cell of a grid (all categories and
+  // tiers) — the Pushpanjali-as-base mechanic. The Lunch slot column uses
+  // offVLunch instead of offV.
+  function subtractFlatGrid(vd, offV, offVLunch) {
+    var d = {}
+    TIERS.forEach(function (tier) {
+      d[tier] = (vd[tier] || []).map(function (row) {
+        return (row || []).map(function (v, si) { return roundHalf((v || 0) - offsetForSlot(si, offV, offVLunch)) })
+      })
+    })
+    return d
+  }
+
+  // Pushes Pushpanjali's current grid (as the base) onto every Manaktala
+  // and Exotica sub-venue, each via its own flat ₹L offset (plus its own
+  // Lunch-session override).
+  function applyPushBaseOffsets(d, offMK, offEX, offMKLunch, offEXLunch) {
+    if (!pushLeafId) return d
+    var baseGrid = padRental(d[pushLeafId] || emptyRental())
+    manaktalaIds.forEach(function (id) { d[id] = subtractFlatGrid(baseGrid, offMK, offMKLunch) })
+    exoticaIds.forEach(function (id) { d[id] = subtractFlatGrid(baseGrid, offEX, offEXLunch) })
     return d
   }
 
@@ -634,7 +737,8 @@ function RentalsEditor({ config, onSave, saving }) {
     d[selV] = padRental(d[selV])
     d[selV][tier][catIdx][slotIdx] = val
     var p = getTierPct(selV)
-    cascadeSlot(d[selV], tier, catIdx, slotIdx, offset, p.target, p.floor)
+    cascadeSlot(d[selV], tier, catIdx, slotIdx, offsetForSlot(slotIdx, offset, offsetLunch), offsetForSlot(slotIdx, offsetPF, offsetPFLunch), p.target, p.floor)
+    if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE, offsetPMLunch, offsetPELunch)
     setDraft(d)
   }
 
@@ -647,9 +751,70 @@ function RentalsEditor({ config, onSave, saving }) {
     var p = getTierPct(selV)
     setDraft(function (prev) {
       var d = clone(prev)
-      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), val, p.target, p.floor)
+      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), val, offsetPF, offsetLunch, offsetPFLunch, p.target, p.floor)
+      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE, offsetPMLunch, offsetPELunch)
       return d
     })
+  }
+
+  function updateOffsetPF(val) {
+    setOffsetPF(val)
+    if (!selV) return
+    var p = getTierPct(selV)
+    setDraft(function (prev) {
+      var d = clone(prev)
+      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), offset, val, offsetLunch, offsetPFLunch, p.target, p.floor)
+      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE, offsetPMLunch, offsetPELunch)
+      return d
+    })
+  }
+
+  // Pushpanjali-as-base offsets only ever read Pushpanjali's own grid, so
+  // they don't need the selected venue to be Pushpanjali to live-recompute.
+  function updateOffsetPM(val) {
+    setOffsetPM(val)
+    setDraft(function (prev) { return applyPushBaseOffsets(clone(prev), val, offsetPE, offsetPMLunch, offsetPELunch) })
+  }
+
+  function updateOffsetPE(val) {
+    setOffsetPE(val)
+    setDraft(function (prev) { return applyPushBaseOffsets(clone(prev), offsetPM, val, offsetPMLunch, offsetPELunch) })
+  }
+
+  // Lunch-session override updates mirror the four above, but only ever
+  // change what the Lunch slot column computes to.
+  function updateOffsetLunch(val) {
+    setOffsetLunch(val)
+    if (!selV) return
+    var p = getTierPct(selV)
+    setDraft(function (prev) {
+      var d = clone(prev)
+      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), offset, offsetPF, val, offsetPFLunch, p.target, p.floor)
+      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE, offsetPMLunch, offsetPELunch)
+      return d
+    })
+  }
+
+  function updateOffsetPFLunch(val) {
+    setOffsetPFLunch(val)
+    if (!selV) return
+    var p = getTierPct(selV)
+    setDraft(function (prev) {
+      var d = clone(prev)
+      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), offset, offsetPF, offsetLunch, val, p.target, p.floor)
+      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE, offsetPMLunch, offsetPELunch)
+      return d
+    })
+  }
+
+  function updateOffsetPMLunch(val) {
+    setOffsetPMLunch(val)
+    setDraft(function (prev) { return applyPushBaseOffsets(clone(prev), offsetPM, offsetPE, val, offsetPELunch) })
+  }
+
+  function updateOffsetPELunch(val) {
+    setOffsetPELunch(val)
+    setDraft(function (prev) { return applyPushBaseOffsets(clone(prev), offsetPM, offsetPE, offsetPMLunch, val) })
   }
 
   function updateVenueTierPct(field, val) {
@@ -661,18 +826,20 @@ function RentalsEditor({ config, onSave, saving }) {
     var p = { target: next[selV].target || 0, floor: next[selV].floor || 0 }
     setDraft(function (prev) {
       var d = clone(prev)
-      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), offset, p.target, p.floor)
+      d[selV] = applyOffsetsToVenueData(padRental(d[selV] || emptyRental()), offset, offsetPF, offsetLunch, offsetPFLunch, p.target, p.floor)
+      if (selV === pushLeafId) d = applyPushBaseOffsets(d, offsetPM, offsetPE, offsetPMLunch, offsetPELunch)
       return d
     })
   }
 
   async function applyToAllVenues() {
-    if (!(await appConfirm('Recalculate every venue and sub-venue’s Target/Floor (and Perfect, from King’s) using each one’s own % offsets and the shared King’s offset? This overwrites whatever is already in those cells.'))) return
+    if (!(await appConfirm('Recalculate every venue and sub-venue’s Target/Floor (Perfect from King’s, Filler from Perfect, and Manaktala/Exotica from Pushpanjali) using each one’s own % offsets and the shared flat offsets — including the Lunch-session overrides for the Lunch slot? This overwrites whatever is already in those cells.'))) return
     var d = clone(draft)
     leaves.forEach(function (lf) {
       var p = getTierPct(lf.id)
-      d[lf.id] = applyOffsetsToVenueData(padRental(d[lf.id] || emptyRental()), offset, p.target, p.floor)
+      d[lf.id] = applyOffsetsToVenueData(padRental(d[lf.id] || emptyRental()), offset, offsetPF, offsetLunch, offsetPFLunch, p.target, p.floor)
     })
+    d = applyPushBaseOffsets(d, offsetPM, offsetPE, offsetPMLunch, offsetPELunch)
     setDraft(d)
   }
 
@@ -682,16 +849,98 @@ function RentalsEditor({ config, onSave, saving }) {
 
   return (
     <Card title="Rental Rates (₹L)">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: 10, borderRadius: 9, background: '#FFF8F0', border: '1px solid ' + C.border }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>King's → Perfect offset (₹L)</div>
-          <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction, shared by every venue and sub-venue. Filling a King's cell autofills Perfect as King's − this.</div>
+      <CollapsibleSection title="CASCADE OFFSETS" subtitle="King's → Perfect → Filler, and Pushpanjali as the base for Manaktala/Exotica" defaultOpen={true}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>King's → Perfect offset (₹L)</div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction, shared by every venue and sub-venue. Filling a King's cell autofills Perfect as King's − this.</div>
+          </div>
+          <div style={{ width: 80, flexShrink: 0 }}>
+            <Num value={offset} onChange={updateOffset} />
+          </div>
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_perfect_offset', offset) }} disabled={saving} />
         </div>
-        <div style={{ width: 80, flexShrink: 0 }}>
-          <Num value={offset} onChange={updateOffset} />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Perfect → Filler offset (₹L)</div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction, shared by every venue and sub-venue. Filling a Perfect cell (directly, or via King's) autofills Filler as Perfect − this.</div>
+          </div>
+          <div style={{ width: 80, flexShrink: 0 }}>
+            <Num value={offsetPF} onChange={updateOffsetPF} />
+          </div>
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_filler_offset', offsetPF) }} disabled={saving} />
         </div>
-        <Btn label="Save" variant="small" onClick={function () { onSave('rental_perfect_offset', offset) }} disabled={saving} />
-      </div>
+
+        <div style={{ paddingTop: 10, borderTop: '1px dashed ' + C.border }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.maroon, letterSpacing: 0.5, marginBottom: 8 }}>PUSHPANJALI AS BASE</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Pushpanjali → Manaktala offset (₹L)</div>
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction off every Pushpanjali cell. Editing Pushpanjali's grid autofills every Manaktala sub-venue as Pushpanjali − this.</div>
+            </div>
+            <div style={{ width: 80, flexShrink: 0 }}>
+              <Num value={offsetPM} onChange={updateOffsetPM} />
+            </div>
+            <Btn label="Save" variant="small" onClick={function () { onSave('rental_pushpanjali_manaktala_offset', offsetPM) }} disabled={saving} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Pushpanjali → Exotica offset (₹L)</div>
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>Flat subtraction off every Pushpanjali cell. Editing Pushpanjali's grid autofills every Exotica sub-venue as Pushpanjali − this.</div>
+            </div>
+            <div style={{ width: 80, flexShrink: 0 }}>
+              <Num value={offsetPE} onChange={updateOffsetPE} />
+            </div>
+            <Btn label="Save" variant="small" onClick={function () { onSave('rental_pushpanjali_exotica_offset', offsetPE) }} disabled={saving} />
+          </div>
+          {!pushLeafId && (
+            <div style={{ fontSize: 10, color: C.red, marginTop: 8 }}>No venue matching "Pushpanjali" found — this won't autofill until one exists.</div>
+          )}
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="LUNCH SESSION OVERRIDES" subtitle="Same four cascades as above, applied only to the Lunch slot's own column. Leave at 0 to fall back to the main offsets." defaultOpen={false}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>King's → Perfect (Lunch, ₹L)</div>
+          </div>
+          <div style={{ width: 80, flexShrink: 0 }}>
+            <Num value={offsetLunch} onChange={updateOffsetLunch} />
+          </div>
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_perfect_offset_lunch', offsetLunch) }} disabled={saving} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Perfect → Filler (Lunch, ₹L)</div>
+          </div>
+          <div style={{ width: 80, flexShrink: 0 }}>
+            <Num value={offsetPFLunch} onChange={updateOffsetPFLunch} />
+          </div>
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_filler_offset_lunch', offsetPFLunch) }} disabled={saving} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Pushpanjali → Manaktala (Lunch, ₹L)</div>
+          </div>
+          <div style={{ width: 80, flexShrink: 0 }}>
+            <Num value={offsetPMLunch} onChange={updateOffsetPMLunch} />
+          </div>
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_pushpanjali_manaktala_offset_lunch', offsetPMLunch) }} disabled={saving} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2 }}>Pushpanjali → Exotica (Lunch, ₹L)</div>
+          </div>
+          <div style={{ width: 80, flexShrink: 0 }}>
+            <Num value={offsetPELunch} onChange={updateOffsetPELunch} />
+          </div>
+          <Btn label="Save" variant="small" onClick={function () { onSave('rental_pushpanjali_exotica_offset_lunch', offsetPELunch) }} disabled={saving} />
+        </div>
+        {lunchIdx === -1 && (
+          <div style={{ fontSize: 10, color: C.red, marginTop: 8 }}>No slot named "Lunch" found — these overrides won't apply to anything until one exists.</div>
+        )}
+      </CollapsibleSection>
 
       <div style={{ marginBottom: 14, padding: 10, background: C.bg, borderRadius: 8 }}>
         {groups.map(function (g, gi) {
@@ -1135,6 +1384,13 @@ function MenuEditor({ config, onSave, saving }) {
 //  DÉCOR EDITOR
 // ══════════════════════════════════════
 
+// A tier always means "a real named row with a cell per date category" now
+// — the quote_decor_rate_cards table (and quote_dj_options, the same
+// shape) can't store anything else, so there's no separate "flat" shape to
+// toggle into or out of any more. One tier is just a 1-row list; the ₹0
+// décor bug (00140) came directly from the old editor being able to save a
+// flat, un-nested array here that calculate_quote then read as if it were
+// nested.
 function DecorEditor({ config, onSave, saving }) {
   var cats = config.categories || DEFAULT_CATS
   var venues = config.venues || []
@@ -1163,44 +1419,31 @@ function DecorEditor({ config, onSave, saving }) {
     var s = DECOR_SECTIONS[subTab] || DECOR_SECTIONS[0]
     if (!s || !s.key) return
     var d = clone((config.decor || {})[s.key] || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] })
-    // Pad each tier's category arrays
-    if (d.labels && d.labels.length > 0) {
-      var clean = {}
-      TIERS.forEach(function (tier) { clean[tier] = [] })
-      d.labels.forEach(function (_, tierIdx) {
-        TIERS.forEach(function (tier) {
-          var existing = Array.isArray(d[tier][tierIdx]) ? d[tier][tierIdx] : []
-          while (existing.length < cats.length) existing.push(0)
-          clean[tier].push(existing)
-        })
-      })
-      TIERS.forEach(function (tier) { d[tier] = clean[tier] })
-    } else if (!d.labels || d.labels.length === 0) {
-      // Flat mode (Valencia) — pad flat arrays
+    if (!Array.isArray(d.labels)) d.labels = []
+    var clean = {}
+    TIERS.forEach(function (tier) { clean[tier] = [] })
+    d.labels.forEach(function (_, tierIdx) {
       TIERS.forEach(function (tier) {
-        if (!Array.isArray(d[tier])) d[tier] = []
-        while (d[tier].length < cats.length) d[tier].push(0)
+        var existing = Array.isArray(d[tier][tierIdx]) ? d[tier][tierIdx] : []
+        while (existing.length < cats.length) existing.push(0)
+        clean[tier].push(existing)
       })
-    }
+    })
+    TIERS.forEach(function (tier) { d[tier] = clean[tier] })
     setDraft(d)
   }, [subTab, config])
 
   function updateOffset(val) { var d = clone(draft); d.nw_offset = val; setDraft(d) }
   function updateLabel(idx, val) { var d = clone(draft); d.labels[idx] = val; setDraft(d) }
   function updateTiered(tier, tierIdx, catIdx, val) { var d = clone(draft); d[tier][tierIdx][catIdx] = val; setDraft(d) }
-  function updateFlat(tier, catIdx, val) { var d = clone(draft); d[tier][catIdx] = val; setDraft(d) }
-
-  var isFlat = !draft.labels || draft.labels.length === 0
 
   function addTier() {
     var d = clone(draft)
     if (!d.labels) d.labels = []
-    var wasFlat = d.labels.length === 0
     d.labels.push('New Tier')
     TIERS.forEach(function (tier) {
       var row = []
       for (var c = 0; c < cats.length; c++) row.push(0)
-      if (wasFlat) d[tier] = []
       d[tier].push(row)
     })
     setDraft(d)
@@ -1236,8 +1479,7 @@ function DecorEditor({ config, onSave, saving }) {
           <div style={{ width: 80 }}><Num value={draft.nw_offset} onChange={updateOffset} /></div>
         </div>
 
-        {/* Tier labels */}
-        {!isFlat && draft.labels && (
+        {draft.labels && draft.labels.length > 0 && (
           <div style={{ marginBottom: 12 }}>
             {draft.labels.map(function (l, i) {
               return (
@@ -1247,14 +1489,13 @@ function DecorEditor({ config, onSave, saving }) {
                 </div>
               )
             })}
-            <AddRow label="Add Décor Tier" onClick={addTier} />
           </div>
         )}
+        <AddRow label="Add Décor Tier" onClick={addTier} />
 
-        {/* Tiered grids */}
-        {!isFlat && (draft.labels || []).map(function (tierLabel, tierIdx) {
+        {(draft.labels || []).map(function (tierLabel, tierIdx) {
           return (
-            <div key={tierIdx} style={{ marginBottom: 18 }}>
+            <div key={tierIdx} style={{ marginTop: 18 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 6 }}>{tierLabel}</div>
               <TierGrid>
                 {cats.map(function (cat, catIdx) {
@@ -1272,23 +1513,8 @@ function DecorEditor({ config, onSave, saving }) {
           )
         })}
 
-        {/* Flat grid (Valencia) */}
-        {isFlat && (
-          <div style={{ marginBottom: 12 }}>
-            <TierGrid>
-              {cats.map(function (cat, catIdx) {
-                return (
-                  <React.Fragment key={catIdx}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: cat.color || C.muted }}>{cat.label}</div>
-                    {TIERS.map(function (tier) {
-                      return <Num key={tier} value={(draft[tier] || [])[catIdx] || 0} onChange={function (v) { updateFlat(tier, catIdx, v) }} />
-                    })}
-                  </React.Fragment>
-                )
-              })}
-            </TierGrid>
-            <AddRow label="Convert to Tiered" onClick={addTier} />
-          </div>
+        {(!draft.labels || draft.labels.length === 0) && (
+          <div style={{ fontSize: 11, color: C.muted, textAlign: 'center', padding: '12px 0' }}>No décor tiers for this venue yet — add one above.</div>
         )}
 
         <Btn label={'Save ' + sec.label} variant="primary" onClick={function () {
@@ -1299,7 +1525,7 @@ function DecorEditor({ config, onSave, saving }) {
           if (existing.lunch_override) out.lunch_override = existing.lunch_override
           merged[sec.key] = out
           onSave('decor', merged)
-        }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
+        }} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
       </Card>
     </>
   )
@@ -1309,6 +1535,9 @@ function DecorEditor({ config, onSave, saving }) {
 //  LUNCH RATES EDITOR
 // ══════════════════════════════════════
 
+// Same "a tier is always a real named row" shape as DecorEditor above — a
+// lunch override with one unnamed tier was exactly the stored shape behind
+// the original ₹0 décor bug.
 function LunchRatesEditor({ config, onSave, saving }) {
   var cats = config.categories || DEFAULT_CATS
   var venues = config.venues || []
@@ -1326,7 +1555,7 @@ function LunchRatesEditor({ config, onSave, saving }) {
 
   var [subTab, setSubTab] = useState(0)
   var sec = LUNCH_SECTIONS[subTab] || LUNCH_SECTIONS[0] || { key: '', label: '', status: 'placeholder' }
-  var raw = (((config.decor || {})[sec.key] || {}).lunch_override) || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] }
+  var raw = (((config.decor || {})[sec.key] || {}).lunch_override) || { labels: [], nw_offset: 0, q: [], t: [], f: [] }
   var [draft, setDraft] = useState(clone(raw))
 
   useEffect(function () {
@@ -1336,43 +1565,32 @@ function LunchRatesEditor({ config, onSave, saving }) {
   useEffect(function () {
     var s = LUNCH_SECTIONS[subTab] || LUNCH_SECTIONS[0]
     if (!s || !s.key) return
-    var d = clone((((config.decor || {})[s.key] || {}).lunch_override) || { labels: [], nw_offset: -0.5, q: [], t: [], f: [] })
-    if (d.labels && d.labels.length > 0) {
-      var clean = {}
-      TIERS.forEach(function (tier) { clean[tier] = [] })
-      d.labels.forEach(function (_, tierIdx) {
-        TIERS.forEach(function (tier) {
-          var existing = Array.isArray(d[tier][tierIdx]) ? d[tier][tierIdx] : []
-          while (existing.length < cats.length) existing.push(0)
-          clean[tier].push(existing)
-        })
-      })
-      TIERS.forEach(function (tier) { d[tier] = clean[tier] })
-    } else if (!d.labels || d.labels.length === 0) {
+    var d = clone((((config.decor || {})[s.key] || {}).lunch_override) || { labels: [], nw_offset: 0, q: [], t: [], f: [] })
+    if (!Array.isArray(d.labels)) d.labels = []
+    var clean = {}
+    TIERS.forEach(function (tier) { clean[tier] = [] })
+    d.labels.forEach(function (_, tierIdx) {
       TIERS.forEach(function (tier) {
-        if (!Array.isArray(d[tier])) d[tier] = []
-        while (d[tier].length < cats.length) d[tier].push(0)
+        var existing = Array.isArray(d[tier][tierIdx]) ? d[tier][tierIdx] : []
+        while (existing.length < cats.length) existing.push(0)
+        clean[tier].push(existing)
       })
-    }
+    })
+    TIERS.forEach(function (tier) { d[tier] = clean[tier] })
     setDraft(d)
   }, [subTab, config])
 
   function updateOffset(val) { var d = clone(draft); d.nw_offset = val; setDraft(d) }
   function updateLabel(idx, val) { var d = clone(draft); d.labels[idx] = val; setDraft(d) }
   function updateTiered(tier, tierIdx, catIdx, val) { var d = clone(draft); d[tier][tierIdx][catIdx] = val; setDraft(d) }
-  function updateFlat(tier, catIdx, val) { var d = clone(draft); d[tier][catIdx] = val; setDraft(d) }
-
-  var isFlat = !draft.labels || draft.labels.length === 0
 
   function addTier() {
     var d = clone(draft)
     if (!d.labels) d.labels = []
-    var wasFlat = d.labels.length === 0
     d.labels.push('New Tier')
     TIERS.forEach(function (tier) {
       var row = []
       for (var c = 0; c < cats.length; c++) row.push(0)
-      if (wasFlat) d[tier] = []
       d[tier].push(row)
     })
     setDraft(d)
@@ -1403,14 +1621,14 @@ function LunchRatesEditor({ config, onSave, saving }) {
       </div>
 
       <Card title={sec.label + ' Lunch Décor (₹L)'}>
-        <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Décor rates applied when Lunch slot is selected. Overrides standard décor for lunch bookings.</div>
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Décor rates applied when Lunch slot is selected. Overrides standard décor for lunch bookings. No tiers = no override — standard décor applies even for Lunch.</div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: 10, borderRadius: 9, background: C.bg, border: '1px solid ' + C.border }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, flex: 1 }}>NW Offset (₹L)</div>
           <div style={{ width: 80 }}><Num value={draft.nw_offset} onChange={updateOffset} /></div>
         </div>
 
-        {!isFlat && draft.labels && (
+        {draft.labels && draft.labels.length > 0 && (
           <div style={{ marginBottom: 12 }}>
             {draft.labels.map(function (l, i) {
               return (
@@ -1420,13 +1638,13 @@ function LunchRatesEditor({ config, onSave, saving }) {
                 </div>
               )
             })}
-            <AddRow label="Add Lunch Tier" onClick={addTier} />
           </div>
         )}
+        <AddRow label="Add Lunch Tier" onClick={addTier} />
 
-        {!isFlat && (draft.labels || []).map(function (tierLabel, tierIdx) {
+        {(draft.labels || []).map(function (tierLabel, tierIdx) {
           return (
-            <div key={tierIdx} style={{ marginBottom: 18 }}>
+            <div key={tierIdx} style={{ marginTop: 18 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: C.maroon2, marginBottom: 6 }}>{tierLabel}</div>
               <TierGrid>
                 {cats.map(function (cat, catIdx) {
@@ -1444,22 +1662,8 @@ function LunchRatesEditor({ config, onSave, saving }) {
           )
         })}
 
-        {isFlat && (
-          <div style={{ marginBottom: 12 }}>
-            <TierGrid>
-              {cats.map(function (cat, catIdx) {
-                return (
-                  <React.Fragment key={catIdx}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: cat.color || C.muted }}>{cat.label}</div>
-                    {TIERS.map(function (tier) {
-                      return <Num key={tier} value={(draft[tier] || [])[catIdx] || 0} onChange={function (v) { updateFlat(tier, catIdx, v) }} />
-                    })}
-                  </React.Fragment>
-                )
-              })}
-            </TierGrid>
-            <AddRow label="Convert to Tiered" onClick={addTier} />
-          </div>
+        {(!draft.labels || draft.labels.length === 0) && (
+          <div style={{ fontSize: 11, color: C.muted, textAlign: 'center', padding: '12px 0' }}>No lunch override for this venue — add a tier above to create one.</div>
         )}
 
         <Btn label={'Save ' + sec.label + ' Lunch'} variant="primary" onClick={function () {
@@ -1468,7 +1672,7 @@ function LunchRatesEditor({ config, onSave, saving }) {
           var existing = merged[sec.key] || {}
           merged[sec.key] = Object.assign({}, existing, { lunch_override: draft })
           onSave('decor', merged)
-        }} disabled={saving} style={{ width: '100%', marginTop: 8 }} />
+        }} disabled={saving} style={{ width: '100%', marginTop: 12 }} />
       </Card>
     </>
   )
@@ -1776,31 +1980,28 @@ function RateCardEditor({ profile }) {
   var [saveMsg, setSaveMsg] = useState('')
 
   useEffect(function () {
-    supabase.from('quote_config').select('key, value').then(function (res) {
-      if (res.data) {
-        var map = {}
-        res.data.forEach(function (r) { map[r.key] = r.value })
-        setConfig(map)
-      }
+    loadRateCardConfig().then(function (cfg) {
+      setConfig(cfg)
       setLoading(false)
     })
   }, [])
 
+  // Rate cards live in the quote_* tables now (Phase 3) — each tab still
+  // calls this with the exact same key/value shape it always has
+  // ('venues', 'decor', 'rentals', ...); saveRateCardKey is what changed
+  // underneath, translating that into writes against the real tables
+  // instead of one quote_config blob. config itself is the snapshot
+  // saveRateCardKey diffs against for the handful of keys (categories,
+  // slots, venues) whose rows are referenced by position elsewhere.
   async function saveKey(key, value) {
     setSaving(true); setSaveMsg('')
-    // Upsert — insert if missing, update if exists
-    var { error } = await supabase.from('quote_config').upsert(
-      { key: key, value: value, updated_at: new Date().toISOString() },
-      { onConflict: 'key' }
-    )
+    var { error } = await saveRateCardKey(key, value, config)
     if (error) {
       setSaveMsg('Error: ' + error.message)
     } else {
       setSaveMsg('Saved: ' + key)
-      var updated = Object.assign({}, config)
-      updated[key] = value
-      setConfig(updated)
-      try { localStorage.removeItem('qc_config_v1') } catch (e) {}
+      var fresh = await loadRateCardConfig()
+      setConfig(fresh)
     }
     setSaving(false)
     setTimeout(function () { setSaveMsg('') }, 3000)

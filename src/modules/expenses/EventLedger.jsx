@@ -7,6 +7,7 @@ import EventCalendar from '../../components/ui/EventCalendar'
 import { venueColor } from '../../lib/venueColors'
 import ImageLightbox from '../../components/ui/ImageLightbox'
 import Icon from '../../components/ui/Icon'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import { hasPerm } from '../../lib/permissions'
 import { scrollToTopOf } from '../../lib/scrollToTop'
 import eventBg from '../../assets/event-bg.webp'
@@ -16,6 +17,7 @@ import { avatarTint } from '../../lib/avatarTint'
 import { DeptChip } from '../../components/ui/Badge'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import EnteredMark from '../../components/ui/EnteredMark'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 var ENTRY_TYPES = [
   { key: 'all', label: 'All' },
@@ -151,6 +153,60 @@ function _buildGroups(rows) {
   })
   return out
 }
+// An LMS resync mints a new event row for the same function rather than
+// updating the old one in place, marking the old one lms_cancelled_at — so
+// one real function can appear as several rows sharing a contract_no. This
+// picks the one row per distinct function (_groupKey) that should represent
+// it: the live (not cancelled) one, or among equally-(non-)cancelled rows
+// the highest id, since ids increase with sync order here.
+function _pickCanonical(rows) {
+  var byKey = {}
+  rows.forEach(function (e) {
+    var k = _groupKey(e)
+    var cur = byKey[k]
+    var eLive = !e.lms_cancelled_at
+    var curLive = cur && !cur.lms_cancelled_at
+    if (!cur || (eLive && !curLive) || (eLive === curLive && Number(e.id) > Number(cur.id))) byKey[k] = e
+  })
+  return byKey
+}
+
+// _buildGroups buckets by exact date+venue+session — right for the month
+// browser, where Haldi lunch and Wedding dinner are genuinely different
+// calendar cells, even under the same contract. But money is tracked per
+// contract, not per function: a collection logged against any one function
+// of a multi-function contract counts toward the whole contract's balance.
+// This folds every function sharing one contract_no into a single group, so
+// financials opened from any one of them show the true, shared total.
+//
+// `contracts` (used for display — the Contracts/Documents lists, department
+// chips) is deduped to one canonical row per function, so a resync-cancelled
+// duplicate never shows up as if it were its own separate contract card.
+// `event_ids` stays the full pool — every id any real collection could be
+// attached to — and `all_contracts` keeps the full pool too, so a
+// transaction row still resolves its department chip even when it's tied to
+// a superseded id that isn't in the deduped `contracts` list.
+function _buildContractGroup(rows) {
+  if (rows.length === 0) return null
+  var canonicalByKey = _pickCanonical(rows)
+  var contracts = Object.keys(canonicalByKey).map(function (k) { return canonicalByKey[k] }).sort(function (a, b) {
+    var d = new Date(a.function_date || 0) - new Date(b.function_date || 0)
+    return d !== 0 ? d : _deptOrder(a.department) - _deptOrder(b.department)
+  })
+  var primary = contracts[0]
+  return {
+    key: 'contract:' + (primary.contract_no || primary.id),
+    contracts: contracts,
+    all_contracts: rows,
+    event_ids: rows.map(function (c) { return c.id }),
+    event_name: primary.event_name,
+    client_name: primary.client_name,
+    venue_name: primary.venue_name,
+    location: primary.location,
+    session: primary.session,
+    function_date: primary.function_date
+  }
+}
 
 // The ground behind the phone screen: a soft photograph of daylight falling
 // across a pale wall.
@@ -218,8 +274,11 @@ function EventLedger(props) {
   var [checkingTxnId, setCheckingTxnId] = useState(null)
   var [enteringExpId, setEnteringExpId] = useState(null)
   var [enteringTxnId, setEnteringTxnId] = useState(null)
+  var [checkingLmsId, setCheckingLmsId] = useState(null)
+  var [enteringLmsId, setEnteringLmsId] = useState(null)
   var [printingDocId, setPrintingDocId] = useState(null)
   var [collDetail, setCollDetail] = useState(null)
+  useBackButtonClose(!!collDetail, function () { setCollDetail(null) })
   var [currentEventIds, setCurrentEventIds] = useState([])
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadEntries(currentEventIds) }, props && props.onNavigateToExpenses)
   var propEventId = props && props.eventId ? String(props.eventId) : null
@@ -227,6 +286,11 @@ function EventLedger(props) {
   var [functions, setFunctions] = useState([])
   var [eventId, setEventId] = useState(propEventId || '')
   var [eventDetail, setEventDetail] = useState(null)
+  // Set only for the contract-pooled path (propEventId + a real contract_no).
+  // Render reaches for this instead of re-deriving selectedGroup from
+  // _buildGroups(dateRows), which has no idea about resync duplicates and
+  // would show every one of them as its own "contract" card again.
+  var [contractGroup, setContractGroup] = useState(null)
   var [balance, setBalance] = useState(null)
   var [balanceLoading, setBalanceLoading] = useState(false)
   var [entries, setEntries] = useState([])
@@ -238,6 +302,10 @@ function EventLedger(props) {
   var [tab, setTab] = useState('overview')
   // Agreed Cash shown ×10. Display only, and gone on reload.
   var [cashX10, setCashX10] = useState(false)
+  // Separate from the Financials tile's own toggle — they used to share
+  // cashX10, so revealing the true cash figure in one tab silently changed
+  // what the other tab showed too, with nothing on screen explaining why.
+  var [txnCashX10, setTxnCashX10] = useState(false)
   // The transactions tab keeps its own view state: what is typed in it, how
   // it is narrowed, which way the dates run and which page it is on. All of
   // it is per-event, so selecting another event resets it rather than
@@ -354,22 +422,136 @@ function EventLedger(props) {
         .eq('id', Number(propEventId)).maybeSingle()
       if (!primaryRes.data) return
       var primary = primaryRes.data
-      var sameDate = await supabase.from('events')
-        .select(EVT_COLS)
-        .eq('function_date', primary.function_date)
-      var pool = (sameDate.data || []).filter(function (r) { return _groupKey(r) === _groupKey(primary) })
+      var pool
+      if (primary.contract_no) {
+        // Deliberately NOT filtering out lms_cancelled_at here: a resync
+        // mints a new event row for the same function and marks the old one
+        // cancelled, rather than updating it in place, but never re-points
+        // collections already logged against the old id — so a "cancelled"
+        // duplicate can still be the one real money is sitting on. merged_into_id
+        // stays excluded: a real merge does move collections over (see
+        // submitMerge), so the merged-away row would be a true duplicate.
+        // department IS part of the key: LMS numbers each department's
+        // contracts in its own independent sequence (see lms-payment-collections'
+        // same gotcha), so contract_no alone can collide across two totally
+        // unrelated real contracts in different departments.
+        var sameContract = await supabase.from('events')
+          .select(EVT_COLS)
+          .eq('contract_no', primary.contract_no)
+          .eq('department', primary.department)
+          .is('merged_into_id', null)
+        pool = sameContract.data || []
+      } else {
+        // Tentative events have no contract_no yet — fall back to the
+        // single-function match used before.
+        var sameDate = await supabase.from('events')
+          .select(EVT_COLS)
+          .eq('function_date', primary.function_date)
+          .is('merged_into_id', null)
+          .is('lms_cancelled_at', null)
+        pool = (sameDate.data || []).filter(function (r) { return _groupKey(r) === _groupKey(primary) })
+      }
       if (pool.length === 0) pool = [primary]
       setFunctions(pool)
-      var group = _buildGroups(pool)[0]
-      selectGroup(group)
+      if (primary.contract_no) {
+        var group = _buildContractGroup(pool)
+        setTab('overview')
+        setFilter('all')
+        resetTxnView()
+        setEventId(String(group.event_ids[0]))
+        setEventDetail(group.contracts[0])
+        setCurrentEventIds(group.event_ids)
+        setContractGroup(group)
+        var lmsRows = await fetchLmsPayments(primary.contract_no, primary.department)
+        // Not loadBalance(group.event_ids) — see loadContractBalance for why
+        // a plain per-id sum over resync duplicates would triple-count the
+        // Agreed targets instead of just recovering their collected money.
+        loadContractBalance(pool, lmsRows)
+        loadEntries(group.event_ids).then(function () {
+          if (lmsRows.length > 0) setEntries(function (prev) { return prev.concat(lmsRows) })
+        })
+        loadPlateEvents(group.event_ids)
+        window.requestAnimationFrame(function () { window.scrollTo(0, 0) })
+      } else {
+        setContractGroup(null)
+        selectGroup(_buildGroups(pool)[0])
+      }
     })()
   }, [propEventId])
+
+  // Agreed targets are restated identically on every resync duplicate of the
+  // same function (see fn_event_group_balance), so they must be taken from
+  // one canonical row per distinct function — never summed across
+  // duplicates. Collected/spent are safe to sum across every id in the pool:
+  // each id's event_ledger rows are disjoint, so the total is just whatever
+  // money actually exists, regardless of which duplicate it's attached to.
+  // Pending is then recomputed here from those corrected totals, mirroring
+  // fn_event_group_balance's own formulas exactly.
+  async function loadContractBalance(pool, lmsRows) {
+    var allIds = pool.map(function (e) { return e.id })
+    if (allIds.length === 0) { setBalance(null); setBalancesByContract({}); return }
+    setBalanceLoading(true)
+    var { data, error } = await supabase.rpc('fn_event_group_balance', { p_event_ids: allIds.map(Number) })
+    if (error || !data) { setBalance(null); setBalancesByContract({}); setBalanceLoading(false); return }
+    var byId = {}
+    data.forEach(function (row) { byId[row.event_id] = row })
+    setBalancesByContract(byId)
+
+    var canonicalByKey = _pickCanonical(pool)
+    var agreedCash = 0, agreedBank = 0, tax = 0
+    Object.keys(canonicalByKey).forEach(function (k) {
+      var row = byId[canonicalByKey[k].id]
+      if (row) {
+        agreedCash += Number(row.agreed_cash_paise || 0)
+        agreedBank += Number(row.agreed_bank_paise || 0)
+        tax += Number(row.tax_amount_paise || 0)
+      }
+    })
+    var collCash = 0, collBank = 0, spent = 0
+    data.forEach(function (row) {
+      collCash += Number(row.collected_cash_paise || 0)
+      collBank += Number(row.collected_bank_paise || 0)
+      spent += Number(row.spent_paise || 0)
+    })
+    // LMS-only collections (never touched Ambria Ops' own wallet) count
+    // toward the real total too — otherwise "Collected" understates what the
+    // contract has actually taken in, and "Pending" overstates what's owed.
+    ;(lmsRows || []).forEach(function (r) {
+      if (r.payment_mode === 'cash') collCash += Number(r.amount_paise || 0)
+      else collBank += Number(r.amount_paise || 0)
+    })
+    // A guest who pays the agreed cash amount through bank instead isn't
+    // actually short — the bank side just ran a surplus over what was agreed
+    // there. That surplus pays down the cash shortfall first (what the guest
+    // would see as "settled"), and only whatever's left over after that still
+    // reduces tax pending, so the same rupee of surplus is never counted
+    // against both buckets at once.
+    //
+    // agreedCash/collCash (and the shortfall below) are in the hidden ÷10
+    // cash scale (see cashX10), but collBank/agreedBank are true rupee
+    // values -- bankExcess has to be converted down to that same hidden
+    // scale before it can be netted against a cash-scale shortfall, or the
+    // subtraction compares two different units and the result is off by 10x.
+    var bankExcess = Math.max(0, collBank - agreedBank)
+    var bankExcessHidden = Math.round(bankExcess / 10)
+    var cashShortfall = agreedCash - collCash
+    var leftoverForTax = Math.max(0, bankExcessHidden - Math.max(0, cashShortfall)) * 10
+    setBalance({
+      agreed_cash_paise: agreedCash, agreed_bank_paise: agreedBank, tax_amount_paise: tax,
+      collected_cash_paise: collCash, collected_bank_paise: collBank,
+      pending_cash_paise: cashShortfall - bankExcessHidden,
+      pending_bank_paise: Math.max(0, agreedBank - collBank),
+      pending_tax_paise: Math.max(0, tax - leftoverForTax),
+      spent_paise: spent,
+    })
+    setBalanceLoading(false)
+  }
 
   async function loadBalance(ids) {
     if (!ids || ids.length === 0) { setBalance(null); setBalancesByContract({}); return }
     setBalanceLoading(true)
     var { data, error } = await supabase.rpc('fn_event_group_balance', { p_event_ids: ids.map(function (id) { return Number(id) }) })
-    var agg = { pending_cash_paise: 0, pending_bank_paise: 0, agreed_cash_paise: 0, agreed_bank_paise: 0, collected_cash_paise: 0, collected_bank_paise: 0, spent_paise: 0 }
+    var agg = { pending_cash_paise: 0, pending_bank_paise: 0, pending_tax_paise: 0, agreed_cash_paise: 0, agreed_bank_paise: 0, tax_amount_paise: 0, collected_cash_paise: 0, collected_bank_paise: 0, spent_paise: 0 }
     var byId = {}
     var any = false
     if (!error && data) {
@@ -412,25 +594,12 @@ function EventLedger(props) {
         expenseCheckById[e.id] = { checked_by: e.checked_by, checked_at: e.checked_at, tally_entered_by: e.tally_entered_by, tally_entered_at: e.tally_entered_at }
       })
     }
-    // Collection entries carry a wallet_transactions.id in reference_id — that
-    // row is what actually holds the receipt image, mode and checked flag.
-    var collTxnIds = []
-    rows.forEach(function (r) {
-      if (r.entry_type === 'collection' && r.reference_id && collTxnIds.indexOf(r.reference_id) === -1) collTxnIds.push(r.reference_id)
-    })
-    var wtById = {}
-    if (collTxnIds.length > 0) {
-      var { data: wtRows } = await supabase.from('wallet_transactions')
-        .select('id, amount_paise, payment_mode, bank_payment_type, receipt_no, status, performed_by, received_image_path, checked_by, checked_at, tally_entered_by, tally_entered_at')
-        .in('id', collTxnIds)
-      ;(wtRows || []).forEach(function (w) {
-        wtById[w.id] = w
-        if (w.performed_by && creatorIds.indexOf(w.performed_by) === -1) creatorIds.push(w.performed_by)
-      })
-    }
     var nameById = {}
     if (creatorIds.length > 0) {
-      var { data: profRows } = await supabase.from('profiles').select('id, name').in('id', creatorIds)
+      // fn_profile_names, not a direct select -- RLS on profiles only lets a
+      // user read their own row, and most entries here were logged by
+      // someone else.
+      var { data: profRows } = await supabase.rpc('fn_profile_names', { p_ids: creatorIds })
       ;(profRows || []).forEach(function (p) { nameById[p.id] = p.name || null })
     }
     rows = rows.map(function (r) {
@@ -441,15 +610,95 @@ function EventLedger(props) {
       r._checkedAt = chk ? chk.checked_at : null
       r._enteredBy = chk ? chk.tally_entered_by : null
       r._enteredAt = chk ? chk.tally_entered_at : null
-      var wt = r.entry_type === 'collection' ? wtById[r.reference_id] : null
-      if (wt) {
-        r._wt = wt
-        r._collectorName = nameById[wt.performed_by] || null
-      }
       return r
     })
+    // event_ledger_select's RLS only shows a 'collection' row to its own
+    // creator (plus finance_hr/dept-hierarchy reach) -- so this direct query
+    // above never returns more than the viewer's own collections. Discard
+    // whatever collection rows it did return and replace them wholesale with
+    // fn_event_collections (00155), a SECURITY DEFINER RPC that returns every
+    // collector's rows for these events, so two people collecting against
+    // the same function both see the full picture here.
+    rows = rows.filter(function (r) { return r.entry_type !== 'collection' }).concat(await loadAllCollections(ids))
     setEntries(rows)
     setEntriesLoading(false)
+  }
+
+  async function loadAllCollections(ids) {
+    var { data, error } = await supabase.rpc('fn_event_collections', { p_event_ids: ids.map(Number) })
+    if (error || !data) return []
+    return data.map(function (r) {
+      return {
+        id: r.id,
+        entry_type: 'collection',
+        direction: 'in',
+        payment_mode: r.payment_mode,
+        amount_paise: r.amount_paise,
+        reference_type: r.reference_type,
+        reference_id: r.reference_id,
+        description: r.description,
+        created_by: r.created_by,
+        created_at: r.created_at,
+        event_id: r.event_id,
+        _creatorName: r.creator_name,
+        _entryDate: null,
+        _checkedBy: null,
+        _checkedAt: null,
+        _enteredBy: null,
+        _enteredAt: null,
+        _wt: {
+          amount_paise: r.wt_amount_paise,
+          payment_mode: r.wt_payment_mode,
+          bank_payment_type: r.wt_bank_payment_type,
+          receipt_no: r.wt_receipt_no,
+          status: r.wt_status,
+          performed_by: r.performed_by,
+          received_image_path: r.wt_received_image_path,
+          checked_by: r.wt_checked_by,
+          checked_at: r.wt_checked_at,
+          tally_entered_by: r.wt_tally_entered_by,
+          tally_entered_at: r.wt_tally_entered_at,
+        },
+        _collectorName: r.collector_name,
+      }
+    })
+  }
+
+  // Fetches LMS's own payment history for a contract (the same read the
+  // Wallet's Collect flow uses) and maps each row into the same shape as a
+  // 'collection' event_ledger row, with its own reference_type so the
+  // Transactions tab can tell it apart from a real wallet collection —
+  // there's no wallet_transactions row behind it, just whatever LMS reports.
+  async function fetchLmsPayments(contractNo, department) {
+    if (!contractNo) return []
+    var sessionRes = await supabase.auth.getSession()
+    var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
+    var res = await supabase.functions.invoke('lms-payment-collections', {
+      body: { contract_no: contractNo, department: department || '' },
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    })
+    if (res.error) return []
+    var rows = (res.data && res.data.data) || []
+    return rows.map(function (p) {
+      return {
+        id: 'lms:' + p.receive_id,
+        entry_type: 'collection',
+        direction: 'in',
+        payment_mode: String(p.pay_mode || '').toLowerCase().indexOf('cash') !== -1 ? 'cash' : 'bank',
+        amount_paise: p.net_amount_paise,
+        reference_type: 'lms_payment',
+        reference_id: p.receive_id,
+        description: p.remarks || ('LMS ' + (p.receive_type || 'payment')),
+        created_by: null,
+        created_at: p.date,
+        event_id: null,
+        _lmsEntryBy: p.entry_by || null,
+        _checkedBy: p.checked_by || null,
+        _checkedAt: p.checked_at || null,
+        _enteredBy: p.tally_entered_by || null,
+        _enteredAt: p.tally_entered_at || null,
+      }
+    })
   }
 
   async function toggleExpenseCheck(expenseId) {
@@ -522,6 +771,41 @@ function EventLedger(props) {
     })
   }
 
+  // LMS-sourced rows have no wallet_transactions/expenses row of their own —
+  // just whatever get_all_payment_collection returned — so their checked/
+  // entered state lives in its own tiny table, keyed by LMS's receive_id.
+  async function toggleLmsPaymentCheck(receiveId) {
+    if (checkingLmsId) return
+    setCheckingLmsId(receiveId)
+    var { data, error } = await supabase.rpc('fn_toggle_lms_payment_check', { p_receive_id: receiveId })
+    setCheckingLmsId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowChecked = !!data
+    setEntries(function (prev) { return prev.map(function (r) {
+      if (r.reference_type !== 'lms_payment' || r.reference_id !== receiveId) return r
+      return Object.assign({}, r, {
+        _checkedBy: nowChecked ? profile.id : null,
+        _checkedAt: nowChecked ? new Date().toISOString() : null,
+      })
+    }) })
+  }
+
+  async function toggleLmsPaymentEntered(receiveId) {
+    if (enteringLmsId) return
+    setEnteringLmsId(receiveId)
+    var { data, error } = await supabase.rpc('fn_toggle_lms_payment_entered', { p_receive_id: receiveId })
+    setEnteringLmsId(null)
+    if (error) { alert('Could not update: ' + error.message); return }
+    var nowEntered = !!data
+    setEntries(function (prev) { return prev.map(function (r) {
+      if (r.reference_type !== 'lms_payment' || r.reference_id !== receiveId) return r
+      return Object.assign({}, r, {
+        _enteredBy: nowEntered ? profile.id : null,
+        _enteredAt: nowEntered ? new Date().toISOString() : null,
+      })
+    }) })
+  }
+
   async function loadPlateEvents(ids) {
     if (!ids || ids.length === 0) { setPlateEvents([]); return }
     setPlatesLoading(true)
@@ -553,8 +837,10 @@ function EventLedger(props) {
 
   var pendCashP = balance ? Number(balance.pending_cash_paise || 0) : 0
   var pendBankP = balance ? Number(balance.pending_bank_paise || 0) : 0
+  var pendTaxP = balance ? Number(balance.pending_tax_paise || 0) : 0
   var agrCashP = balance ? Number(balance.agreed_cash_paise || 0) : 0
   var agrBankP = balance ? Number(balance.agreed_bank_paise || 0) : 0
+  var agrTaxP = balance ? Number(balance.tax_amount_paise || 0) : 0
   var colCashP = balance ? Number(balance.collected_cash_paise || 0) : 0
   var colBankP = balance ? Number(balance.collected_bank_paise || 0) : 0
   var spentP = balance ? Number(balance.spent_paise || 0) : 0
@@ -565,11 +851,11 @@ function EventLedger(props) {
     ? functions
     : (date ? monthRows.filter(function (r) { return String(r.function_date || '').slice(0, 10) === date }) : [])
   var _groups = _buildGroups(dateRows)
-  var selectedGroup = eventId
+  var selectedGroup = contractGroup || (eventId
     ? _groups.find(function (g) { return g.event_ids.map(String).indexOf(String(eventId)) !== -1 })
-    : null
+    : null)
   var contractByEventId = {}
-  if (selectedGroup) selectedGroup.contracts.forEach(function (c) { contractByEventId[c.id] = c })
+  if (selectedGroup) (selectedGroup.all_contracts || selectedGroup.contracts).forEach(function (c) { contractByEventId[c.id] = c })
   var contracts = selectedGroup ? selectedGroup.contracts : (eventDetail ? [eventDetail] : [])
   var multiContract = contracts.length > 1
 
@@ -631,7 +917,11 @@ function EventLedger(props) {
       var receivedByName = ''
       var signatureUrl = null
       if (d.collectorId) {
-        var { data: pr } = await supabase.from('profiles').select('name, signature_path').eq('id', d.collectorId).maybeSingle()
+        // fn_profile_names, not a direct select -- RLS on profiles only lets
+        // a user read their own row, and whoever is printing this usually
+        // isn't the collector.
+        var { data: prRows } = await supabase.rpc('fn_profile_names', { p_ids: [d.collectorId] })
+        var pr = (prRows || [])[0]
         if (pr) {
           receivedByName = pr.name || ''
           if (pr.signature_path) {
@@ -690,12 +980,13 @@ function EventLedger(props) {
   // Who put the row there. A collection was taken by whoever holds the wallet,
   // which is not always whoever logged the ledger line, so the collector wins
   // when there is one.
-  function rowPerson(e) { return e._collectorName || e._creatorName || '' }
+  function rowPerson(e) { return e._collectorName || e._creatorName || e._lmsEntryBy || '' }
   function rowDate(e) { return e._entryDate || e.created_at }
   // null, not false, for the rows finance never checks — an LMS advance has no
   // check to be missing, so it should not answer an "unchecked" filter.
   function rowChecked(e) {
     if (e.entry_type === 'expense') return !!e._checkedBy
+    if (e.reference_type === 'lms_payment') return !!e._checkedBy
     if (e.entry_type === 'collection' && e._wt) return !!e._wt.checked_by
     return null
   }
@@ -703,6 +994,13 @@ function EventLedger(props) {
     var parts = String(name || '').trim().split(/\s+/).filter(Boolean)
     if (parts.length === 0) return '—'
     return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase()
+  }
+  // Cash entries are logged at a tenth of the real amount — the same
+  // convention the Financials tab's Agreed Cash tile already reveals via
+  // cashX10, but kept as its own state (txnCashX10) rather than shared with
+  // it. Only cash; bank/other modes are already the real figure.
+  function rowAmount(e) {
+    return e.payment_mode === 'cash' && txnCashX10 ? e.amount_paise * 10 : e.amount_paise
   }
 
   var txnModes = []
@@ -837,33 +1135,39 @@ function EventLedger(props) {
           one meant dragging sideways and back, and comparing two meant doing
           that twice. The same seven columns become four lines: what and when,
           how much, what it was for, and who logged it. */}
-      <div className="sm:hidden divide-y divide-slate-100">
+      <div className="@3xl:hidden divide-y divide-slate-100">
         {rows.map(function (e) {
           var isExpRow = e.entry_type === 'expense' && !!e.reference_id
           var isCollRow = e.entry_type === 'collection' && !!e._wt
+          var isLmsRow = e.reference_type === 'lms_payment'
           var isClickable = isExpRow || isCollRow
           var person = rowPerson(e)
-          var on = isExpRow ? e._checkedBy : (isCollRow ? e._wt.checked_by : null)
-          var onEntered = isExpRow ? e._enteredBy : (isCollRow ? e._wt.tally_entered_by : null)
+          var on = isExpRow ? e._checkedBy : (isCollRow ? e._wt.checked_by : (isLmsRow ? e._checkedBy : null))
+          var onEntered = isExpRow ? e._enteredBy : (isCollRow ? e._wt.tally_entered_by : (isLmsRow ? e._enteredBy : null))
           return (
             <div key={e.id} onClick={function () { openRow(e) }}
               className={'px-4 py-3 ' + (isClickable ? 'cursor-pointer active:bg-indigo-50/60' : '')}>
               <div className="flex items-start justify-between gap-3">
-                <span className={'shrink-0 inline-flex items-center h-[22px] px-2 rounded-md text-[11px] font-bold ' + badgeClass(e.entry_type, e.direction)}>
-                  {entryLabel(e.entry_type)}
+                <span className="inline-flex items-center gap-1">
+                  <span className={'shrink-0 inline-flex items-center h-[22px] px-2 rounded-md text-[11px] font-bold ' + badgeClass(e.entry_type, e.direction)}>
+                    {entryLabel(e.entry_type)}
+                  </span>
+                  {isLmsRow && (
+                    <span title="Collected outside Ambria Ops, per LMS's own record" className="shrink-0 inline-flex items-center h-[22px] px-1.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-500">
+                      LMS
+                    </span>
+                  )}
                 </span>
                 {/* One figure, coloured by direction. In and Out were two
                     columns because a table needs them aligned; a card has one
                     amount and the colour already says which way it went. */}
                 <span data-notranslate className={'shrink-0 text-[15px] font-bold tabular-nums ' +
                   (e.direction === 'in' ? 'text-emerald-700' : 'text-rose-700')}>
-                  {(e.direction === 'in' ? '+' : '−') + formatPoints(e.amount_paise)}
+                  {(e.direction === 'in' ? '+' : '−') + formatPoints(rowAmount(e))}
                 </span>
               </div>
 
-              {e.description && (
-                <p className="mt-1.5 text-[13px] text-slate-700 leading-snug">{e.description}</p>
-              )}
+              <DescriptionNote text={e.description} truncate={false} />
 
               <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px] text-slate-500">
                 <span data-notranslate className="font-semibold text-slate-600 whitespace-nowrap">{formatDate(rowDate(e))}</span>
@@ -874,28 +1178,30 @@ function EventLedger(props) {
                 {person && <span className="whitespace-nowrap">{person}</span>}
               </div>
 
-              {(isExpRow || isCollRow) && (canMarkChecked || on || canMarkEntered || onEntered) && (
+              {(isExpRow || isCollRow || isLmsRow) && (canMarkChecked || on || canMarkEntered || onEntered) && (
                 <span className="mt-2 flex items-center gap-2" onClick={function (ev) { ev.stopPropagation() }}>
                   <EnteredMark
                     entered={!!onEntered}
-                    enteredAt={isExpRow ? e._enteredAt : e._wt.tally_entered_at}
+                    enteredAt={isExpRow ? e._enteredAt : (isLmsRow ? e._enteredAt : e._wt.tally_entered_at)}
                     canToggle={canMarkEntered}
                     canUnenter={onEntered === profile?.id || isSysAdmin}
-                    busy={isExpRow ? enteringExpId === Number(e.reference_id) : enteringTxnId === e.reference_id}
+                    busy={isExpRow ? enteringExpId === Number(e.reference_id) : (isLmsRow ? enteringLmsId === e.reference_id : enteringTxnId === e.reference_id)}
                     onToggle={function () {
                       if (isExpRow) toggleExpenseEntered(Number(e.reference_id))
+                      else if (isLmsRow) toggleLmsPaymentEntered(e.reference_id)
                       else toggleCollectionEntered(e.reference_id)
                     }}
                   />
                   <CheckedStamp
                     variant="stamp"
                     checked={!!on}
-                    checkedAt={isExpRow ? e._checkedAt : e._wt.checked_at}
+                    checkedAt={isExpRow ? e._checkedAt : (isLmsRow ? e._checkedAt : e._wt.checked_at)}
                     canToggle={canMarkChecked}
                     canUncheck={on === profile?.id || isSysAdmin}
-                    busy={isExpRow ? checkingExpId === Number(e.reference_id) : checkingTxnId === e.reference_id}
+                    busy={isExpRow ? checkingExpId === Number(e.reference_id) : (isLmsRow ? checkingLmsId === e.reference_id : checkingTxnId === e.reference_id)}
                     onToggle={function () {
                       if (isExpRow) toggleExpenseCheck(Number(e.reference_id))
+                      else if (isLmsRow) toggleLmsPaymentCheck(e.reference_id)
                       else toggleCollectionCheck(e.reference_id)
                     }}
                   />
@@ -906,7 +1212,7 @@ function EventLedger(props) {
         })}
       </div>
 
-      <div className="hidden sm:block overflow-x-auto ambria-thin-scroll">
+      <div className="hidden @3xl:block overflow-x-auto ambria-thin-scroll">
         {/* Left to itself the browser splits the table by content, and the
             short columns — a date, a chip, a word, two figures — each took a
             share of a very wide panel, putting a hand's width of nothing
@@ -963,49 +1269,57 @@ function EventLedger(props) {
                       <span className={'shrink-0 inline-flex items-center h-[22px] px-2 rounded-md text-[11px] font-bold ' + badgeClass(e.entry_type, e.direction)}>
                         {entryLabel(e.entry_type)}
                       </span>
+                      {e.reference_type === 'lms_payment' && (
+                        <span title="Collected outside Ambria Ops, per LMS's own record" className="shrink-0 inline-flex items-center h-[22px] px-1.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-500">
+                          LMS
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="px-3 py-2.5 align-top text-[13px] text-slate-600 whitespace-nowrap">{e.payment_mode ? titleCase(e.payment_mode) : '—'}</td>
                   <td className="px-3 py-2.5 align-top text-right text-[13px] font-bold tabular-nums whitespace-nowrap" data-notranslate>
                     {e.direction === 'in'
-                      ? <span className="text-emerald-700">{formatPoints(e.amount_paise)}</span>
+                      ? <span className="text-emerald-700">{formatPoints(rowAmount(e))}</span>
                       : <span className="text-slate-200">—</span>}
                   </td>
                   <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
                     <span data-notranslate className="block text-[13px] font-bold tabular-nums">
                       {e.direction === 'out'
-                        ? <span className="text-rose-700">{formatPoints(e.amount_paise)}</span>
+                        ? <span className="text-rose-700">{formatPoints(rowAmount(e))}</span>
                         : <span className="text-slate-200">—</span>}
                     </span>
                     {/* The verdict sits with the figure it is a verdict on. In
                         the Type cell it was a chip among chips. */}
                     {(function () {
-                      var on = isExpRow ? e._checkedBy : (isCollRow ? e._wt.checked_by : null)
-                      var onEntered = isExpRow ? e._enteredBy : (isCollRow ? e._wt.tally_entered_by : null)
-                      if (!isExpRow && !isCollRow) return null
+                      var isLmsRow = e.reference_type === 'lms_payment'
+                      var on = isExpRow ? e._checkedBy : (isCollRow ? e._wt.checked_by : (isLmsRow ? e._checkedBy : null))
+                      var onEntered = isExpRow ? e._enteredBy : (isCollRow ? e._wt.tally_entered_by : (isLmsRow ? e._enteredBy : null))
+                      if (!isExpRow && !isCollRow && !isLmsRow) return null
                       if ((!canMarkChecked && !on) && (!canMarkEntered && !onEntered)) return null
                       return (
                         <span className="mt-1 flex items-center justify-end gap-2" onClick={function (ev) { ev.stopPropagation() }}>
                           <EnteredMark
                             entered={!!onEntered}
-                            enteredAt={isExpRow ? e._enteredAt : e._wt.tally_entered_at}
+                            enteredAt={isExpRow ? e._enteredAt : (isLmsRow ? e._enteredAt : e._wt.tally_entered_at)}
                             canToggle={canMarkEntered}
                             canUnenter={onEntered === profile?.id || isSysAdmin}
-                            busy={isExpRow ? enteringExpId === Number(e.reference_id) : enteringTxnId === e.reference_id}
+                            busy={isExpRow ? enteringExpId === Number(e.reference_id) : (isLmsRow ? enteringLmsId === e.reference_id : enteringTxnId === e.reference_id)}
                             onToggle={function () {
                               if (isExpRow) toggleExpenseEntered(Number(e.reference_id))
+                              else if (isLmsRow) toggleLmsPaymentEntered(e.reference_id)
                               else toggleCollectionEntered(e.reference_id)
                             }}
                           />
                           <CheckedStamp
                             variant="stamp"
                             checked={!!on}
-                            checkedAt={isExpRow ? e._checkedAt : e._wt.checked_at}
+                            checkedAt={isExpRow ? e._checkedAt : (isLmsRow ? e._checkedAt : e._wt.checked_at)}
                             canToggle={canMarkChecked}
                             canUncheck={on === profile?.id || isSysAdmin}
-                            busy={isExpRow ? checkingExpId === Number(e.reference_id) : checkingTxnId === e.reference_id}
+                            busy={isExpRow ? checkingExpId === Number(e.reference_id) : (isLmsRow ? checkingLmsId === e.reference_id : checkingTxnId === e.reference_id)}
                             onToggle={function () {
                               if (isExpRow) toggleExpenseCheck(Number(e.reference_id))
+                              else if (isLmsRow) toggleLmsPaymentCheck(e.reference_id)
                               else toggleCollectionCheck(e.reference_id)
                             }}
                           />
@@ -1487,17 +1801,17 @@ function EventLedger(props) {
 
       {tab === 'financials' && (
         <div className="space-y-4">
-          <div className="grid gap-3 grid-cols-2 @3xl:grid-cols-4">
+          <div className="grid gap-3 grid-cols-2 @3xl:grid-cols-5">
             <MoneyTile
-              label={<>Agreed Cash<button type="button" aria-hidden="true" tabIndex={-1}
+              label={<>Agreed Cash<button type="button" title={cashX10 ? 'Showing true cash amount — click to hide' : 'Show true cash amount'}
                 onClick={function () { setCashX10(function (v) { return !v }) }}
-                className="ml-1.5 inline-block w-2.5 h-2.5 align-middle rounded-full bg-slate-200 opacity-25" /></>}
+                className={'ml-1.5 inline-block w-2.5 h-2.5 align-middle rounded-full transition-colors ' + (cashX10 ? 'bg-amber-400' : 'bg-slate-200 opacity-25 hover:opacity-50')} /></>}
               value={balanceLoading ? '—' : formatPoints(cashX10 ? agrCashP * 10 : agrCashP)}
               sub={
                 <div className="mt-2 space-y-0.5">
-                  <p className="text-[12px] text-slate-500 tabular-nums" data-notranslate>Collected {formatPoints(colCashP)}</p>
+                  <p className="text-[12px] text-slate-500 tabular-nums" data-notranslate>Collected {formatPoints(cashX10 ? colCashP * 10 : colCashP)}</p>
                   <p className={'text-[12px] font-bold tabular-nums ' + (pendCashP > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>
-                    Pending {formatPoints(pendCashP)}
+                    Pending {formatPoints(cashX10 ? pendCashP * 10 : pendCashP)}
                   </p>
                 </div>
               } />
@@ -1510,7 +1824,15 @@ function EventLedger(props) {
                   </p>
                 </div>
               } />
-            <MoneyTile label="Total Collected" tone="text-emerald-700" value={balanceLoading ? '—' : formatPoints(colCashP + colBankP)}
+            <MoneyTile label="Agreed Tax" value={balanceLoading ? '—' : formatPoints(agrTaxP)}
+              sub={
+                <div className="mt-2 space-y-0.5">
+                  <p className={'text-[12px] font-bold tabular-nums ' + (pendTaxP > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>
+                    Pending {formatPoints(pendTaxP)}
+                  </p>
+                </div>
+              } />
+            <MoneyTile label="Total Collected" tone="text-emerald-700" value={balanceLoading ? '—' : formatPoints((cashX10 ? colCashP * 10 : colCashP) + colBankP)}
               sub={<p className="mt-2 text-[12px] text-slate-500">Cash and bank together</p>} />
             <MoneyTile label="Total Spent" tone="text-rose-700" value={balanceLoading ? '—' : formatPoints(spentP)}
               sub={<p className="mt-2 text-[12px] text-slate-500">Expenses booked to this event</p>} />
@@ -1523,14 +1845,15 @@ function EventLedger(props) {
                   number anyone opens this for — what is still pending — off
                   the edge. Here each contract is three rows by two columns,
                   cash beside bank, and nothing is out of sight. */}
-              <div className="sm:hidden divide-y divide-slate-100">
+              <div className="@3xl:hidden divide-y divide-slate-100">
                 {contracts.map(function (c) {
                   var b = balancesByContract[c.id] || {}
-                  var pcash = Number(b.pending_cash_paise || 0)
+                  var cashMul = cashX10 ? 10 : 1
+                  var pcash = Number(b.pending_cash_paise || 0) * cashMul
                   var pbank = Number(b.pending_bank_paise || 0)
                   var rows = [
-                    { k: 'Agreed', cash: Number(b.agreed_cash_paise || 0), bank: Number(b.agreed_bank_paise || 0), cls: 'text-slate-800' },
-                    { k: 'Collected', cash: Number(b.collected_cash_paise || 0), bank: Number(b.collected_bank_paise || 0), cls: 'text-slate-600' },
+                    { k: 'Agreed', cash: Number(b.agreed_cash_paise || 0) * cashMul, bank: Number(b.agreed_bank_paise || 0), cls: 'text-slate-800' },
+                    { k: 'Collected', cash: Number(b.collected_cash_paise || 0) * cashMul, bank: Number(b.collected_bank_paise || 0), cls: 'text-slate-600' },
                   ]
                   return (
                     <div key={c.id} className="px-4 py-3.5">
@@ -1569,7 +1892,7 @@ function EventLedger(props) {
                   )
                 })}
               </div>
-              <div className="hidden sm:block overflow-x-auto ambria-thin-scroll">
+              <div className="hidden @3xl:block overflow-x-auto ambria-thin-scroll">
                 <table className="w-full">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
@@ -1582,7 +1905,8 @@ function EventLedger(props) {
                   <tbody>
                     {contracts.map(function (c) {
                       var b = balancesByContract[c.id] || {}
-                      var pcash = Number(b.pending_cash_paise || 0)
+                      var cashMul = cashX10 ? 10 : 1
+                      var pcash = Number(b.pending_cash_paise || 0) * cashMul
                       var pbank = Number(b.pending_bank_paise || 0)
                       return (
                         <tr key={c.id} className="border-b border-slate-100 last:border-b-0">
@@ -1592,8 +1916,8 @@ function EventLedger(props) {
                               {c.created_user_name && <span className="text-[11px] text-slate-400">by {c.created_user_name}</span>}
                             </div>
                           </td>
-                          <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-800" data-notranslate>{formatPoints(Number(b.agreed_cash_paise || 0))}</td>
-                          <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-600" data-notranslate>{formatPoints(Number(b.collected_cash_paise || 0))}</td>
+                          <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-800" data-notranslate>{formatPoints(Number(b.agreed_cash_paise || 0) * cashMul)}</td>
+                          <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-600" data-notranslate>{formatPoints(Number(b.collected_cash_paise || 0) * cashMul)}</td>
                           <td className={'px-3 py-2.5 text-right text-[13px] font-bold tabular-nums ' + (pcash > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>{formatPoints(pcash)}</td>
                           <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-800" data-notranslate>{formatPoints(Number(b.agreed_bank_paise || 0))}</td>
                           <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-600" data-notranslate>{formatPoints(Number(b.collected_bank_paise || 0))}</td>
@@ -1619,6 +1943,14 @@ function EventLedger(props) {
         return (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
+            {/* The same subtle dot as Agreed Cash on the Financials tab —
+                cash amounts are logged at a tenth of the real figure, and
+                this is the one control that reveals the true one, here too.
+                Its own state, so toggling it never changes what the
+                Financials tab shows — it lights up amber while on. */}
+            <button type="button" title={txnCashX10 ? 'Showing true cash amount — click to hide' : 'Show true cash amount'}
+              onClick={function () { setTxnCashX10(function (v) { return !v }) }}
+              className={'w-2.5 h-2.5 rounded-full transition-colors ' + (txnCashX10 ? 'bg-amber-400' : 'bg-slate-200 opacity-25 hover:opacity-50')} />
             {/* The search takes what is left of the row rather than a fixed
                 220: at 220 the three controls came to 422 against the 358 a
                 phone has, and Export sat over the edge. */}

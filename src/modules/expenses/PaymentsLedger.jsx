@@ -6,6 +6,7 @@ import { useRealtime } from '../../lib/useRealtime'
 import { scrollToTopOf } from '../../lib/scrollToTop'
 import { hasPerm } from '../../lib/permissions'
 import SearchField from '../../components/ui/SearchField'
+import DescriptionNote from '../../components/ui/DescriptionNote'
 import Icon from '../../components/ui/Icon'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { CARD } from '../../lib/ui'
@@ -15,6 +16,8 @@ import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import { getReceiptUrl, isVoiceNotePath } from '../../lib/uploadHelper'
 import CheckedStamp from '../../components/ui/CheckedStamp'
 import EnteredMark from '../../components/ui/EnteredMark'
+import { useBackButtonClose } from '../../lib/useBackButtonClose'
+import HoverZoomThumb from '../../components/ui/HoverZoomThumb'
 
 // Every real cash/bank movement in the system, from whichever source recorded it:
 // money paid out (vendor payments/deductions, salary payments/adjustments, wallet-funded
@@ -88,40 +91,6 @@ function timeOf(ts) {
   return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
-// The small receipt thumbnail in a ledger row, with a large preview that
-// follows the cursor on hover — reading a receipt at 40px means either
-// clicking through to the full modal or squinting, and for just glancing to
-// confirm "yes, that's the right bill" a hover is faster than either.
-function HoverZoomThumb({ url, onClick, className }) {
-  var [hoverPos, setHoverPos] = useState(null) // {x, y, size} (viewport coords) or null
-  var MARGIN = 16
-
-  function place(ev) {
-    var x = ev.clientX, y = ev.clientY
-    // Capped to the viewport itself (minus margins) — 960 doesn't fit a
-    // short laptop window, and this still beats squinting at a 40px thumb.
-    var size = Math.min(960, window.innerWidth - MARGIN * 2, window.innerHeight - MARGIN * 2)
-    // Flip to the cursor's left once the preview would run off the right
-    // edge, and clamp vertically so it never opens above/below the viewport.
-    var left = (x + MARGIN + size > window.innerWidth) ? (x - MARGIN - size) : (x + MARGIN)
-    var top = Math.min(Math.max(y - size / 2, MARGIN), window.innerHeight - size - MARGIN)
-    setHoverPos({ x: left, y: top, size: size })
-  }
-
-  return (
-    <>
-      <img src={url} alt="Receipt" onClick={onClick}
-        onMouseEnter={place} onMouseMove={place} onMouseLeave={function () { setHoverPos(null) }}
-        className={className} />
-      {hoverPos && createPortal((
-        <div className="fixed z-[9999] pointer-events-none" style={{ top: hoverPos.y, left: hoverPos.x }}>
-          <img src={url} alt="" style={{ width: hoverPos.size, height: hoverPos.size }}
-            className="object-contain rounded-xl border-2 border-white shadow-2xl bg-white" />
-        </div>
-      ), document.body)}
-    </>
-  )
-}
 
 // Rolling windows ending today, matching this screen's own default
 // (last-30-days) rather than switching to calendar-aligned periods.
@@ -239,6 +208,8 @@ function PaymentsLedger({ profile }) {
   var listRef = useRef(null)
   var [detailTarget, setDetailTarget] = useState(null) // { row, event, collectorName, loading } — vendor/salary/collection rows
   var [enlargedImg, setEnlargedImg] = useState(null)
+  useBackButtonClose(!!detailTarget, closeDetail)
+  useBackButtonClose(!!enlargedImg, function () { setEnlargedImg(null) })
   var [checkingKey, setCheckingKey] = useState(null)
   var [enteringKey, setEnteringKey] = useState(null)
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { load() })
@@ -330,14 +301,20 @@ function PaymentsLedger({ profile }) {
       if (n && !isNaN(n) && expenseIdsForCheck.indexOf(n) === -1) expenseIdsForCheck.push(n)
     })
 
-    // One wave, not two. The wallet carries its owner's name and the plate
-    // collection carries its event's, so neither needs a follow-up query.
+    // The wallet-owner name used to ride along as an embedded profiles(...)
+    // select on this query -- but an embed still goes through profiles' own
+    // RLS (only your own row, unless admin/auditor/dept-approver), so it
+    // silently came back null for any wallet that wasn't the viewer's own.
+    // Owner ids are resolved below instead, through fn_profile_names
+    // alongside the checked-by/entered-by names.
     var [vRes, walletOwnersRes, epcRes, pRes, evRes, expCheckRes] = await Promise.all([
       vendorIds.length > 0 ? supabase.from('vendors').select('id, name').in('id', vendorIds) : Promise.resolve({ data: [] }),
-      walletIdsForOwners.length > 0 ? supabase.from('wallets').select('id, user_id, profiles(id, name)').in('id', walletIdsForOwners) : Promise.resolve({ data: [] }),
+      walletIdsForOwners.length > 0 ? supabase.from('wallets').select('id, user_id').in('id', walletIdsForOwners) : Promise.resolve({ data: [] }),
       // EPC back-links so collections can be split from plain event collections
       collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id, extras_charged, plates_returned, discount_paise, events(id, event_name, client_name, function_date, venue_name, location, session)').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
-      profileIds.length > 0 ? supabase.from('profiles').select('id, name').in('id', profileIds) : Promise.resolve({ data: [] }),
+      // fn_profile_names, not a direct select -- RLS on profiles only lets a
+      // user read their own row, and most of these are someone else's.
+      profileIds.length > 0 ? supabase.rpc('fn_profile_names', { p_ids: profileIds }) : Promise.resolve({ data: [] }),
       candidateEventIds.length > 0 ? supabase.from('events').select('id, event_name, client_name, function_date, venue_name, location, session').in('id', candidateEventIds) : Promise.resolve({ data: [] }),
       expenseIdsForCheck.length > 0 ? supabase.from('expenses').select('id, checked_by, checked_at, tally_entered_by, tally_entered_at').in('id', expenseIdsForCheck) : Promise.resolve({ data: [] }),
     ])
@@ -357,17 +334,16 @@ function PaymentsLedger({ profile }) {
     ledgerRows.forEach(function (r) { wantCheckerName(r.checked_by); wantCheckerName(r.tally_entered_by) })
     collectRows.forEach(function (w) { wantCheckerName(w.checked_by); wantCheckerName(w.tally_entered_by) })
     Object.keys(expCheckById).forEach(function (id) { wantCheckerName(expCheckById[id].checked_by); wantCheckerName(expCheckById[id].tally_entered_by) })
-    if (checkedByIds.length > 0) {
-      var checkerRes = await supabase.from('profiles').select('id, name').in('id', checkedByIds)
-      ;(checkerRes.data || []).forEach(function (p) { profileNames[p.id] = p.name })
-    }
-
     var walletOwnerMap = {}
     ;(walletOwnersRes.data || []).forEach(function (w) {
       walletOwnerMap[w.id] = w.user_id
-      // The embedded profile is the same row the old follow-up query fetched.
-      if (w.profiles && w.profiles.id && profileNames[w.profiles.id] == null) profileNames[w.profiles.id] = w.profiles.name
+      wantCheckerName(w.user_id)
     })
+    if (checkedByIds.length > 0) {
+      // fn_profile_names, not a direct select -- same RLS gap as above.
+      var checkerRes = await supabase.rpc('fn_profile_names', { p_ids: checkedByIds })
+      ;(checkerRes.data || []).forEach(function (p) { profileNames[p.id] = p.name })
+    }
 
     var epcByWalletTx = {}
     ;(epcRes.data || []).forEach(function (e) {
@@ -486,6 +462,16 @@ function PaymentsLedger({ profile }) {
   // wallet_transactions row, and an expense-funded row checks the expense
   // itself (not this wallet_transactions row), since that's the one row an
   // expense can show up as "checked" on everywhere else in the app.
+  // Patches just the one row in place rather than re-running load() (every
+  // table + join it does, for all ~177 rows) after an action that only
+  // ever changes one row's own checked/entered stamp. load() used to run
+  // unconditionally here on top of whatever load() the useRealtime
+  // subscription below already triggers from this same write landing in
+  // the DB — the visible "whole list reloads" on every single click.
+  function patchRow(key, patch) {
+    setRows(function (prev) { return prev.map(function (r) { return r.key === key ? Object.assign({}, r, patch) : r }) })
+  }
+
   async function toggleChecked(row) {
     if (checkingKey || !row._checkId) return
     setCheckingKey(row.key)
@@ -496,10 +482,15 @@ function PaymentsLedger({ profile }) {
       : row.source === 'expense' ? 'p_expense_id'
       : 'p_entry_id'
     var params = {}; params[paramName] = row._checkId
-    var { error } = await supabase.rpc(rpcName, params)
+    var { data, error } = await supabase.rpc(rpcName, params)
     setCheckingKey(null)
     if (error) { alert('Could not update: ' + error.message); return }
-    load()
+    var nowChecked = !!data
+    patchRow(row.key, {
+      checked_by: nowChecked ? profile.id : null,
+      checked_at: nowChecked ? new Date().toISOString() : null,
+      _checkedByName: nowChecked ? profile.name : null,
+    })
   }
 
   async function toggleEntered(row) {
@@ -512,10 +503,15 @@ function PaymentsLedger({ profile }) {
       : row.source === 'expense' ? 'p_expense_id'
       : 'p_entry_id'
     var params = {}; params[paramName] = row._checkId
-    var { error } = await supabase.rpc(rpcName, params)
+    var { data, error } = await supabase.rpc(rpcName, params)
     setEnteringKey(null)
     if (error) { alert('Could not update: ' + error.message); return }
-    load()
+    var nowEntered = !!data
+    patchRow(row.key, {
+      tally_entered_by: nowEntered ? profile.id : null,
+      tally_entered_at: nowEntered ? new Date().toISOString() : null,
+      _enteredByName: nowEntered ? profile.name : null,
+    })
   }
 
   useEffect(function () { load() }, [canView, dateFrom, dateTo])
@@ -527,13 +523,17 @@ function PaymentsLedger({ profile }) {
     if (r.source === 'collection' && (r._eventId || r._performedBy)) {
       Promise.all([
         r._eventId
-          ? supabase.from('events').select('id, contract_no, event_name, client_name, function_date, venue_name, location').eq('id', r._eventId).maybeSingle()
+          ? supabase.from('events').select('id, contract_no, event_name, client_name, function_date, venue_name, location, created_user_name').eq('id', r._eventId).maybeSingle()
           : Promise.resolve({ data: null }),
+        // fn_profile_names, not a direct select -- RLS on profiles only lets
+        // a user read their own row, and the collector is usually not the
+        // viewer.
         r._performedBy
-          ? supabase.from('profiles').select('name').eq('id', r._performedBy).maybeSingle()
+          ? supabase.rpc('fn_profile_names', { p_ids: [r._performedBy] })
           : Promise.resolve({ data: null }),
       ]).then(function (res) {
-        setDetailTarget({ row: r, event: res[0].data || null, collectorName: (res[1].data && res[1].data.name) || '', loading: false })
+        var collectorRow = res[1].data ? res[1].data[0] : null
+        setDetailTarget({ row: r, event: res[0].data || null, collectorName: (collectorRow && collectorRow.name) || '', loading: false })
       })
     }
   }
@@ -949,7 +949,7 @@ function PaymentsLedger({ profile }) {
                         {isIn ? '+ ' : '\u2212 '}{pts(r.amount_paise || 0)}
                       </span>
                     </div>
-                    {r.description && <p className="mt-0.5 text-[12.5px] font-medium text-slate-600 leading-snug break-words">{r.description}</p>}
+                    <DescriptionNote text={r.description} truncate={false} className="mt-1" />
                     {r.source === 'collection' && r._eventInfo && (function () {
                       var ei = r._eventInfo
                       var bits = [ei.function_date ? formatDate(ei.function_date) : null, ei.client_name, venueLabelWithCode(ei.venue_name), ei.location, ei.session].filter(Boolean)
@@ -1055,17 +1055,16 @@ function PaymentsLedger({ profile }) {
                             chips rather than a hole inside the sentence. */}
                         <div className="min-w-0">
                           <p className="font-display text-[13px] font-bold text-slate-900 leading-snug break-words">{r.party_name}</p>
-                          {r.description && (
-                            <p className="mt-0.5 text-[12px] text-slate-500 leading-snug break-words">{r.description}</p>
-                          )}
+                          <DescriptionNote text={r.description} truncate={false} className="mt-1" />
                           {/* Event Collection / Extra Plate Collection rows: the
                               event name alone (already the row's headline) doesn't
                               say who the guest was, when the function actually
                               ran, or where — a reader had to open the row to find
                               any of that. */}
-                          {r.source === 'collection' && r._eventInfo && (function () {
-                            var ei = r._eventInfo
+                          {r.source === 'collection' && (r._eventInfo || r._receiptNo) && (function () {
+                            var ei = r._eventInfo || {}
                             var bits = [
+                              r._receiptNo ? '#' + r._receiptNo : null,
                               ei.function_date ? formatDate(ei.function_date) : null,
                               ei.client_name,
                               venueLabelWithCode(ei.venue_name),
@@ -1230,8 +1229,31 @@ function PaymentsLedger({ profile }) {
                 {r.direction === 'in' ? '+' : '-'}{formatPoints(r.amount_paise || 0)}
               </p>
               <div className="space-y-1.5 text-sm">
+                {r.source === 'collection' && r._receiptNo && (
+                  <div className="flex justify-between"><span className="text-gray-500">Receipt #</span><span className="font-medium text-gray-800">{r._receiptNo}</span></div>
+                )}
+                <div className="flex justify-between"><span className="text-gray-500">Collection Date</span><span className="font-medium text-gray-800">{formatDate(r.date)}</span></div>
+
+                {r.source === 'collection' && detailTarget.event && (
+                  <>
+                    <p className="pt-2 mt-1 border-t border-gray-200 text-[11px] font-bold uppercase tracking-wide text-gray-600">Function details</p>
+                    {detailTarget.event.contract_no && (
+                      <div className="flex justify-between"><span className="text-gray-500">Contract #</span><span className="font-medium text-gray-800">{detailTarget.event.contract_no}</span></div>
+                    )}
+                    <div className="flex justify-between"><span className="text-gray-500">Function date</span><span className="font-medium text-gray-800">{formatDate(detailTarget.event.function_date)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Client</span><span className="font-medium text-gray-800">{detailTarget.event.client_name || '—'}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Venue</span><span className="font-medium text-gray-800">{detailTarget.event.venue_name || '—'}</span></div>
+                    {detailTarget.event.location && (
+                      <div className="flex justify-between"><span className="text-gray-500">Sub-venue</span><span className="font-medium text-gray-800">{detailTarget.event.location}</span></div>
+                    )}
+                    {detailTarget.event.created_user_name && (
+                      <div className="flex justify-between"><span className="text-gray-500">Sales person</span><span className="font-medium text-gray-800">{detailTarget.event.created_user_name}</span></div>
+                    )}
+                  </>
+                )}
+
+                {r.source === 'collection' && <p className="pt-2 mt-1 border-t border-gray-200 text-[11px] font-bold uppercase tracking-wide text-gray-600">Other details</p>}
                 <div className="flex justify-between"><span className="text-gray-500">Party</span><span className="font-medium text-gray-800">{r.party_name}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Date</span><span className="font-medium text-gray-800">{formatDate(r.date)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Mode</span><span className="font-medium text-gray-800">{r.mode === 'cash' ? 'Cash' : 'Bank'}</span></div>
                 {r._bankPaymentType && (
                   <div className="flex justify-between"><span className="text-gray-500">Payment Type</span><span className="font-medium text-gray-800">{r._bankPaymentType}</span></div>
@@ -1245,35 +1267,21 @@ function PaymentsLedger({ profile }) {
                 {meta.salary_month && (
                   <div className="flex justify-between"><span className="text-gray-500">Salary month</span><span className="font-medium text-gray-800">{meta.salary_month}</span></div>
                 )}
-                {r.source === 'collection' && r._receiptNo && (
-                  <div className="flex justify-between"><span className="text-gray-500">Receipt #</span><span className="font-medium text-gray-800">{r._receiptNo}</span></div>
-                )}
                 {r.source === 'collection' && (
                   <div className="flex justify-between"><span className="text-gray-500">Collected by</span><span className="font-medium text-gray-800">{detailTarget.loading ? '…' : (detailTarget.collectorName || '—')}</span></div>
                 )}
                 {r.source === 'collection' && r._isEpc && r._epc && (
                   <div className="flex justify-between"><span className="text-gray-500">Extra plates</span><span className="font-medium text-gray-800">{r._epc.extras_charged}</span></div>
                 )}
-                {r.source === 'collection' && detailTarget.event && (
-                  <>
-                    <div className="flex justify-between"><span className="text-gray-500">Contract #</span><span className="font-medium text-gray-800">{detailTarget.event.contract_no || '—'}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Client</span><span className="font-medium text-gray-800">{detailTarget.event.client_name || '—'}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Function date</span><span className="font-medium text-gray-800">{formatDate(detailTarget.event.function_date)}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Venue</span><span className="font-medium text-gray-800">{detailTarget.event.venue_name || '—'}</span></div>
-                    {detailTarget.event.location && (
-                      <div className="flex justify-between"><span className="text-gray-500">Sub-venue</span><span className="font-medium text-gray-800">{detailTarget.event.location}</span></div>
-                    )}
-                  </>
-                )}
               </div>
               {(meta.payment_images || meta.deduction_image) && (
-                <div>
+                <div className="border-t border-gray-200 pt-3">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Proof</p>
                   <PaymentProofThumbs meta={meta} />
                 </div>
               )}
               {r.source === 'collection' && r._imgUrl && (
-                <div>
+                <div className="border-t border-gray-200 pt-3">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Receipt {r._imgIsVoice ? '(voice note)' : 'Image'}</p>
                   {r._imgIsVoice ? (
                     <audio src={r._imgUrl} controls className="w-full h-8" />
