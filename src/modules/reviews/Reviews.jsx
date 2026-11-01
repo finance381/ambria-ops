@@ -17,14 +17,13 @@ var TAB_PERM = {
   category: 'review.masters', sub_category: 'review.masters',
 }
 var AUDIT_DOMAINS = ['expense', 'vendor_payment']
-// Inventory has no admin tier any more — the tab is normally dept-head-only,
-// gated on role + permission + an actual category assignment rather than a
-// flat permission key (see 00058_inventory_single_stage_approval.sql).
-// TEMPORARY: the role === 'dept. head' check is dropped for now so an admin
-// account can open this tab directly to debug reported bugs in it — put it
-// back (`if (!profile || profile.role !== 'dept. head') return false`)
-// once that's done; admins otherwise keep full visibility of inventory
-// items elsewhere (Inventory > All Items), just not normally in this queue.
+// Inventory has no admin tier any more — the tab is gated on permission + an
+// actual category assignment, not a role name (see
+// 00058_inventory_single_stage_approval.sql, loosened by
+// 00162_inventory_approve_drop_dept_head_role_check.sql: the role = 'dept.
+// head' check there turned out to make the permission toggle a no-op for any
+// other role, including an auditor an admin had explicitly granted it to —
+// the permission + category assignment is the real grant now, for any role).
 function isInventoryDeptHead(profile) {
   if (!profile) return false
   var perms = profile.permsNew || []
