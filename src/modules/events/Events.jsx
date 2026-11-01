@@ -102,6 +102,7 @@ function Events({ profile }) {
   var [dateTo, setDateTo] = useState('')
   var [tentativeFilter, setTentativeFilter] = useState('')
   var [showGroupLedger, setShowGroupLedger] = useState(false)
+  var [showFunctionLedger, setShowFunctionLedger] = useState(false)
   var [departments, setDepartments] = useState([])
   var [page, setPage] = useState(1)
   var [perPage, setPerPage] = useState(24)
@@ -667,7 +668,7 @@ function Events({ profile }) {
       </Modal>
 
       {/* ═══ FUNCTION DETAIL MODAL ═══ */}
-      <Modal open={!!selectedFunction} onClose={function () { setSelectedFunction(null) }}
+      <Modal open={!!selectedFunction} onClose={function () { setSelectedFunction(null); setShowFunctionLedger(false) }}
         title={selectedFunction?.event_name || ''} wide>
         {selectedFunction && (
           <div className="space-y-5">
@@ -700,6 +701,26 @@ function Events({ profile }) {
               </div>
               {selectedFunction.created_user_name && (
                 <p className="text-xs text-gray-400">Created by: {selectedFunction.created_user_name}</p>
+              )}
+            </div>
+
+            {/* This contract's own financials — Decor, Entertainment and Venue
+                are each billed, collected and spent as separate LMS contracts
+                (see EventLedger's contract-pooling), so the group-level
+                financials above only ever shows whichever function happens to
+                be functions[0]. This is the same EventLedger, scoped to the
+                exact contract selected here, so every department's own
+                numbers are reachable, not just the first one's. */}
+            <div>
+              <button type="button"
+                onClick={function () { setShowFunctionLedger(!showFunctionLedger) }}
+                className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                {showFunctionLedger ? '− Hide financials' : '+ Show financials'}
+              </button>
+              {showFunctionLedger && (
+                <div className="mt-3">
+                  <EventLedger eventId={selectedFunction.id} />
+                </div>
               )}
             </div>
 
