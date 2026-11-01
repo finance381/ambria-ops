@@ -355,7 +355,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [expandAllTxns, setExpandAllTxns] = useState(false)
   // A transaction row for a deleted expense stays in the ledger for audit
   // (the debit already happened), but clutters the everyday view.
-  var [showDeletedTxns, setShowDeletedTxns] = useState(false)
+  // Defaults on: hiding a deleted expense also hides the refund that reverses
+  // it (both share its reference_id, see getExportRows), and that pairing was
+  // the exact thing that made an otherwise-correct balance look like broken
+  // math (see the gap-note this screen now shows). Visible by default avoids
+  // the false alarm; the checkbox still lets it be hidden for a quick read.
+  var [showDeletedTxns, setShowDeletedTxns] = useState(true)
   var activeVenues = useReferenceData().venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.code || '').localeCompare(b.code || '') })
   // events.venue_name is a plain LMS-synced text field with no venue_id —
   // matching it against this app's own venues master by name is the only way
