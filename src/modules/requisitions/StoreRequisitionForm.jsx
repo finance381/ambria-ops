@@ -10,11 +10,12 @@ var KITCHEN_SECTIONS = ['Indian', 'Chinese', 'Chaat', 'Tandoor', 'Conti', 'Halwa
 function emptyDeptRow(id) {
   return {
     id: id, departmentId: '', subDepartmentId: '', section: '', remarks: '',
-    // reqNo/reqImagePath: the physical slip this row's items/casuals came off
-    // — a requisition commonly carries one slip per department, not one for
-    // the whole thing. reqImageFile is the picked-but-not-yet-uploaded photo;
-    // reqImagePreview is its (or the existing reqImagePath's) display URL.
-    reqNo: '', reqImageFile: null, reqImagePath: null, reqImagePreview: '',
+    // reqNo/reqImages: the physical slip this row's items/casuals came off —
+    // a requisition commonly carries one slip per department, not one for
+    // the whole thing, and that slip is routinely more than one photo (a
+    // multi-page slip, the front and the itemized back). reqImages is the
+    // same { id, file, path, previewUrl } shape as the top-level casualSlips.
+    reqNo: '', reqImages: [],
     showInventory: false, showCasual: false,
     invSearch: '', invResults: [], invSearching: false,
     inventoryRows: [], casualRows: [],
@@ -56,7 +57,7 @@ var DRAFT_DEBOUNCE_MS = 800
 // reload, so a draft only remembers the slip number, not a pending photo —
 // same reasoning as ExpenseForm's audio/receipt drafts.
 function serializeDraftRow(r) {
-  return Object.assign({}, r, { invSearch: '', invResults: [], invSearching: false, reqImageFile: null, reqImagePreview: r.reqImagePath ? r.reqImagePreview : '' })
+  return Object.assign({}, r, { invSearch: '', invResults: [], invSearching: false, reqImages: serializeDraftImages(r.reqImages) })
 }
 
 function isEmptyDraftRow(r) {
@@ -64,7 +65,7 @@ function isEmptyDraftRow(r) {
   if (r.departmentId || r.subDepartmentId || r.section) return false
   if (r.remarks && r.remarks.trim()) return false
   if (r.reqNo && r.reqNo.trim()) return false
-  if (r.reqImageFile || r.reqImagePath) return false
+  if ((r.reqImages || []).length > 0) return false
   if ((r.inventoryRows || []).length > 0) return false
   if ((r.casualRows || []).length > 0) return false
   return true
@@ -81,9 +82,10 @@ function isEmptyDraftState(s) {
 
 // Only a path (already uploaded) survives into a draft — a picked-but-
 // unuploaded file's blob: URL dies with the page, so there'd be nothing to
-// restore it from anyway.
-function serializeDraftCasualSlips(list) {
-  return (list || []).filter(function (cs) { return cs.path }).map(function (cs) { return { id: cs.id, path: cs.path } })
+// restore it from anyway. Shared by casualSlips and every dept row's
+// reqImages — same { id, file, path, previewUrl } shape.
+function serializeDraftImages(list) {
+  return (list || []).filter(function (im) { return im.path }).map(function (im) { return { id: im.id, path: im.path } })
 }
 
 function formatDraftAge(ts) {
@@ -100,6 +102,11 @@ function formatDraftAge(ts) {
 
 function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   var [entryDate, setEntryDate] = useState('')
+  // When the function this requisition's consumption was actually for ran —
+  // separate from entryDate (when this form is being filled in, which is
+  // often a day or more later). Drives the contract list below; not its own
+  // column — the functions actually picked are what gets saved (event_ids).
+  var [functionDate, setFunctionDate] = useState('')
   var [requisitionNo, setRequisitionNo] = useState('')
   var [contracts, setContracts] = useState([])
   var [contractsLoading, setContractsLoading] = useState(false)
@@ -119,6 +126,10 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   // path: string|null (already uploaded), previewUrl }.
   var [casualSlips, setCasualSlips] = useState([])
   var [nextCasualSlipId, setNextCasualSlipId] = useState(1)
+  // Shared across every dept row's reqImages, same reasoning as nextLineId
+  // being shared across every row's inventory/casual lines — one counter,
+  // not one per row.
+  var [nextReqImageId, setNextReqImageId] = useState(1)
   // Paths removed during this edit (an existing image taken off a dept row
   // or the casual slips) — deleted from storage only after the save that
   // drops them actually succeeds, so a failed save doesn't orphan nothing.
@@ -152,33 +163,33 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   useEffect(function () {
     if (editId || !draftKey || saving || loadingExisting) return
     if (draftRestorable) return  // don't clobber a pending restore with the blank default
-    var state = { entryDate: entryDate, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId, casualSlips: casualSlips, nextCasualSlipId: nextCasualSlipId }
+    var state = { entryDate: entryDate, functionDate: functionDate, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId, casualSlips: casualSlips, nextCasualSlipId: nextCasualSlipId, nextReqImageId: nextReqImageId }
     if (isEmptyDraftState(state)) return
     if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current)
     draftSaveTimer.current = setTimeout(function () {
       try {
-        var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow), casualSlips: serializeDraftCasualSlips(casualSlips) })
+        var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow), casualSlips: serializeDraftImages(casualSlips) })
         localStorage.setItem(draftKey, JSON.stringify(payload))
         setDraftSavedAt(payload.savedAt)
       } catch (_) {}
     }, DRAFT_DEBOUNCE_MS)
     return function () { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current) }
-  }, [entryDate, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, casualSlips, nextCasualSlipId, editId, saving, draftRestorable, loadingExisting])
+  }, [entryDate, functionDate, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, casualSlips, nextCasualSlipId, nextReqImageId, editId, saving, draftRestorable, loadingExisting])
 
   // ─── Draft: safety-save on tab close / navigate away ───
   useEffect(function () {
     if (editId || !draftKey) return
     function handler() {
       try {
-        var state = { entryDate: entryDate, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId, casualSlips: casualSlips, nextCasualSlipId: nextCasualSlipId }
+        var state = { entryDate: entryDate, functionDate: functionDate, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId, casualSlips: casualSlips, nextCasualSlipId: nextCasualSlipId, nextReqImageId: nextReqImageId }
         if (isEmptyDraftState(state)) return
-        var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow), casualSlips: serializeDraftCasualSlips(casualSlips) })
+        var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow), casualSlips: serializeDraftImages(casualSlips) })
         localStorage.setItem(draftKey, JSON.stringify(payload))
       } catch (_) {}
     }
     window.addEventListener('beforeunload', handler)
     return function () { window.removeEventListener('beforeunload', handler) }
-  }, [entryDate, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, casualSlips, nextCasualSlipId, editId])
+  }, [entryDate, functionDate, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, casualSlips, nextCasualSlipId, nextReqImageId, editId])
 
   // ─── Draft: tick "Xs ago" indicator every 15s ───
   useEffect(function () {
@@ -191,6 +202,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     if (!draftRestorable) return
     try {
       setEntryDate(draftRestorable.entryDate || '')
+      setFunctionDate(draftRestorable.functionDate || '')
       setRequisitionNo(draftRestorable.requisitionNo || '')
       setSelectedEventIds(draftRestorable.selectedEventIds || [])
       var rows = (draftRestorable.deptRows && draftRestorable.deptRows.length > 0) ? draftRestorable.deptRows : [emptyDeptRow(1)]
@@ -198,7 +210,9 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       // only the picked-but-unuploaded file (already dropped before saving)
       // couldn't survive the reload.
       setDeptRows(rows.map(function (r) {
-        return Object.assign({}, r, { reqImagePreview: r.reqImagePath ? imagePublicUrl(r.reqImagePath) : '' })
+        return Object.assign({}, r, {
+          reqImages: (r.reqImages || []).map(function (im) { return { id: im.id, file: null, path: im.path, previewUrl: imagePublicUrl(im.path) } }),
+        })
       }))
       setNextRowId(draftRestorable.nextRowId || 2)
       setNextLineId(draftRestorable.nextLineId || 1)
@@ -206,6 +220,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
         return { id: cs.id, file: null, path: cs.path, previewUrl: imagePublicUrl(cs.path) }
       }))
       setNextCasualSlipId(draftRestorable.nextCasualSlipId || 1)
+      setNextReqImageId(draftRestorable.nextReqImageId || 1)
       setDraftSavedAt(draftRestorable.savedAt)
     } catch (_) {}
     setDraftRestorable(null)
@@ -247,7 +262,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     setLoadingExisting(true)
     Promise.all([
       supabase.from('store_requisitions').select('date_from, date_to, event_ids, requisition_no, casual_slip_paths').eq('id', editId).single(),
-      supabase.from('store_requisition_dept_rows').select('id, department_id, sub_department_id, section, remarks, req_no, req_image_path, sort_order').eq('store_requisition_id', editId).order('sort_order'),
+      supabase.from('store_requisition_dept_rows').select('id, department_id, sub_department_id, section, remarks, req_no, req_image_paths, sort_order').eq('store_requisition_id', editId).order('sort_order'),
     ]).then(function (res) {
       var reqRow = res[0].data
       var drRows = res[1].data || []
@@ -277,11 +292,13 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           var rowCasuals = casuals.filter(function (c) { return c.dept_row_id === dr.id }).map(function (c) {
             return { id: lineId++, casualRosterId: c.casual_roster_id != null ? String(c.casual_roster_id) : '', qty: Number(c.qty) }
           })
+          var rowReqImages = (dr.req_image_paths || []).map(function (p) {
+            return { id: lineId++, file: null, path: p, previewUrl: imagePublicUrl(p) }
+          })
           return {
             id: rowId++,
             departmentId: String(dr.department_id), subDepartmentId: String(dr.sub_department_id), section: dr.section || '', remarks: dr.remarks || '',
-            reqNo: dr.req_no || '', reqImageFile: null, reqImagePath: dr.req_image_path || null,
-            reqImagePreview: dr.req_image_path ? imagePublicUrl(dr.req_image_path) : '',
+            reqNo: dr.req_no || '', reqImages: rowReqImages,
             showInventory: rowItems.length > 0, showCasual: rowCasuals.length > 0,
             invSearch: '', invResults: [], invSearching: false,
             inventoryRows: rowItems, casualRows: rowCasuals,
@@ -290,18 +307,19 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
         setDeptRows(built)
         setNextRowId(rowId)
         setNextLineId(lineId)
+        setNextReqImageId(lineId)
         setLoadingExisting(false)
       })
     })
   }, [editId])
 
   useEffect(function () {
-    if (!entryDate) { setContracts([]); return }
+    if (!functionDate) { setContracts([]); return }
     setContractsLoading(true)
     supabase.from('events_safe')
       .select('id, event_name, client_name, venue_name, function_date, department, total_plates, complementary_plates')
       .in('department', ['Venue', 'Catering'])
-      .eq('function_date', entryDate)
+      .eq('function_date', functionDate)
       .is('merged_into_id', null)
       .order('function_date')
       .then(function (evRes) {
@@ -340,7 +358,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           setContractsLoading(false)
         })
       })
-  }, [entryDate])
+  }, [functionDate])
 
   function patchRow(rowId, patch) {
     setDeptRows(function (prev) { return prev.map(function (r) { return r.id === rowId ? Object.assign({}, r, patch) : r }) })
@@ -396,17 +414,21 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     return path
   }
 
-  function onPickReqImage(row, e) {
-    var file = e.target.files && e.target.files[0]
+  function onPickReqImages(row, e) {
+    var files = Array.prototype.slice.call(e.target.files || [])
     e.target.value = ''
-    if (!file) return
-    var previewUrl = URL.createObjectURL(file)
-    if (row.reqImagePath) removedPathsRef.current.push(row.reqImagePath)
-    patchRow(row.id, { reqImageFile: file, reqImagePath: null, reqImagePreview: previewUrl })
+    if (files.length === 0) return
+    var startId = nextReqImageId
+    var added = files.map(function (f, i) {
+      return { id: startId + i, file: f, path: null, previewUrl: URL.createObjectURL(f) }
+    })
+    setNextReqImageId(startId + files.length)
+    patchRow(row.id, { reqImages: (row.reqImages || []).concat(added) })
   }
-  function removeReqImage(row) {
-    if (row.reqImagePath) removedPathsRef.current.push(row.reqImagePath)
-    patchRow(row.id, { reqImageFile: null, reqImagePath: null, reqImagePreview: '' })
+  function removeReqImage(row, imageId) {
+    var hit = (row.reqImages || []).find(function (im) { return im.id === imageId })
+    if (hit && hit.path) removedPathsRef.current.push(hit.path)
+    patchRow(row.id, { reqImages: (row.reqImages || []).filter(function (im) { return im.id !== imageId }) })
   }
 
   function onPickCasualSlips(e) {
@@ -541,7 +563,13 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       var deptRowImagePaths = {}
       for (var i = 0; i < deptRows.length; i++) {
         var r = deptRows[i]
-        if (r.reqImageFile) deptRowImagePaths[r.id] = await uploadImage(r.reqImageFile, 'storereq_dept')
+        var rowPaths = []
+        for (var k = 0; k < (r.reqImages || []).length; k++) {
+          var im = r.reqImages[k]
+          if (im.file) rowPaths.push(await uploadImage(im.file, 'storereq_dept'))
+          else if (im.path) rowPaths.push(im.path)
+        }
+        deptRowImagePaths[r.id] = rowPaths
       }
       var finalCasualSlipPaths = []
       for (var j = 0; j < casualSlips.length; j++) {
@@ -557,7 +585,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           section: isKitchenRow(r) ? r.section : null,
           remarks: r.remarks ? r.remarks.trim() : null,
           req_no: r.reqNo ? r.reqNo.trim() : null,
-          req_image_path: Object.prototype.hasOwnProperty.call(deptRowImagePaths, r.id) ? deptRowImagePaths[r.id] : r.reqImagePath,
+          req_image_paths: deptRowImagePaths[r.id] || [],
           items: r.inventoryRows.map(function (l) {
             return { item_source: l.itemSource, item_id: l.itemId, item_name: l.name, unit: l.unit, qty: Number(l.qty) || 0, rate_paise: Number(l.ratePaise) || 0 }
           }),
@@ -696,12 +724,17 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       {entryDate && (
         <div className={CARD}>
           <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Contracts on this date</p>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Link to a Function</p>
             {selectedEventIds.length > 0 && (
               <p className="text-xs font-semibold text-indigo-600">{selectedEventIds.length} selected</p>
             )}
           </div>
-          {contractsLoading ? (
+          <div>
+            <label className={LABEL}>Function date (optional)</label>
+            <EventDatePicker value={functionDate} placeholder="Select a function's date" collapsible plain includePast
+              onChange={function (v) { setFunctionDate(v) }} />
+          </div>
+          {!functionDate ? null : contractsLoading ? (
             <p className="text-sm text-gray-400 py-4 text-center">Loading contracts…</p>
           ) : contracts.length === 0 ? (
             <p className="text-sm text-gray-400 py-4 text-center">No venue/catering contracts on this date.</p>
@@ -777,30 +810,32 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                 placeholder="Optional note for this row…" className={CTRL} style={{ fontSize: '16px' }} />
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5">
-              <div>
-                <label className={LABEL}>Req No (optional)</label>
-                <input type="text" value={row.reqNo} onChange={function (e) { onChangeReqNo(row.id, e) }}
-                  placeholder="Slip number" className={CTRL} style={{ fontSize: '16px' }} />
-              </div>
-              <div>
-                <label className={LABEL}>Req Image (optional)</label>
-                {row.reqImagePreview ? (
-                  <div className="relative">
-                    <a href={row.reqImagePreview} target="_blank" rel="noreferrer">
-                      <img src={row.reqImagePreview} alt="Requisition slip" className="w-full h-9 object-cover rounded-lg border border-gray-300" />
-                    </a>
-                    <button type="button" onClick={function () { removeReqImage(row) }} aria-label="Remove image"
-                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
-                      <Icon name="close" size={10} />
-                    </button>
-                  </div>
-                ) : (
-                  <label className={CTRL + ' flex items-center justify-center gap-1.5 text-gray-500 cursor-pointer'}>
-                    <Icon name="camera" size={14} /> Add photo
-                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={function (e) { onPickReqImage(row, e) }} />
-                  </label>
-                )}
+            <div>
+              <label className={LABEL}>Req No (optional)</label>
+              <input type="text" value={row.reqNo} onChange={function (e) { onChangeReqNo(row.id, e) }}
+                placeholder="Slip number" className={CTRL} style={{ fontSize: '16px' }} />
+            </div>
+            <div>
+              <label className={LABEL}>Req Images (optional)</label>
+              <div className="flex flex-wrap gap-2">
+                {(row.reqImages || []).map(function (im) {
+                  return (
+                    <div key={im.id} className="relative w-16 h-16 shrink-0">
+                      <a href={im.previewUrl} target="_blank" rel="noreferrer">
+                        <img src={im.previewUrl} alt="Requisition slip" className="w-16 h-16 object-cover rounded-lg border border-gray-300" />
+                      </a>
+                      <button type="button" onClick={function () { removeReqImage(row, im.id) }} aria-label="Remove image"
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
+                        <Icon name="close" size={10} />
+                      </button>
+                    </div>
+                  )
+                })}
+                <label className="w-16 h-16 shrink-0 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-0.5 text-gray-400 cursor-pointer hover:bg-gray-50">
+                  <Icon name="camera" size={16} />
+                  <span className="text-[9px] font-bold">Add</span>
+                  <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={function (e) { onPickReqImages(row, e) }} />
+                </label>
               </div>
             </div>
 
