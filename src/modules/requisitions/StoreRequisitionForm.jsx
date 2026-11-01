@@ -71,7 +71,7 @@ function isEmptyDraftRow(r) {
 }
 
 function isEmptyDraftState(s) {
-  if (s.dateFrom || s.dateTo) return false
+  if (s.entryDate) return false
   if (s.requisitionNo && s.requisitionNo.trim()) return false
   if ((s.selectedEventIds || []).length > 0) return false
   if ((s.casualSlips || []).length > 0) return false
@@ -99,8 +99,7 @@ function formatDraftAge(ts) {
 }
 
 function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
-  var [dateFrom, setDateFrom] = useState('')
-  var [dateTo, setDateTo] = useState('')
+  var [entryDate, setEntryDate] = useState('')
   var [requisitionNo, setRequisitionNo] = useState('')
   var [contracts, setContracts] = useState([])
   var [contractsLoading, setContractsLoading] = useState(false)
@@ -153,7 +152,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   useEffect(function () {
     if (editId || !draftKey || saving || loadingExisting) return
     if (draftRestorable) return  // don't clobber a pending restore with the blank default
-    var state = { dateFrom: dateFrom, dateTo: dateTo, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId, casualSlips: casualSlips, nextCasualSlipId: nextCasualSlipId }
+    var state = { entryDate: entryDate, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId, casualSlips: casualSlips, nextCasualSlipId: nextCasualSlipId }
     if (isEmptyDraftState(state)) return
     if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current)
     draftSaveTimer.current = setTimeout(function () {
@@ -164,14 +163,14 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       } catch (_) {}
     }, DRAFT_DEBOUNCE_MS)
     return function () { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current) }
-  }, [dateFrom, dateTo, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, casualSlips, nextCasualSlipId, editId, saving, draftRestorable, loadingExisting])
+  }, [entryDate, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, casualSlips, nextCasualSlipId, editId, saving, draftRestorable, loadingExisting])
 
   // ─── Draft: safety-save on tab close / navigate away ───
   useEffect(function () {
     if (editId || !draftKey) return
     function handler() {
       try {
-        var state = { dateFrom: dateFrom, dateTo: dateTo, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId, casualSlips: casualSlips, nextCasualSlipId: nextCasualSlipId }
+        var state = { entryDate: entryDate, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId, casualSlips: casualSlips, nextCasualSlipId: nextCasualSlipId }
         if (isEmptyDraftState(state)) return
         var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow), casualSlips: serializeDraftCasualSlips(casualSlips) })
         localStorage.setItem(draftKey, JSON.stringify(payload))
@@ -179,7 +178,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     }
     window.addEventListener('beforeunload', handler)
     return function () { window.removeEventListener('beforeunload', handler) }
-  }, [dateFrom, dateTo, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, casualSlips, nextCasualSlipId, editId])
+  }, [entryDate, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, casualSlips, nextCasualSlipId, editId])
 
   // ─── Draft: tick "Xs ago" indicator every 15s ───
   useEffect(function () {
@@ -191,8 +190,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   function restoreDraft() {
     if (!draftRestorable) return
     try {
-      setDateFrom(draftRestorable.dateFrom || '')
-      setDateTo(draftRestorable.dateTo || '')
+      setEntryDate(draftRestorable.entryDate || '')
       setRequisitionNo(draftRestorable.requisitionNo || '')
       setSelectedEventIds(draftRestorable.selectedEventIds || [])
       var rows = (draftRestorable.deptRows && draftRestorable.deptRows.length > 0) ? draftRestorable.deptRows : [emptyDeptRow(1)]
@@ -254,7 +252,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       var reqRow = res[0].data
       var drRows = res[1].data || []
       if (reqRow) {
-        setDateFrom(reqRow.date_from); setDateTo(reqRow.date_to); setRequisitionNo(reqRow.requisition_no || ''); setSelectedEventIds(reqRow.event_ids || [])
+        setEntryDate(reqRow.date_from); setRequisitionNo(reqRow.requisition_no || ''); setSelectedEventIds(reqRow.event_ids || [])
         setCasualSlips((reqRow.casual_slip_paths || []).map(function (p, i) {
           return { id: i + 1, file: null, path: p, previewUrl: imagePublicUrl(p) }
         }))
@@ -298,12 +296,12 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   }, [editId])
 
   useEffect(function () {
-    if (!dateFrom || !dateTo) { setContracts([]); return }
+    if (!entryDate) { setContracts([]); return }
     setContractsLoading(true)
     supabase.from('events_safe')
       .select('id, event_name, client_name, venue_name, function_date, department, total_plates, complementary_plates')
       .in('department', ['Venue', 'Catering'])
-      .gte('function_date', dateFrom).lte('function_date', dateTo)
+      .eq('function_date', entryDate)
       .is('merged_into_id', null)
       .order('function_date')
       .then(function (evRes) {
@@ -342,7 +340,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           setContractsLoading(false)
         })
       })
-  }, [dateFrom, dateTo])
+  }, [entryDate])
 
   function patchRow(rowId, patch) {
     setDeptRows(function (prev) { return prev.map(function (r) { return r.id === rowId ? Object.assign({}, r, patch) : r }) })
@@ -526,7 +524,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   function rowTotal(row) { return rowInvSubtotal(row) + rowCasSubtotal(row) }
   var grandTotal = deptRows.reduce(function (s, r) { return s + rowTotal(r) }, 0)
 
-  var canSubmit = dateFrom && dateTo && deptRows.length > 0 &&
+  var canSubmit = entryDate && deptRows.length > 0 &&
     deptRows.every(function (r) {
       return r.departmentId && r.subDepartmentId && (r.inventoryRows.length > 0 || r.casualRows.length > 0) &&
         r.inventoryRows.every(function (l) { return Number(l.qty) > 0 }) &&
@@ -570,14 +568,14 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
         }
       })
       var res = editId
-        ? await supabase.rpc('rpc_update_store_requisition', { p_id: editId, p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload, p_event_ids: selectedEventIds, p_requisition_no: requisitionNo, p_casual_slip_paths: finalCasualSlipPaths })
-        : await supabase.rpc('rpc_submit_store_requisition', { p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload, p_event_ids: selectedEventIds, p_requisition_no: requisitionNo, p_casual_slip_paths: finalCasualSlipPaths })
+        ? await supabase.rpc('rpc_update_store_requisition', { p_id: editId, p_date_from: entryDate, p_date_to: entryDate, p_dept_rows: payload, p_event_ids: selectedEventIds, p_requisition_no: requisitionNo, p_casual_slip_paths: finalCasualSlipPaths })
+        : await supabase.rpc('rpc_submit_store_requisition', { p_date_from: entryDate, p_date_to: entryDate, p_dept_rows: payload, p_event_ids: selectedEventIds, p_requisition_no: requisitionNo, p_casual_slip_paths: finalCasualSlipPaths })
       if (res.error) { setSaving(false); setError(res.error.message); return }
       if (removedPathsRef.current.length > 0) {
         try { await supabase.storage.from('receipts').remove(removedPathsRef.current) } catch (_) {}
         removedPathsRef.current = []
       }
-      try { await logActivity(editId ? 'STORE_REQUISITION_EDIT' : 'STORE_REQUISITION_SUBMIT', dateFrom + ' to ' + dateTo + ' · ' + rupees(grandTotal)) } catch (_) {}
+      try { await logActivity(editId ? 'STORE_REQUISITION_EDIT' : 'STORE_REQUISITION_SUBMIT', entryDate + ' · ' + rupees(grandTotal)) } catch (_) {}
       clearDraftAfterSubmit()
       setSaving(false)
       if (onDone) onDone(res.data)
@@ -596,7 +594,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-gray-900">{editId ? 'Edit Store Requisition' : 'New Store Requisition'}</h2>
-          <p className="text-xs text-gray-400">Record inventory and casual labour consumed between two dates.</p>
+          <p className="text-xs text-gray-400">Record inventory and casual labour consumed on a date.</p>
         </div>
         <button onClick={onCancel} className="px-3 py-2 text-sm font-semibold text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
       </div>
@@ -650,16 +648,19 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       {!loadingExisting && <>
 
       <div className={CARD}>
-        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Period</p>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={LABEL}>From date</label>
-            <EventDatePicker value={dateFrom} placeholder="From" collapsible plain includePast onChange={function (v) { setDateFrom(v) }} />
-          </div>
-          <div>
-            <label className={LABEL}>To date</label>
-            <EventDatePicker value={dateTo} placeholder="To" collapsible plain includePast onChange={function (v) { setDateTo(v) }} />
-          </div>
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Entry Date</p>
+        <div>
+          <label className={LABEL}>Date</label>
+          {(function () {
+            var toYMD = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+            var todayStr = toYMD(new Date())
+            var minStr = toYMD(new Date(Date.now() - 20 * 86400000))
+            return (
+              <EventDatePicker value={entryDate} placeholder="Select date" collapsible plain includePast
+                minDate={minStr} maxDate={todayStr}
+                onChange={function (v) { setEntryDate(v) }} />
+            )
+          })()}
         </div>
         <div>
           <label className={LABEL}>Requisition No (optional)</label>
@@ -692,10 +693,10 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
         </div>
       </div>
 
-      {(dateFrom && dateTo) && (
+      {entryDate && (
         <div className={CARD}>
           <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Contracts in this period</p>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Contracts on this date</p>
             {selectedEventIds.length > 0 && (
               <p className="text-xs font-semibold text-indigo-600">{selectedEventIds.length} selected</p>
             )}
@@ -703,7 +704,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           {contractsLoading ? (
             <p className="text-sm text-gray-400 py-4 text-center">Loading contracts…</p>
           ) : contracts.length === 0 ? (
-            <p className="text-sm text-gray-400 py-4 text-center">No venue/catering contracts in this window.</p>
+            <p className="text-sm text-gray-400 py-4 text-center">No venue/catering contracts on this date.</p>
           ) : (
             <div className="space-y-1.5">
               {contracts.map(function (c) {
@@ -716,11 +717,11 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                         {isSel && <Icon name="check" size={11} className="text-white" />}
                       </span>
                       <p className="min-w-0 flex-1 font-bold text-gray-900 text-sm truncate">{c.event}</p>
-                      <p className="shrink-0 text-sm font-bold text-indigo-600 tabular-nums">{c.actual}</p>
+                      <p className="shrink-0 text-sm font-bold text-indigo-600 tabular-nums" title="Plates actually used so far (issued minus returned)">{c.actual}</p>
                     </div>
                     <div className="flex items-center justify-between gap-2 mt-0.5 pl-[26px]">
                       <p className="text-[11px] text-gray-500 truncate">{c.venueDate}</p>
-                      <p className="shrink-0 text-[11px] text-gray-400 tabular-nums">{c.booking} · {c.extra} · {c.balance}</p>
+                      <p className="shrink-0 text-[11px] text-gray-400 tabular-nums" title={'Quota ' + c.booking + ' · Chargeable extras ' + c.extra + ' · Returned ' + c.balance}>{c.booking} · {c.extra} · {c.balance}</p>
                     </div>
                   </button>
                 )

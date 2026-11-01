@@ -107,7 +107,7 @@ function StoreRequisitionDetail({ id, onBack }) {
           <div>
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Store Requisition</p>
             <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 flex-wrap">
-              {formatDate(header.date_from)} – {formatDate(header.date_to)}
+              {header.date_from === header.date_to ? formatDate(header.date_from) : (formatDate(header.date_from) + ' – ' + formatDate(header.date_to))}
               {header.requisition_no && (
                 <span className="text-[10px] font-bold uppercase tracking-wide text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5">
                   #{header.requisition_no}

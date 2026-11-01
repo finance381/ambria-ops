@@ -10,7 +10,11 @@ var DAY_NAMES = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 // panelScope: a class for the panel when it is portalled to <body>, so a
 // screen that re-themes its own tokens (Extra Plates' dark one) can carry
 // the theme into the calendar, which otherwise renders outside it.
-function EventDatePicker({ value, onChange, label, collapsible, includePast, triggerStyle, plain, neutral, placeholder, panelScope }) {
+// minDate/maxDate (both 'YYYY-MM-DD', inclusive): greys out and disables any
+// day outside the range instead of just letting it be picked and failing
+// validation after the fact — e.g. a backdate window, same way ExpenseForm's
+// native date input caps itself with min/max.
+function EventDatePicker({ value, onChange, label, collapsible, includePast, triggerStyle, plain, neutral, placeholder, panelScope, minDate, maxDate }) {
   var today = new Date()
   var initDate = value ? new Date(value + 'T00:00:00') : today
   var [viewYear, setViewYear] = useState(initDate.getFullYear())
@@ -222,6 +226,7 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
             var isSelected = value === cell.dateStr
             var isToday = cell.dateStr === todayStr
             var isPast = cell.dateStr < todayStr
+            var isDisabled = !!((minDate && cell.dateStr < minDate) || (maxDate && cell.dateStr > maxDate))
             var venues = eventDates[cell.dateStr] || []
             var hasEvent = venues.length > 0
 
@@ -229,7 +234,8 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
             // a day with functions is its number in full weight with a
             // dot per venue under it. Past days without functions step back.
             var tone
-            if (isSelected) tone = "bg-indigo-600 text-white font-bold shadow-[0_2px_6px_rgba(79,70,229,0.30)]"
+            if (isDisabled) tone = "text-slate-200 font-medium"
+            else if (isSelected) tone = "bg-indigo-600 text-white font-bold shadow-[0_2px_6px_rgba(79,70,229,0.30)]"
             else if (isToday) tone = "text-indigo-700 font-extrabold ring-[1.5px] ring-inset ring-indigo-400 hover:bg-indigo-50"
             else if (hasEvent) tone = "text-slate-900 font-bold hover:bg-slate-100"
             else if (isPast) tone = "text-slate-300 font-medium hover:bg-slate-50 hover:text-slate-500"
@@ -237,10 +243,12 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
 
             return (
               <div key={cell.dateStr} className="flex justify-center">
-                <button type="button" onClick={function () { selectDate(cell.dateStr) }}
+                <button type="button" onClick={function () { if (!isDisabled) selectDate(cell.dateStr) }}
+                  disabled={isDisabled}
                   aria-label={cell.day + ' ' + monthNames[viewMonth] + (hasEvent ? ', ' + venues.length + ' venue' + (venues.length === 1 ? '' : 's') + ' booked' : '')}
                   aria-pressed={isSelected}
-                  className={"relative w-full max-w-[44px] aspect-square flex flex-col items-center justify-center gap-[3px] rounded-xl text-[14px] tabular-nums cursor-pointer transition-all active:scale-95 " + tone}>
+                  className={"relative w-full max-w-[44px] aspect-square flex flex-col items-center justify-center gap-[3px] rounded-xl text-[14px] tabular-nums transition-all " +
+                    (isDisabled ? "cursor-not-allowed" : "cursor-pointer active:scale-95") + " " + tone}>
                   <span className="leading-none">{cell.day}</span>
                   {/* The dot row keeps its height with or without dots, so
                       every number sits on the same line. */}

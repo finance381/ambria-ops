@@ -243,7 +243,7 @@ function StoreRequisitions({ profile }) {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
-                      {formatDate(r.date_from)} – {formatDate(r.date_to)}
+                      {r.date_from === r.date_to ? formatDate(r.date_from) : (formatDate(r.date_from) + ' – ' + formatDate(r.date_to))}
                       {r.requisition_no && (
                         <span className="text-[10px] font-bold uppercase tracking-wide text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5">
                           #{r.requisition_no}
