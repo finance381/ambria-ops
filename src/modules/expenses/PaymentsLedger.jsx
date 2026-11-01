@@ -950,9 +950,13 @@ function PaymentsLedger({ profile }) {
                       </span>
                     </div>
                     <DescriptionNote text={r.description} truncate={false} className="mt-1" />
-                    {r.source === 'collection' && r._eventInfo && (function () {
-                      var ei = r._eventInfo
-                      var bits = [ei.function_date ? formatDate(ei.function_date) : null, ei.client_name, venueLabelWithCode(ei.venue_name), ei.location, ei.session].filter(Boolean)
+                    {r.source === 'collection' && (r._eventInfo || r._receiptNo) && (function () {
+                      var ei = r._eventInfo || {}
+                      var bits = [
+                        r._receiptNo ? '#' + r._receiptNo : null,
+                        ei.function_date ? formatDate(ei.function_date) : null,
+                        ei.client_name, venueLabelWithCode(ei.venue_name), ei.location, ei.session,
+                      ].filter(Boolean)
                       if (bits.length === 0) return null
                       return <p className="mt-0.5 text-[11.5px] text-indigo-600 leading-snug break-words">{bits.join(' \u00b7 ')}</p>
                     })()}
