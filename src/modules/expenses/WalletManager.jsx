@@ -2283,9 +2283,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // "Show deleted expenses" (or the cash/credit legs of a single expense that
   // the screen nets into one row) would show up as extra/different rows in
   // the export than what was actually on screen when Download was clicked.
-  function getExportRows() {
+  // includeDeleted forces deleted-expense rows (and the refunds reversing
+  // them) in regardless of the on-screen "Show deleted expenses" toggle —
+  // the PDF statement always wants them, since leaving them out is exactly
+  // what made two unrelated balances look like they didn't add up (the
+  // refund that explains a jump is tied to the same now-deleted expense's
+  // reference_id as its debit, so hiding one hides both).
+  function getExportRows(includeDeleted) {
     var visible = walletTxns.filter(function (t) {
-      if (showDeletedTxns) return true
+      if (includeDeleted || showDeletedTxns) return true
       var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
       var xp = isExpRow ? expenseRefs[t.reference_id] : null
       return !(xp && xp.deleted_at)
@@ -2350,11 +2356,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       var opening = oldest ? ((oldest.balance_after_paise || 0) - (oldest.type === 'credit' ? (oldest.amount_paise || 0) : -(oldest.amount_paise || 0))) : 0
       var closing = newest ? (newest.balance_after_paise || 0) : 0
 
-      // The row-by-row breakdown, on the other hand, mirrors exactly what's
-      // on screen: same "Show deleted expenses" filter, same same-expense
-      // cash/credit-leg merge — so what's printed here matches what the admin
-      // was looking at when they clicked Download, not a superset of it.
-      var chrono = getExportRows().sort(function (a, b) {
+      // The row-by-row breakdown mirrors what's on screen except for one
+      // deliberate difference: deleted expenses print here always, on-screen
+      // "Show deleted expenses" toggle or not — a statement that quietly
+      // drops rows (and the refunds tied to them) is how a correct balance
+      // ends up looking wrong to whoever reads it later.
+      var chrono = getExportRows(true).sort(function (a, b) {
         return new Date(a._sortAt || a.created_at).getTime() - new Date(b._sortAt || b.created_at).getTime()
       })
 
