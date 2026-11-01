@@ -15,6 +15,10 @@
 //               one fixed right edge, for a per-row breakdown (allocations, splits)
 //     'foot'    same as 'alloc' but styled a shade lighter — a subtotal/tax line
 //     'status'  grey, 6.8pt, parenthetical — "(flagged)" etc.
+//     'warn'    bold, 7pt, red — a fact that needs to actually be seen, not
+//               just present on the page (a balance moved by something not
+//               in this row's own amount — everything else here is muted on
+//               purpose, this one deliberately isn't).
 export function fmtAmt(paise) {
   return (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
@@ -26,6 +30,7 @@ export function plainParticularsLines(lines) {
   return lines.map(function (l) {
     if (l.kind === 'alloc' || l.kind === 'foot') return '  ' + l.text + '   ' + l.amount
     if (l.kind === 'status') return '(' + l.text + ')'
+    if (l.kind === 'warn') return '⚠ ' + l.text
     return l.text
   })
 }
@@ -136,6 +141,10 @@ export function makeStatementCellHooks(doc, FONT, opts) {
         } else if (l.kind === 'status') {
           doc.setFont(FONT, 'normal'); doc.setFontSize(6.8); doc.setTextColor(120)
           doc.text('(' + l.text + ')', x0 + padL, yy); yy += lineH
+        } else if (l.kind === 'warn') {
+          doc.setFont(FONT, 'bold'); doc.setFontSize(7); doc.setTextColor(180, 30, 30)
+          doc.splitTextToSize('⚠ ' + l.text, innerW).forEach(function (wl) { doc.text(wl, x0 + padL, yy); yy += lineH })
+          doc.setTextColor(0)
         }
       })
       doc.setTextColor(0)
