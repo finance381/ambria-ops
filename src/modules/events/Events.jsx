@@ -101,7 +101,6 @@ function Events({ profile }) {
   var [dateFrom, setDateFrom] = useState('')
   var [dateTo, setDateTo] = useState('')
   var [tentativeFilter, setTentativeFilter] = useState('')
-  var [showGroupLedger, setShowGroupLedger] = useState(false)
   var [showFunctionLedger, setShowFunctionLedger] = useState(false)
   var [departments, setDepartments] = useState([])
   var [page, setPage] = useState(1)
@@ -590,7 +589,7 @@ function Events({ profile }) {
       )}
 
       {/* ═══ GROUP DETAIL MODAL ═══ */}
-      <Modal open={!!selectedGroup && !selectedFunction} onClose={function () { setSelectedGroup(null); setShowGroupLedger(false) }}
+      <Modal open={!!selectedGroup && !selectedFunction} onClose={function () { setSelectedGroup(null) }}
         title={selectedGroup ? titleCase(selectedGroup.client_name) : ''} wide>
         {selectedGroup && (
           <div className="space-y-5">
@@ -644,24 +643,6 @@ function Events({ profile }) {
                   )
                 })}
               </div>
-            </div>
-
-            {/* Financials are contract-level, not per function — a function
-                picked above never had its own separate ledger, so this lives
-                here once, outside the functions list, split by department
-                the same way EventLedger already groups a multi-contract
-                client (DeptChip). */}
-            <div>
-              <button type="button"
-                onClick={function () { setShowGroupLedger(!showGroupLedger) }}
-                className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
-                {showGroupLedger ? '− Hide financials' : '+ Show financials'}
-              </button>
-              {showGroupLedger && (
-                <div className="mt-3">
-                  <EventLedger eventId={selectedGroup.functions[0].id} />
-                </div>
-              )}
             </div>
           </div>
         )}
