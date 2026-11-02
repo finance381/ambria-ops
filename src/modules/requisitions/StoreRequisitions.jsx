@@ -4,6 +4,7 @@ import { formatDate, formatPoints } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import StoreRequisitionForm from './StoreRequisitionForm'
 import StoreRequisitionDetail from './StoreRequisitionDetail'
+import StoreRequisitionReport from './StoreRequisitionReport'
 import Icon from '../../components/ui/Icon'
 
 // A standalone top-level Procurement tab, a peer of Requisitions/Purchase
@@ -145,31 +146,48 @@ function StoreRequisitions({ profile }) {
     )
   }
 
+  // A From+To range with a Linked/Unlinked pick (not "All") is specific
+  // enough to mean "give me the period, not just a narrower list" — that
+  // combination swaps the list for the merged report instead.
+  var showReport = !!(dateFrom && dateTo && linkFilter)
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-gray-900">Store Requisition</h2>
+      <div className="flex items-center justify-between gap-3 flex-nowrap">
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold text-gray-900 truncate">Store Requisition</h2>
           <p className="text-xs text-gray-400">{visibleReqs.length} store requisitions</p>
         </div>
         <button onClick={function () { openForm(null) }}
-          className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors">
+          className="shrink-0 px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors whitespace-nowrap">
           + New Store Requisition
         </button>
       </div>
 
-      <div className="relative">
-        <Icon name="search" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-        <input type="text" value={searchNo} onChange={function (e) { setSearchNo(e.target.value) }}
-          placeholder="Search by requisition / slip number…"
-          className="w-full pl-9 pr-8 py-2 border border-gray-300 rounded-lg text-sm placeholder:text-gray-400"
-          style={{ fontSize: '16px' }} />
-        {searchNo && (
-          <button onClick={function () { setSearchNo('') }} aria-label="Clear search"
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-            <Icon name="close" size={14} />
-          </button>
-        )}
+      <div className="flex gap-2">
+        <div className="relative flex-1 min-w-0">
+          <Icon name="search" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <input type="text" value={searchNo} onChange={function (e) { setSearchNo(e.target.value) }}
+            placeholder="Search by requisition / slip number…"
+            className="w-full pl-9 pr-8 py-2 border border-gray-300 rounded-lg text-sm placeholder:text-gray-400"
+            style={{ fontSize: '16px' }} />
+          {searchNo && (
+            <button onClick={function () { setSearchNo('') }} aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <Icon name="close" size={14} />
+            </button>
+          )}
+        </div>
+        {(function () {
+          var count = (linkFilter ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0)
+          return (
+            <button onClick={function () { setFiltersOpen(!filtersOpen) }}
+              className={'shrink-0 px-3.5 py-2 text-xs font-bold rounded-lg border transition-colors flex items-center gap-1.5 ' + (filtersOpen || count > 0 ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50')}>
+              {filtersOpen ? '▲' : '▼'} Filters
+              {count > 0 && <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-indigo-600 text-white text-[9.5px] font-bold">{count}</span>}
+            </button>
+          )
+        })()}
       </div>
 
       {(function () {
@@ -177,18 +195,11 @@ function StoreRequisitions({ profile }) {
         function resetFilters() { setLinkFilter(''); setDateFrom(''); setDateTo('') }
         return (
           <div className="space-y-2">
-            <div className="flex gap-2">
-              <button onClick={function () { setFiltersOpen(!filtersOpen) }}
-                className={'flex-1 py-2 text-xs font-bold rounded-lg border transition-colors ' + (filtersOpen ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50')}>
-                {filtersOpen ? '▲' : '▼'} Filters{count > 0 ? ' · ' + count : ''}
+            {count > 0 && !filtersOpen && (
+              <button onClick={resetFilters} className="text-[11px] font-bold text-red-600 hover:text-red-700">
+                Reset filters
               </button>
-              {count > 0 && (
-                <button onClick={resetFilters}
-                  className="px-3 py-2 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
-                  Reset
-                </button>
-              )}
-            </div>
+            )}
             {filtersOpen && (
               <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-3">
                 <div>
@@ -222,13 +233,20 @@ function StoreRequisitions({ profile }) {
                       style={{ fontSize: '16px' }} />
                   </div>
                 </div>
+                {count > 0 && (
+                  <button onClick={resetFilters} className="text-[11px] font-bold text-red-600 hover:text-red-700">
+                    Reset filters
+                  </button>
+                )}
               </div>
             )}
           </div>
         )
       })()}
 
-      {loading ? (
+      {showReport ? (
+        <StoreRequisitionReport reqs={visibleReqs} dateFrom={dateFrom} dateTo={dateTo} linkFilter={linkFilter} />
+      ) : loading ? (
         <p className="text-gray-400 text-sm text-center py-8">Loading...</p>
       ) : visibleReqs.length === 0 ? (
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
