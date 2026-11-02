@@ -6,6 +6,7 @@ import Icon from '../../components/ui/Icon'
 import { appConfirm } from '../../components/ui/AppDialog'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import ExpenseTypeFields from '../expenses/ExpenseTypeFields'
+import SearchDropdown from '../../components/ui/SearchDropdown'
 
 var KITCHEN_SECTIONS = ['Indian', 'Chinese', 'Chaat', 'Tandoor', 'Conti', 'Halwai', 'Staff Food', 'KST']
 
@@ -585,11 +586,10 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     var first = casualsFor(row.departmentId, row.subDepartmentId)[0]
     var lineId = nextLineId
     setNextLineId(function (n) { return n + 1 })
-    var newLine = { id: lineId, casualRosterId: first ? first.id : '', qty: 1 }
+    var newLine = { id: lineId, casualRosterId: first ? String(first.id) : '', qty: 1 }
     patchRow(row.id, { casualRows: row.casualRows.concat([newLine]) })
   }
-  function changeCasualType(row, lineId, e) {
-    var id = e.target.value
+  function changeCasualType(row, lineId, id) {
     patchRow(row.id, {
       casualRows: row.casualRows.map(function (l) { return l.id === lineId ? Object.assign({}, l, { casualRosterId: id }) : l })
     })
@@ -1073,10 +1073,11 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                       var rate = casualRateFor(l.casualRosterId)
                       return (
                         <div key={l.id} className={'grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 items-center px-2.5 py-1.5 ' + (i > 0 ? 'border-t border-gray-100' : '')}>
-                          <select value={l.casualRosterId} onChange={function (e) { changeCasualType(row, l.id, e) }}
-                            className="w-full h-8 min-w-0 px-1.5 border border-gray-300 rounded font-semibold text-[12px]" style={{ fontSize: '16px' }}>
-                            {casualsFor(row.departmentId, row.subDepartmentId).map(function (c) { return <option key={c.id} value={c.id}>{c.casual_type}</option> })}
-                          </select>
+                          <SearchDropdown noVoice
+                            items={casualsFor(row.departmentId, row.subDepartmentId).map(function (c) { return { value: String(c.id), label: c.casual_type } })}
+                            value={l.casualRosterId}
+                            onChange={function (v) { changeCasualType(row, l.id, v) }}
+                            placeholder="Search role..." />
                           <input type="number" value={l.qty} onChange={function (e) { changeCasualQty(row, l.id, e) }}
                             className="w-full h-8 px-1 text-right border border-gray-300 rounded" style={{ fontSize: '16px' }} />
                           <p className="text-right text-[12px] text-gray-500 truncate">{rupees(rate)}</p>
