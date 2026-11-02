@@ -144,6 +144,12 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   var [casualRoster, setCasualRoster] = useState([])
 
   var [deptRows, setDeptRows] = useState([emptyDeptRow(1)])
+  // Accordion, not independent toggles — one dept row open at a time, every
+  // other one collapsed to a one-line summary bar. A requisition with four
+  // or five dept rows used to mean four or five full field sets stacked on
+  // screen at once; this keeps the one you're actually editing in view and
+  // everything else out of the way until you tap it.
+  var [expandedRowId, setExpandedRowId] = useState(1)
   var [nextRowId, setNextRowId] = useState(2)
   var [nextLineId, setNextLineId] = useState(1)
   var [loadingExisting, setLoadingExisting] = useState(!!editId)
@@ -248,6 +254,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       }))
       setNextCasualSlipId(draftRestorable.nextCasualSlipId || 1)
       setNextReqImageId(draftRestorable.nextReqImageId || 1)
+      setExpandedRowId(rows.length > 0 ? rows[0].id : null)
       setDraftSavedAt(draftRestorable.savedAt)
     } catch (_) {}
     setDraftRestorable(null)
@@ -302,7 +309,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       }
       var drIds = drRows.map(function (r) { return r.id })
       if (drIds.length === 0) {
-        setDeptRows([emptyDeptRow(1)]); setNextRowId(2); setLoadingExisting(false); return
+        setDeptRows([emptyDeptRow(1)]); setNextRowId(2); setExpandedRowId(1); setLoadingExisting(false); return
       }
       Promise.all([
         supabase.from('store_requisition_items').select('*').in('dept_row_id', drIds),
@@ -347,6 +354,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
         setNextRowId(rowId)
         setNextLineId(lineId)
         setNextReqImageId(lineId)
+        setExpandedRowId(built.length > 0 ? built[0].id : null)
         setLoadingExisting(false)
       })
     })
@@ -404,11 +412,21 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   }
 
   function addDeptRow() {
-    setDeptRows(function (prev) { return prev.concat([emptyDeptRow(nextRowId)]) })
+    var newId = nextRowId
+    setDeptRows(function (prev) { return prev.concat([emptyDeptRow(newId)]) })
     setNextRowId(function (n) { return n + 1 })
+    setExpandedRowId(newId)
   }
   function removeDeptRow(rowId) {
     setDeptRows(function (prev) { return prev.filter(function (r) { return r.id !== rowId }) })
+    setExpandedRowId(function (cur) {
+      if (cur !== rowId) return cur
+      var remaining = deptRows.filter(function (r) { return r.id !== rowId })
+      return remaining.length > 0 ? remaining[0].id : null
+    })
+  }
+  function toggleRowExpanded(rowId) {
+    setExpandedRowId(function (cur) { return cur === rowId ? null : rowId })
   }
 
   function subDeptsFor(departmentId) {
@@ -749,46 +767,47 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
 
       <div className={CARD}>
         <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Entry Date</p>
-        <div>
-          <label className={LABEL}>Date</label>
-          {(function () {
-            var toYMD = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
-            var todayStr = toYMD(new Date())
-            var minStr = toYMD(new Date(Date.now() - 20 * 86400000))
-            return (
-              <EventDatePicker value={entryDate} placeholder="Select date" collapsible plain includePast
-                minDate={minStr} maxDate={todayStr}
-                onChange={function (v) { setEntryDate(v) }} />
-            )
-          })()}
-        </div>
-        <div>
-          <label className={LABEL}>Requisition No (optional)</label>
-          <input type="text" value={requisitionNo} onChange={function (e) { setRequisitionNo(e.target.value) }}
-            placeholder="e.g. the slip number from the physical requisition"
-            className={CTRL} />
-        </div>
-        <div>
-          <label className={LABEL}>Casual Slips (optional)</label>
-          <div className="flex flex-wrap gap-2">
-            {casualSlips.map(function (cs) {
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+          <div>
+            <label className={LABEL}>Date</label>
+            {(function () {
+              var toYMD = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+              var todayStr = toYMD(new Date())
+              var minStr = toYMD(new Date(Date.now() - 20 * 86400000))
               return (
-                <div key={cs.id} className="relative w-16 h-16 shrink-0">
-                  <a href={cs.previewUrl} target="_blank" rel="noreferrer">
-                    <img src={cs.previewUrl} alt="Casual slip" className="w-16 h-16 object-cover rounded-lg border border-gray-300" />
-                  </a>
-                  <button type="button" onClick={function () { removeCasualSlip(cs.id) }} aria-label="Remove image"
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
-                    <Icon name="close" size={10} />
-                  </button>
-                </div>
+                <EventDatePicker value={entryDate} placeholder="Select date" collapsible plain includePast
+                  minDate={minStr} maxDate={todayStr}
+                  onChange={function (v) { setEntryDate(v) }} />
               )
-            })}
-            <label className="w-16 h-16 shrink-0 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-0.5 text-gray-400 cursor-pointer hover:bg-gray-50">
-              <Icon name="camera" size={16} />
-              <span className="text-[9px] font-bold">Add</span>
-              <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={onPickCasualSlips} />
-            </label>
+            })()}
+          </div>
+          <div>
+            <label className={LABEL}>Requisition No (optional)</label>
+            <input type="text" value={requisitionNo} onChange={function (e) { setRequisitionNo(e.target.value) }}
+              placeholder="e.g. the slip number"
+              className={CTRL} />
+          </div>
+          <div>
+            <label className={LABEL}>Casual Slips (optional)</label>
+            <div className="flex flex-wrap gap-2">
+              {casualSlips.map(function (cs) {
+                return (
+                  <div key={cs.id} className="relative w-9 h-9 shrink-0">
+                    <a href={cs.previewUrl} target="_blank" rel="noreferrer">
+                      <img src={cs.previewUrl} alt="Casual slip" className="w-9 h-9 object-cover rounded-lg border border-gray-300" />
+                    </a>
+                    <button type="button" onClick={function () { removeCasualSlip(cs.id) }} aria-label="Remove image"
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
+                      <Icon name="close" size={8} />
+                    </button>
+                  </div>
+                )
+              })}
+              <label className="w-9 h-9 shrink-0 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 cursor-pointer hover:bg-gray-50">
+                <Icon name="camera" size={14} />
+                <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={onPickCasualSlips} />
+              </label>
+            </div>
           </div>
         </div>
       </div>
@@ -841,13 +860,52 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       {deptRows.map(function (row, idx) {
         var isKitchen = isKitchenRow(row)
         var deptName = (departments.find(function (d) { return String(d.id) === String(row.departmentId) }) || {}).name || ''
+        var subDeptName = (subDepartments.find(function (sd) { return String(sd.id) === String(row.subDepartmentId) }) || {}).name || ''
+        var isOpen = expandedRowId === row.id
+        var itemCount = row.inventoryRows.length
+        var casualCount = row.casualRows.length
+        var adjCount = (row.expenseRows || []).length
+
+        // Collapsed: a one-line summary bar — department, what's on it, its
+        // total — not the full field set. Every row but the one being
+        // actively edited renders this instead.
+        if (!isOpen) {
+          return (
+            <div key={row.id} onClick={function () { toggleRowExpanded(row.id) }}
+              className="bg-white border border-gray-200 rounded-2xl px-4 py-3 flex items-center justify-between gap-3 cursor-pointer hover:border-indigo-300 transition-colors">
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-gray-900 truncate">
+                  {deptName ? (deptName + (subDeptName ? ' · ' + subDeptName : '')) : ('Dept Row ' + (idx + 1))}
+                </p>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {itemCount > 0 && <span className="text-[10px] font-bold text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{itemCount} item{itemCount === 1 ? '' : 's'}</span>}
+                  {casualCount > 0 && <span className="text-[10px] font-bold text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{casualCount} casual{casualCount === 1 ? '' : 's'}</span>}
+                  {adjCount > 0 && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5">{adjCount} adjustment{adjCount === 1 ? '' : 's'}</span>}
+                  {itemCount === 0 && casualCount === 0 && adjCount === 0 && <span className="text-[10px] text-gray-400">Empty — tap to fill in</span>}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <p className="text-sm font-bold text-indigo-600 whitespace-nowrap">{rupees(rowTotal(row))}</p>
+                <button onClick={function (e) { e.stopPropagation(); removeDeptRow(row.id) }} aria-label="Remove row"
+                  className="w-7 h-7 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
+                  <Icon name="close" size={13} />
+                </button>
+                <Icon name="chevronDown" size={14} className="text-gray-400" />
+              </div>
+            </div>
+          )
+        }
+
         return (
           <div key={row.id} className={CARD}>
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-bold text-gray-800">Dept Row {idx + 1}</p>
-              <button onClick={function () { removeDeptRow(row.id) }} aria-label="Remove row" className="w-7 h-7 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
-                <Icon name="close" size={13} />
-              </button>
+            <div className="flex items-center justify-between cursor-pointer" onClick={function () { toggleRowExpanded(row.id) }}>
+              <p className="text-sm font-bold text-gray-800">Dept Row {idx + 1}{deptName ? ' · ' + deptName : ''}</p>
+              <div className="flex items-center gap-1.5">
+                <button onClick={function (e) { e.stopPropagation(); removeDeptRow(row.id) }} aria-label="Remove row" className="w-7 h-7 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
+                  <Icon name="close" size={13} />
+                </button>
+                <Icon name="chevronDown" size={14} className="text-gray-400 rotate-180" />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
@@ -876,36 +934,36 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
               )}
             </div>
 
-            <div>
-              <label className={LABEL}>Remarks</label>
-              <input type="text" value={row.remarks} onChange={function (e) { onChangeRemarks(row.id, e) }}
-                placeholder="Optional note for this row…" className={CTRL} style={{ fontSize: '16px' }} />
-            </div>
-
-            <div>
-              <label className={LABEL}>Req No (optional)</label>
-              <input type="text" value={row.reqNo} onChange={function (e) { onChangeReqNo(row.id, e) }}
-                placeholder="Slip number" className={CTRL} style={{ fontSize: '16px' }} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className={LABEL}>Remarks</label>
+                <input type="text" value={row.remarks} onChange={function (e) { onChangeRemarks(row.id, e) }}
+                  placeholder="Optional note for this row…" className={CTRL} style={{ fontSize: '16px' }} />
+              </div>
+              <div>
+                <label className={LABEL}>Req No (optional)</label>
+                <input type="text" value={row.reqNo} onChange={function (e) { onChangeReqNo(row.id, e) }}
+                  placeholder="Slip number" className={CTRL} style={{ fontSize: '16px' }} />
+              </div>
             </div>
             <div>
               <label className={LABEL}>Req Images (optional)</label>
               <div className="flex flex-wrap gap-2">
                 {(row.reqImages || []).map(function (im) {
                   return (
-                    <div key={im.id} className="relative w-16 h-16 shrink-0">
+                    <div key={im.id} className="relative w-11 h-11 shrink-0">
                       <a href={im.previewUrl} target="_blank" rel="noreferrer">
-                        <img src={im.previewUrl} alt="Requisition slip" className="w-16 h-16 object-cover rounded-lg border border-gray-300" />
+                        <img src={im.previewUrl} alt="Requisition slip" className="w-11 h-11 object-cover rounded-lg border border-gray-300" />
                       </a>
                       <button type="button" onClick={function () { removeReqImage(row, im.id) }} aria-label="Remove image"
-                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
-                        <Icon name="close" size={10} />
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
+                        <Icon name="close" size={8} />
                       </button>
                     </div>
                   )
                 })}
-                <label className="w-16 h-16 shrink-0 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-0.5 text-gray-400 cursor-pointer hover:bg-gray-50">
-                  <Icon name="camera" size={16} />
-                  <span className="text-[9px] font-bold">Add</span>
+                <label className="w-11 h-11 shrink-0 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 cursor-pointer hover:bg-gray-50">
+                  <Icon name="camera" size={14} />
                   <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={function (e) { onPickReqImages(row, e) }} />
                 </label>
               </div>
@@ -930,36 +988,30 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
               <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
                 <p className="text-xs font-bold text-gray-500">Inventory used</p>
                 {row.inventoryRows.length > 0 && (
-                  <div className="space-y-2">
-                    {row.inventoryRows.map(function (l) {
+                  <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                    <div className="grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 px-2.5 pt-2 pb-1">
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase">Item</span>
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Qty</span>
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Rate</span>
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Total</span>
+                      <span></span>
+                    </div>
+                    {row.inventoryRows.map(function (l, i) {
                       return (
-                        <div key={l.id} className="rounded-lg border border-gray-200 bg-white p-2.5">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="font-semibold text-sm text-gray-800 truncate">{l.name}</p>
-                              <p className="text-xs text-gray-400">{l.unit}</p>
-                            </div>
-                            <button onClick={function () { removeInventoryRow(row, l.id) }} aria-label="Remove item"
-                              className="shrink-0 w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
-                              <Icon name="trash" size={13} />
-                            </button>
+                        <div key={l.id} className={'grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 items-center px-2.5 py-1.5 ' + (i > 0 ? 'border-t border-gray-100' : '')}>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-[12.5px] text-gray-800 truncate">{l.name}</p>
+                            <p className="text-[10px] text-gray-400">{l.unit}</p>
                           </div>
-                          <div className="flex items-end gap-2 mt-2">
-                            <div className="flex-1">
-                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Qty</label>
-                              <input type="number" value={l.qty} onChange={function (e) { changeInvQty(row, l.id, e) }} placeholder="0"
-                                className="w-full h-9 px-2 text-right border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
-                            </div>
-                            <div className="flex-1">
-                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Rate</label>
-                              <input type="number" value={l.ratePaise === '' ? '' : l.ratePaise / 100} onChange={function (e) { changeInvRate(row, l.id, e) }} placeholder="0"
-                                className="w-full h-9 px-2 text-right border border-gray-300 rounded-lg text-gray-700" style={{ fontSize: '16px' }} />
-                            </div>
-                            <div className="flex-1 text-right pb-1.5">
-                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Total</label>
-                              <p className="text-sm font-bold text-gray-900">{rupees((Number(l.qty) || 0) * l.ratePaise)}</p>
-                            </div>
-                          </div>
+                          <input type="number" value={l.qty} onChange={function (e) { changeInvQty(row, l.id, e) }} placeholder="0"
+                            className="w-full h-8 px-1 text-right border border-gray-300 rounded" style={{ fontSize: '16px' }} />
+                          <input type="number" value={l.ratePaise === '' ? '' : l.ratePaise / 100} onChange={function (e) { changeInvRate(row, l.id, e) }} placeholder="0"
+                            className="w-full h-8 px-1 text-right border border-gray-300 rounded text-gray-700" style={{ fontSize: '16px' }} />
+                          <p className="text-right text-[12.5px] font-bold text-gray-900 truncate">{rupees((Number(l.qty) || 0) * l.ratePaise)}</p>
+                          <button onClick={function () { removeInventoryRow(row, l.id) }} aria-label="Remove item"
+                            className="justify-self-end w-7 h-7 rounded-md bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
+                            <Icon name="trash" size={12} />
+                          </button>
                         </div>
                       )
                     })}
@@ -999,36 +1051,30 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                   </button>
                 </div>
                 {row.casualRows.length > 0 && (
-                  <div className="space-y-2">
-                    {row.casualRows.map(function (l) {
+                  <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                    <div className="grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 px-2.5 pt-2 pb-1">
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase">Role</span>
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Qty</span>
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Rate</span>
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Total</span>
+                      <span></span>
+                    </div>
+                    {row.casualRows.map(function (l, i) {
                       var rate = casualRateFor(l.casualRosterId)
                       return (
-                        <div key={l.id} className="rounded-lg border border-gray-200 bg-white p-2.5">
-                          <div className="flex items-start gap-2">
-                            <select value={l.casualRosterId} onChange={function (e) { changeCasualType(row, l.id, e) }}
-                              className="flex-1 h-9 min-w-0 px-2 border border-gray-300 rounded-lg font-semibold text-sm" style={{ fontSize: '16px' }}>
-                              {casualsFor(row.departmentId).map(function (c) { return <option key={c.id} value={c.id}>{c.casual_type}</option> })}
-                            </select>
-                            <button onClick={function () { removeCasualRow(row, l.id) }} aria-label="Remove casual"
-                              className="shrink-0 w-9 h-9 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
-                              <Icon name="trash" size={13} />
-                            </button>
-                          </div>
-                          <div className="flex items-end gap-2 mt-2">
-                            <div className="flex-1">
-                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Qty</label>
-                              <input type="number" value={l.qty} onChange={function (e) { changeCasualQty(row, l.id, e) }}
-                                className="w-full h-9 px-2 text-right border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
-                            </div>
-                            <div className="flex-1 text-right pb-1.5">
-                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Rate</label>
-                              <p className="text-sm text-gray-500">{rupees(rate)}</p>
-                            </div>
-                            <div className="flex-1 text-right pb-1.5">
-                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Total</label>
-                              <p className="text-sm font-bold text-gray-900">{rupees(l.qty * rate)}</p>
-                            </div>
-                          </div>
+                        <div key={l.id} className={'grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 items-center px-2.5 py-1.5 ' + (i > 0 ? 'border-t border-gray-100' : '')}>
+                          <select value={l.casualRosterId} onChange={function (e) { changeCasualType(row, l.id, e) }}
+                            className="w-full h-8 min-w-0 px-1.5 border border-gray-300 rounded font-semibold text-[12px]" style={{ fontSize: '16px' }}>
+                            {casualsFor(row.departmentId).map(function (c) { return <option key={c.id} value={c.id}>{c.casual_type}</option> })}
+                          </select>
+                          <input type="number" value={l.qty} onChange={function (e) { changeCasualQty(row, l.id, e) }}
+                            className="w-full h-8 px-1 text-right border border-gray-300 rounded" style={{ fontSize: '16px' }} />
+                          <p className="text-right text-[12px] text-gray-500 truncate">{rupees(rate)}</p>
+                          <p className="text-right text-[12.5px] font-bold text-gray-900 truncate">{rupees(l.qty * rate)}</p>
+                          <button onClick={function () { removeCasualRow(row, l.id) }} aria-label="Remove casual"
+                            className="justify-self-end w-7 h-7 rounded-md bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
+                            <Icon name="trash" size={12} />
+                          </button>
                         </div>
                       )
                     })}
