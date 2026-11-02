@@ -582,12 +582,6 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   }
   function rowInvSubtotal(row) { return row.inventoryRows.reduce(function (s, l) { return s + (Number(l.qty) || 0) * l.ratePaise }, 0) }
   function rowCasSubtotal(row) { return row.casualRows.reduce(function (s, l) { return s + l.qty * casualRateFor(l.casualRosterId) }, 0) }
-  // Deliberately excluded from rowTotal/grandTotal — this credits a
-  // different ledger entirely (the chosen expense sub-type's), not the
-  // requisition's own stock cost. Shown as its own, separately-labelled
-  // subtotal so it's never mistaken for part of the row's spend.
-  function rowTotal(row) { return rowInvSubtotal(row) + rowCasSubtotal(row) }
-
   function addExpenseAdjRow(row) {
     var lineId = nextLineId
     setNextLineId(function (n) { return n + 1 })
@@ -605,6 +599,11 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   function rowAdjSubtotal(row) {
     return (row.expenseRows || []).reduce(function (s, l) { return s + Math.round((Number(l.amountRupees) || 0) * 100) }, 0)
   }
+  // The double entry: crediting an expense sub-type's own ledger (v_ledger)
+  // is the other half of debiting it out of this requisition's own total —
+  // the same recovered value can't count as cost here AND sit untouched on
+  // the sub-type's books, or it's just been invented twice.
+  function rowTotal(row) { return rowInvSubtotal(row) + rowCasSubtotal(row) - rowAdjSubtotal(row) }
 
   var grandTotal = deptRows.reduce(function (s, r) { return s + rowTotal(r) }, 0)
 
@@ -1085,9 +1084,9 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                   </div>
                 )}
                 {row.expenseRows.length > 0 && (
-                  <p className="text-right text-xs text-gray-500">Adjustment total <span className="font-bold text-emerald-600">+{rupees(rowAdjSubtotal(row))}</span></p>
+                  <p className="text-right text-xs text-gray-500">Adjustment total <span className="font-bold text-emerald-600">−{rupees(rowAdjSubtotal(row))}</span></p>
                 )}
-                <p className="text-[10.5px] text-gray-400">Credits the chosen expense sub-type's own ledger — separate from this requisition's total below.</p>
+                <p className="text-[10.5px] text-gray-400">Credits the chosen expense sub-type's own ledger, and debits this requisition's total below by the same amount.</p>
               </div>
             )}
 
