@@ -86,6 +86,8 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
   var [itemCategories, setItemCategories] = useState([])
   var [itemSearchKey, setItemSearchKey] = useState('')
   var [itemMatches, setItemMatches] = useState([])
+  var [itemHlIdx, setItemHlIdx] = useState(-1)
+  useEffect(function () { setItemHlIdx(-1) }, [itemMatches])
   var itemSearchTimer = useRef(null)
 
   useEffect(function () {
@@ -590,14 +592,33 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
                       <input type="text" value={im.itemQuery}
                         onChange={function (e) { updateItem(iIdx, 'itemQuery', e.target.value); searchInventoryItems(iIdx, e.target.value) }}
                         onFocus={function () { if (im.itemQuery && im.itemQuery.length >= 2) searchInventoryItems(iIdx, im.itemQuery) }}
+                        onKeyDown={function (e) {
+                          if (itemSearchKey !== key || itemMatches.length === 0) return
+                          if (e.key === 'ArrowDown') {
+                            e.preventDefault()
+                            setItemHlIdx(function (prev) { return Math.min(prev + 1, itemMatches.length - 1) })
+                          } else if (e.key === 'ArrowUp') {
+                            e.preventDefault()
+                            setItemHlIdx(function (prev) { return Math.max(prev - 1, 0) })
+                          } else if (e.key === 'Enter') {
+                            if (itemHlIdx >= 0 && itemHlIdx < itemMatches.length) {
+                              e.preventDefault()
+                              pickItemMatch(iIdx, itemMatches[itemHlIdx])
+                            }
+                          } else if (e.key === 'Escape') {
+                            setItemMatches([]); setItemSearchKey('')
+                          }
+                        }}
                         placeholder="Search or type new item name..."
                         className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-[13px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" style={{ fontSize: '16px' }} />
                       {itemSearchKey === key && itemMatches.length > 0 && (
                         <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                          {itemMatches.map(function (m) {
+                          {itemMatches.map(function (m, mIdx) {
                             return (
-                              <button key={m._source + '_' + m.id} type="button" onMouseDown={function (evt) { evt.preventDefault(); pickItemMatch(iIdx, m) }}
-                                className="w-full text-left px-3 py-2 hover:bg-indigo-50 border-b border-gray-50 last:border-0">
+                              <button key={m._source + '_' + m.id} type="button"
+                                onMouseEnter={function () { setItemHlIdx(mIdx) }}
+                                onMouseDown={function (evt) { evt.preventDefault(); pickItemMatch(iIdx, m) }}
+                                className={'w-full text-left px-3 py-2 border-b border-gray-50 last:border-0 ' + (mIdx === itemHlIdx ? 'bg-indigo-50' : 'hover:bg-indigo-50')}>
                                 <div className="text-[13px] text-gray-800 font-medium truncate">{m.name}</div>
                                 <div className="text-[10px] text-gray-500">{m._source === 'catering_store' ? 'Catering Store' : 'Inventory'}{m.unit ? ' · ' + m.unit : ''}</div>
                               </button>

@@ -242,6 +242,8 @@ function ReceiveModal({ receipt, profile, onClose, onDone, onOpenExpense }) {
   var [receiveQty, setReceiveQty] = useState(String(ir.qty || ''))
   var [itemQuery, setItemQuery] = useState('')
   var [itemMatches, setItemMatches] = useState([])
+  var [itemHlIdx, setItemHlIdx] = useState(-1)
+  useEffect(function () { setItemHlIdx(-1) }, [itemMatches])
   var itemSearchTimer = useRef(null)
 
   var [cancelReason, setCancelReason] = useState('')
@@ -430,15 +432,33 @@ function ReceiveModal({ receipt, profile, onClose, onDone, onOpenExpense }) {
                 <label className="block text-xs font-medium text-gray-600 mb-1">Search inventory</label>
                 <input type="text" value={itemQuery}
                   onChange={function (e) { setItemQuery(e.target.value); searchItems(e.target.value) }}
+                  onKeyDown={function (e) {
+                    if (itemMatches.length === 0) return
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault()
+                      setItemHlIdx(function (prev) { return Math.min(prev + 1, itemMatches.length - 1) })
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault()
+                      setItemHlIdx(function (prev) { return Math.max(prev - 1, 0) })
+                    } else if (e.key === 'Enter') {
+                      if (itemHlIdx >= 0 && itemHlIdx < itemMatches.length) {
+                        e.preventDefault()
+                        pickMatch(itemMatches[itemHlIdx])
+                      }
+                    } else if (e.key === 'Escape') {
+                      setItemMatches([])
+                    }
+                  }}
                   placeholder="Type item name..."
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white" style={{ fontSize: '16px' }} />
                 {itemMatches.length > 0 && (
                   <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                    {itemMatches.map(function (m) {
+                    {itemMatches.map(function (m, mIdx) {
                       return (
                         <button key={m._source + '_' + m.id} type="button"
+                          onMouseEnter={function () { setItemHlIdx(mIdx) }}
                           onMouseDown={function (evt) { evt.preventDefault(); pickMatch(m) }}
-                          className="w-full text-left px-3 py-2 hover:bg-indigo-50 border-b border-gray-50 last:border-0">
+                          className={'w-full text-left px-3 py-2 border-b border-gray-50 last:border-0 ' + (mIdx === itemHlIdx ? 'bg-indigo-50' : 'hover:bg-indigo-50')}>
                           <div className="text-sm text-gray-800 font-medium truncate">{m.name}</div>
                           <div className="text-[10px] text-gray-400">{m._source === 'catering_store' ? 'Catering Store' : 'Inventory'}{m.unit ? ' · ' + m.unit : ''}</div>
                         </button>
