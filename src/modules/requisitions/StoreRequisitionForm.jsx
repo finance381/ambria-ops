@@ -4,6 +4,8 @@ import { logActivity } from '../../lib/logger'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import Icon from '../../components/ui/Icon'
 import { appConfirm } from '../../components/ui/AppDialog'
+import { useReferenceData } from '../../lib/referenceData.jsx'
+import ExpenseTypeFields from '../expenses/ExpenseTypeFields'
 
 var KITCHEN_SECTIONS = ['Indian', 'Chinese', 'Chaat', 'Tandoor', 'Conti', 'Halwai', 'Staff Food', 'KST']
 
@@ -16,9 +18,14 @@ function emptyDeptRow(id) {
     // multi-page slip, the front and the itemized back). reqImages is the
     // same { id, file, path, previewUrl } shape as the top-level casualSlips.
     reqNo: '', reqImages: [],
-    showInventory: false, showCasual: false,
+    showInventory: false, showCasual: false, showExpense: false,
     invSearch: '', invResults: [], invSearching: false,
     inventoryRows: [], casualRows: [],
+    // One row's optional credit against an expense sub-type's own ledger —
+    // see "Adjust Expense" below. expense_type_id/expense_sub_type_id/meta
+    // use ExpenseTypeFields' own key names directly (it reads/writes value.*
+    // by those names), so its onChange patch needs no translation here.
+    expenseRows: [],
   }
 }
 
@@ -68,6 +75,7 @@ function isEmptyDraftRow(r) {
   if ((r.reqImages || []).length > 0) return false
   if ((r.inventoryRows || []).length > 0) return false
   if ((r.casualRows || []).length > 0) return false
+  if ((r.expenseRows || []).length > 0) return false
   return true
 }
 
@@ -101,6 +109,25 @@ function formatDraftAge(ts) {
 }
 
 function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
+  // venues/expenseTypes/expenseSubTypes/employees are the shared app-wide
+  // cache (see lib/referenceData.jsx) -- every other screen that needs the
+  // same ExpenseTypeFields renderer already reads them from here rather than
+  // re-fetching, and this form is no different.
+  var refData = useReferenceData()
+  var expenseTypes = refData.expenseTypes
+  var expenseSubTypes = refData.expenseSubTypes
+  var venues = refData.venues
+  var employees = refData.employees
+  var [vendors, setVendors] = useState([])
+  var [staff, setStaff] = useState([])
+  useEffect(function () {
+    supabase.from('vendors').select('id, name, category_ids').eq('active', true).order('name')
+      .then(function (res) { setVendors(res.data || []) })
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and the "staff" lookup field needs everyone.
+    supabase.rpc('fn_profile_names').then(function (res) { setStaff(res.data || []) })
+  }, [])
+
   var [entryDate, setEntryDate] = useState('')
   // When the function this requisition's consumption was actually for ran —
   // separate from entryDate (when this form is being filled in, which is
@@ -280,9 +307,11 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       Promise.all([
         supabase.from('store_requisition_items').select('*').in('dept_row_id', drIds),
         supabase.from('store_requisition_casuals').select('*').in('dept_row_id', drIds),
+        supabase.from('store_requisition_expense_adjustments').select('*').in('dept_row_id', drIds),
       ]).then(function (res2) {
         var items = res2[0].data || []
         var casuals = res2[1].data || []
+        var adjustments = res2[2].data || []
         var lineId = 1
         var rowId = 1
         var built = drRows.map(function (dr) {
@@ -292,6 +321,16 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           var rowCasuals = casuals.filter(function (c) { return c.dept_row_id === dr.id }).map(function (c) {
             return { id: lineId++, casualRosterId: c.casual_roster_id != null ? String(c.casual_roster_id) : '', qty: Number(c.qty) }
           })
+          var rowExpenseRows = adjustments.filter(function (a) { return a.dept_row_id === dr.id }).map(function (a) {
+            return {
+              id: lineId++,
+              expense_type_id: a.expense_type_id != null ? String(a.expense_type_id) : '',
+              expense_sub_type_id: a.expense_sub_type_id != null ? String(a.expense_sub_type_id) : '',
+              meta: a.meta || {},
+              amountRupees: a.amount_paise != null ? String(a.amount_paise / 100) : '',
+              remarks: a.remarks || '',
+            }
+          })
           var rowReqImages = (dr.req_image_paths || []).map(function (p) {
             return { id: lineId++, file: null, path: p, previewUrl: imagePublicUrl(p) }
           })
@@ -299,9 +338,9 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
             id: rowId++,
             departmentId: String(dr.department_id), subDepartmentId: String(dr.sub_department_id), section: dr.section || '', remarks: dr.remarks || '',
             reqNo: dr.req_no || '', reqImages: rowReqImages,
-            showInventory: rowItems.length > 0, showCasual: rowCasuals.length > 0,
+            showInventory: rowItems.length > 0, showCasual: rowCasuals.length > 0, showExpense: rowExpenseRows.length > 0,
             invSearch: '', invResults: [], invSearching: false,
-            inventoryRows: rowItems, casualRows: rowCasuals,
+            inventoryRows: rowItems, casualRows: rowCasuals, expenseRows: rowExpenseRows,
           }
         })
         setDeptRows(built)
@@ -543,14 +582,39 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   }
   function rowInvSubtotal(row) { return row.inventoryRows.reduce(function (s, l) { return s + (Number(l.qty) || 0) * l.ratePaise }, 0) }
   function rowCasSubtotal(row) { return row.casualRows.reduce(function (s, l) { return s + l.qty * casualRateFor(l.casualRosterId) }, 0) }
+  // Deliberately excluded from rowTotal/grandTotal — this credits a
+  // different ledger entirely (the chosen expense sub-type's), not the
+  // requisition's own stock cost. Shown as its own, separately-labelled
+  // subtotal so it's never mistaken for part of the row's spend.
   function rowTotal(row) { return rowInvSubtotal(row) + rowCasSubtotal(row) }
+
+  function addExpenseAdjRow(row) {
+    var lineId = nextLineId
+    setNextLineId(function (n) { return n + 1 })
+    var newLine = { id: lineId, expense_type_id: '', expense_sub_type_id: '', meta: {}, amountRupees: '', remarks: '' }
+    patchRow(row.id, { expenseRows: (row.expenseRows || []).concat([newLine]) })
+  }
+  function changeExpenseAdjField(row, lineId, patch) {
+    patchRow(row.id, {
+      expenseRows: row.expenseRows.map(function (l) { return l.id === lineId ? Object.assign({}, l, patch) : l })
+    })
+  }
+  function removeExpenseAdjRow(row, lineId) {
+    patchRow(row.id, { expenseRows: row.expenseRows.filter(function (l) { return l.id !== lineId }) })
+  }
+  function rowAdjSubtotal(row) {
+    return (row.expenseRows || []).reduce(function (s, l) { return s + Math.round((Number(l.amountRupees) || 0) * 100) }, 0)
+  }
+
   var grandTotal = deptRows.reduce(function (s, r) { return s + rowTotal(r) }, 0)
 
   var canSubmit = entryDate && deptRows.length > 0 &&
     deptRows.every(function (r) {
-      return r.departmentId && r.subDepartmentId && (r.inventoryRows.length > 0 || r.casualRows.length > 0) &&
+      return r.departmentId && r.subDepartmentId &&
+        (r.inventoryRows.length > 0 || r.casualRows.length > 0 || (r.expenseRows || []).length > 0) &&
         r.inventoryRows.every(function (l) { return Number(l.qty) > 0 }) &&
-        r.casualRows.every(function (l) { return Number(l.qty) > 0 })
+        r.casualRows.every(function (l) { return Number(l.qty) > 0 }) &&
+        (r.expenseRows || []).every(function (l) { return l.expense_type_id && Number(l.amountRupees) > 0 })
     })
 
   async function handleSubmit() {
@@ -592,6 +656,15 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           casuals: r.casualRows.map(function (l) {
             var c = casualRoster.find(function (x) { return String(x.id) === String(l.casualRosterId) })
             return { casual_roster_id: l.casualRosterId || null, casual_type: c ? c.casual_type : '', qty: Number(l.qty) || 0, rate_paise: c ? c.rate_paise : 0 }
+          }),
+          adjustments: (r.expenseRows || []).map(function (l) {
+            return {
+              expense_type_id: Number(l.expense_type_id),
+              expense_sub_type_id: l.expense_sub_type_id ? Number(l.expense_sub_type_id) : null,
+              amount_paise: Math.round((Number(l.amountRupees) || 0) * 100),
+              meta: l.meta || {},
+              remarks: l.remarks ? l.remarks.trim() : null,
+            }
           }),
         }
       })
@@ -848,6 +921,10 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                 className={'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg border ' + (row.showCasual ? 'bg-indigo-50 border-indigo-400 text-indigo-700' : 'bg-white border-gray-300 text-gray-600')}>
                 <Icon name="plus" size={13} /> Add Casual
               </button>
+              <button onClick={function () { patchRow(row.id, { showExpense: !row.showExpense }) }}
+                className={'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg border ' + (row.showExpense ? 'bg-emerald-50 border-emerald-400 text-emerald-700' : 'bg-white border-gray-300 text-gray-600')}>
+                <Icon name="plus" size={13} /> Adjust Expense
+              </button>
             </div>
 
             {row.showInventory && (
@@ -961,6 +1038,56 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                 {row.casualRows.length > 0 && (
                   <p className="text-right text-xs text-gray-500">Casual subtotal <span className="font-bold text-gray-900">{rupees(rowCasSubtotal(row))}</span></p>
                 )}
+              </div>
+            )}
+
+            {row.showExpense && (
+              <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-gray-500">Expense credit adjustments</p>
+                  <button onClick={function () { addExpenseAdjRow(row) }}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-emerald-700 border border-gray-300 rounded-md bg-white">
+                    <Icon name="plus" size={11} /> Add Row
+                  </button>
+                </div>
+                {row.expenseRows.length > 0 && (
+                  <div className="space-y-2">
+                    {row.expenseRows.map(function (l) {
+                      return (
+                        <div key={l.id} className="rounded-lg border border-gray-200 bg-white p-2.5 space-y-2.5">
+                          <div className="flex items-start gap-2">
+                            <div className="flex-1 min-w-0">
+                              <ExpenseTypeFields stacked value={l}
+                                onChange={function (patch) { changeExpenseAdjField(row, l.id, patch) }}
+                                expTypes={expenseTypes} expSubTypes={expenseSubTypes}
+                                vendors={vendors} venues={venues} employees={employees} staff={staff} />
+                            </div>
+                            <button onClick={function () { removeExpenseAdjRow(row, l.id) }} aria-label="Remove expense adjustment"
+                              className="shrink-0 w-9 h-9 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
+                              <Icon name="trash" size={13} />
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Credit amount</label>
+                              <input type="number" value={l.amountRupees} onChange={function (e) { changeExpenseAdjField(row, l.id, { amountRupees: e.target.value }) }} placeholder="0"
+                                className="w-full h-9 px-2 text-right border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Remarks (optional)</label>
+                              <input type="text" value={l.remarks} onChange={function (e) { changeExpenseAdjField(row, l.id, { remarks: e.target.value }) }}
+                                className="w-full h-9 px-2 border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                {row.expenseRows.length > 0 && (
+                  <p className="text-right text-xs text-gray-500">Adjustment total <span className="font-bold text-emerald-600">+{rupees(rowAdjSubtotal(row))}</span></p>
+                )}
+                <p className="text-[10.5px] text-gray-400">Credits the chosen expense sub-type's own ledger — separate from this requisition's total below.</p>
               </div>
             )}
 
