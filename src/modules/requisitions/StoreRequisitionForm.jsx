@@ -437,8 +437,18 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     var sub = subDepartments.find(function (sd) { return String(sd.id) === String(row.subDepartmentId) })
     return !!(dept && dept.name === 'Catering' && sub && sub.name === 'Kitchen')
   }
-  function casualsFor(departmentId) {
-    return casualRoster.filter(function (c) { return String(c.department_id) === String(departmentId) })
+  // A roster row with no sub_department_id is a department-wide role (e.g.
+  // the legacy "Painter" row predates this column entirely) and still
+  // applies regardless of which sub-department is picked; one that has it
+  // set must match exactly -- that's what was missing before, so every
+  // sub-department under a department (Kitchen *and* Bakery under Catering,
+  // say) shared one undifferentiated casual list.
+  function casualsFor(departmentId, subDepartmentId) {
+    return casualRoster.filter(function (c) {
+      if (String(c.department_id) !== String(departmentId)) return false
+      if (c.sub_department_id == null) return true
+      return String(c.sub_department_id) === String(subDepartmentId)
+    })
   }
 
   function onChangeDepartment(rowId, e) {
@@ -572,7 +582,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   }
 
   function addCasualRow(row) {
-    var first = casualsFor(row.departmentId)[0]
+    var first = casualsFor(row.departmentId, row.subDepartmentId)[0]
     var lineId = nextLineId
     setNextLineId(function (n) { return n + 1 })
     var newLine = { id: lineId, casualRosterId: first ? first.id : '', qty: 1 }
@@ -703,7 +713,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     }
   }
 
-  var CARD = 'bg-white border border-gray-200 rounded-2xl p-4 space-y-3'
+  var CARD = 'bg-white border border-gray-200 rounded-2xl p-3.5 space-y-2.5'
   var CTRL = 'w-full h-9 px-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
   var LABEL = 'block text-[11px] font-semibold text-gray-500 mb-0.5'
 
@@ -908,7 +918,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <div>
                 <label className={LABEL}>Department</label>
                 <select value={row.departmentId} onChange={function (e) { onChangeDepartment(row.id, e) }} className={CTRL}>
@@ -934,7 +944,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div>
                 <label className={LABEL}>Remarks</label>
                 <input type="text" value={row.remarks} onChange={function (e) { onChangeRemarks(row.id, e) }}
@@ -985,7 +995,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
             </div>
 
             {row.showInventory && (
-              <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
+              <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl space-y-1.5">
                 <p className="text-xs font-bold text-gray-500">Inventory used</p>
                 {row.inventoryRows.length > 0 && (
                   <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
@@ -1042,7 +1052,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
             )}
 
             {row.showCasual && (
-              <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
+              <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl space-y-1.5">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-bold text-gray-500">Casuals used</p>
                   <button onClick={function () { addCasualRow(row) }} disabled={!row.departmentId}
@@ -1065,7 +1075,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                         <div key={l.id} className={'grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 items-center px-2.5 py-1.5 ' + (i > 0 ? 'border-t border-gray-100' : '')}>
                           <select value={l.casualRosterId} onChange={function (e) { changeCasualType(row, l.id, e) }}
                             className="w-full h-8 min-w-0 px-1.5 border border-gray-300 rounded font-semibold text-[12px]" style={{ fontSize: '16px' }}>
-                            {casualsFor(row.departmentId).map(function (c) { return <option key={c.id} value={c.id}>{c.casual_type}</option> })}
+                            {casualsFor(row.departmentId, row.subDepartmentId).map(function (c) { return <option key={c.id} value={c.id}>{c.casual_type}</option> })}
                           </select>
                           <input type="number" value={l.qty} onChange={function (e) { changeCasualQty(row, l.id, e) }}
                             className="w-full h-8 px-1 text-right border border-gray-300 rounded" style={{ fontSize: '16px' }} />
@@ -1087,7 +1097,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
             )}
 
             {row.showExpense && (
-              <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
+              <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl space-y-1.5">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-bold text-gray-500">Expense credit adjustments</p>
                   <button onClick={function () { addExpenseAdjRow(row) }}
@@ -1096,19 +1106,24 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                   </button>
                 </div>
                 {row.expenseRows.length > 0 && (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {row.expenseRows.map(function (l) {
                       return (
-                        <div key={l.id} className="rounded-lg border border-gray-200 bg-white p-2.5 space-y-2.5">
+                        <div key={l.id} className="rounded-lg border border-gray-200 bg-white p-2 space-y-1.5">
                           <div className="flex items-start gap-2">
+                            {/* Not `stacked` -- Type and Sub-Type sit side by
+                                side (ExpenseTypeFields' own 2-col grid) instead
+                                of each taking its own full-width row. Any
+                                extra_fields the sub-type adds still render
+                                below, full width, since they're arbitrary. */}
                             <div className="flex-1 min-w-0">
-                              <ExpenseTypeFields stacked value={l}
+                              <ExpenseTypeFields value={l}
                                 onChange={function (patch) { changeExpenseAdjField(row, l.id, patch) }}
                                 expTypes={expenseTypes} expSubTypes={expenseSubTypes}
                                 vendors={vendors} venues={venues} employees={employees} staff={staff} />
                             </div>
                             <button onClick={function () { removeExpenseAdjRow(row, l.id) }} aria-label="Remove expense adjustment"
-                              className="shrink-0 w-9 h-9 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
+                              className="shrink-0 w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
                               <Icon name="trash" size={13} />
                             </button>
                           </div>
@@ -1116,12 +1131,12 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                             <div>
                               <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Credit amount</label>
                               <input type="number" value={l.amountRupees} onChange={function (e) { changeExpenseAdjField(row, l.id, { amountRupees: e.target.value }) }} placeholder="0"
-                                className="w-full h-9 px-2 text-right border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
+                                className="w-full h-8 px-2 text-right border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
                             </div>
                             <div>
                               <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Remarks (optional)</label>
                               <input type="text" value={l.remarks} onChange={function (e) { changeExpenseAdjField(row, l.id, { remarks: e.target.value }) }}
-                                className="w-full h-9 px-2 border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
+                                className="w-full h-8 px-2 border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
                             </div>
                           </div>
                         </div>
