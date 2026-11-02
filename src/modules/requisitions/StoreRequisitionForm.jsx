@@ -998,7 +998,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
               <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl space-y-1.5">
                 <p className="text-xs font-bold text-gray-500">Inventory used</p>
                 {row.inventoryRows.length > 0 && (
-                  <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                  <div className="rounded-lg border border-gray-200 bg-white">
                     <div className="grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 px-2.5 pt-2 pb-1">
                       <span className="text-[9.5px] font-bold text-gray-400 uppercase">Item</span>
                       <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Qty</span>
@@ -1061,7 +1061,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                   </button>
                 </div>
                 {row.casualRows.length > 0 && (
-                  <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                  <div className="rounded-lg border border-gray-200 bg-white">
                     <div className="grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 px-2.5 pt-2 pb-1">
                       <span className="text-[9.5px] font-bold text-gray-400 uppercase">Role</span>
                       <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Qty</span>
