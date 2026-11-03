@@ -203,10 +203,16 @@ export async function computeContractBalance(pool, lmsRows) {
 // contract, not just whichever date happened to be clicked.
 export async function loadFunctionPickerPool(dateStr) {
   if (!dateStr) return { dateRows: [], allRows: [] }
+  // department IS NULL rows are stale orphans (no contract_no, no lms_event_id
+  // — never went through sync-events' normalizeVenue), not real bookable
+  // contracts. They showed as blank-looking tiles with nothing to post a
+  // cost/collection against, so they're excluded here rather than patched
+  // client-side per tile.
   var { data } = await supabase.from('events')
     .select(FUNC_PICKER_COLS)
     .eq('function_date', dateStr)
     .is('lms_cancelled_at', null)
+    .not('department', 'is', null)
     .order('event_name')
   var dateRows = data || []
 
