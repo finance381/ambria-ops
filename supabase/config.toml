@@ -410,6 +410,14 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
+# Fnbapp "Sync to Ops" (store-issuing -> Store Requisition) — shared-secret
+# auth (FNB_TO_OPS_REQ_SECRET), not JWT. Same reasoning as
+# catering-inventory-decrement; deliberately its own secret, not reused,
+# since this one can deduct stock and that one is a different concern.
+[functions.fnb-store-requisition-sync]
+enabled = true
+verify_jwt = false
+
 # Meta calls this directly with its own verify-token handshake + an
 # X-Hub-Signature-256 (checked against WA_APP_SECRET inside the function) —
 # it never sends a Supabase JWT, so the gateway's JWT check MUST be off or
