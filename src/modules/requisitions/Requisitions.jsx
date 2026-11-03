@@ -123,12 +123,12 @@ function Requisitions({ profile, onBack }) {
   }
 
   useEffect(function () {
+    // Not scoped to profile.event_dept_ids -- see ExpenseForm.jsx's identical fix:
+    // that client-side filter duplicated RLS (which already gates real access)
+    // and broke lookups for anyone whose relevant department fell outside their
+    // scoped list, even where picking it was never itself restricted.
     supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false).then(function (res) {
-      var all = res.data || []
-      var isAdminRole = hasPerm(profile?.permsNew, 'procurement.requisitions.admin_approve')
-      var userDeptIds = profile?.event_dept_ids || []
-      var filtered = (isAdminRole || userDeptIds.length === 0) ? all : all.filter(function (d) { return userDeptIds.indexOf(d.id) !== -1 })
-      setDepartments(filtered)
+      setDepartments(res.data || [])
     })
     supabase.from('sub_departments').select('id, name, department_id').order('name').then(function (res) {
       setSubDeptOptions(res.data || [])

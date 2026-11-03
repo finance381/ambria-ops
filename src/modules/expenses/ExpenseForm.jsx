@@ -470,10 +470,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       supabase.from('sub_departments').select('id, name, department_id, departments!inner(hide_from_lists)').eq('active', true).eq('departments.hide_from_lists', false).order('name'),
       supabase.from('categories').select('id, name').order('name'),
     ])
-    var allDepts = dR.data || []
-    var isAdminRole = hasPerm(profile?.permsNew, 'finance.expenses.approve')
-    var userDeptIds = profile?.event_dept_ids || []
-    setDepartments((isAdminRole || userDeptIds.length === 0) ? allDepts : allDepts.filter(function (d) { return userDeptIds.indexOf(d.id) !== -1 }))
+    // Not scoped to profile.event_dept_ids -- that's a client-side filter on top of
+    // RLS (which already gates real access via user_can()), and it broke the
+    // auto-default allocation's department-name lookup for anyone whose expense
+    // type's own configured department fell outside their scoped list, even
+    // though picking that type was never itself restricted.
+    setDepartments(dR.data || [])
     setSubDepartments(sdR.data || [])
     setItemCategories(cR.data || [])
     setLoading(false)
