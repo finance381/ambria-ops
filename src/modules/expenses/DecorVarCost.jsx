@@ -312,7 +312,7 @@ function DecorVarCost({ profile, inAdmin }) {
   async function loadList() {
     setListErr('')
     var q = supabase.from('decor_var_costs')
-      .select('id, serial_no, sheet_code, is_function, function_date, venue_id, sub_venue_id, event_detail, event_id, extra_event_ids, status, total_paise, created_at, submitted_at, created_by, profiles:created_by(name), event:event_id(event_name, client_name, session, venue_name, catering, created_user_name), decor_var_cost_entries(entry_date, amount_paise)')
+      .select('id, serial_no, sheet_code, is_function, function_date, venue_id, sub_venue_id, event_detail, event_id, extra_event_ids, status, total_paise, created_at, submitted_at, created_by, profiles:created_by(name), event:event_id(event_name, client_name, session, venue_name, location, catering, created_user_name), decor_var_cost_entries(entry_date, amount_paise)')
       .order('created_at', { ascending: false })
       .limit(300)
     if (scope === 'mine') q = q.eq('created_by', profile.id)
@@ -388,7 +388,7 @@ function DecorVarCost({ profile, inAdmin }) {
     // summary and only asks for the department.
     var info = groupInfo(g)
     h.locked = {
-      kind: g.kind, title: info.title, sub: h.is_function ? 'Function · ' + formatDate(h.function_date) : 'Not for a function',
+      kind: g.kind, title: info.fullTitle, sub: h.is_function ? 'Function · ' + formatDate(h.function_date) : 'Not for a function',
       // Departments this group already has: one sheet each; more dates go
       // on that sheet, not a second one.
       used: groupDepts(g),
@@ -890,7 +890,7 @@ function DecorVarCost({ profile, inAdmin }) {
   function groupInfo(g) {
     var n = g.records.length
     var sheets = n + (n === 1 ? ' sheet' : ' sheets')
-    var title, sub, salesPerson = ''
+    var title, sub, salesPerson = '', venueDisp = ''
     if (g.kind === 'f') {
       // The function's name (booking, else venue), its date underneath.
       var f = g.first
@@ -900,9 +900,16 @@ function DecorVarCost({ profile, inAdmin }) {
       // VENUE_LEGEND names) — a sub-venue match from our own venues master
       // or an unlisted venue name just shows with no code suffix.
       var vLeg = venue && VENUE_LEGEND.find(function (l) { return venue.indexOf(l.name) !== -1 })
-      var venueDisp = venue ? (venue + (vLeg ? ' (' + vLeg.code + ')' : '')) : ''
+      venueDisp = venue ? (venue + (vLeg ? ' (' + vLeg.code + ')' : '')) : ''
+      // The sub venue: the sheet's own when one was picked, else the booking's
+      // location (its hall or lawn, e.g. "Amber Lawn", as Contracts shows it).
+      var subName = !f.sub_venue_id && ev && ev.location ? String(ev.location).trim() : ''
+      if (venueDisp && subName && venueDisp.indexOf(subName) === -1) venueDisp += ' · ' + subName
       var name = ev ? [ev.event_name || ev.client_name, ev.session].filter(Boolean).join(' · ') : ''
-      title = [name, venueDisp].filter(Boolean).join(' · ') || 'Function'
+      // The venue gets a line of its own on the card, so the title is the
+      // function; with no booking name, the venue stands in as the title.
+      title = name || venueDisp || 'Function'
+      if (!name) venueDisp = ''
       sub = 'Function · ' + formatDate(f.function_date) + ' · ' + sheets
       salesPerson = (ev && ev.created_user_name) || ''
     } else if (g.kind === 'u') {
@@ -922,6 +929,9 @@ function DecorVarCost({ profile, inAdmin }) {
       title: title,
       sub: sub,
       salesPerson: salesPerson,
+      venue: venueDisp,
+      // Title and venue together, where there is room for one line only.
+      fullTitle: [title, venueDisp].filter(Boolean).join(' · '),
     }
   }
 
@@ -959,10 +969,23 @@ function DecorVarCost({ profile, inAdmin }) {
           <div className="min-w-0 flex-1">
             <p className="font-display text-[15px] font-extrabold tracking-[-0.015em] text-slate-900 leading-snug break-words">{info.title}</p>
             <p className="text-[11.5px] font-semibold text-slate-500">{info.sub}</p>
-            {info.salesPerson && (
-              <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5 truncate">
-                <Icon name="user" size={11} className="shrink-0" />{info.salesPerson}
-              </p>
+            {(info.venue || info.salesPerson) && (
+              <div className="mt-1.5 space-y-0.5">
+                {info.venue && (
+                  <p className="text-[12px] leading-snug text-slate-700 flex items-start gap-1.5 min-w-0">
+                    <Icon name="mapPin" size={13} className="shrink-0 mt-[2px] text-slate-400" />
+                    <span className="shrink-0 w-[38px] text-slate-400 font-medium">Venue</span>
+                    <span className="min-w-0 flex-1 font-semibold break-words">{info.venue}</span>
+                  </p>
+                )}
+                {info.salesPerson && (
+                  <p className="text-[12px] leading-snug text-slate-700 flex items-start gap-1.5 min-w-0">
+                    <Icon name="user" size={13} className="shrink-0 mt-[2px] text-slate-400" />
+                    <span className="shrink-0 w-[38px] text-slate-400 font-medium">Sales</span>
+                    <span className="min-w-0 flex-1 font-semibold break-words">{info.salesPerson}</span>
+                  </p>
+                )}
+              </div>
             )}
           </div>
           <div className="shrink-0 text-right">
@@ -1014,7 +1037,7 @@ function DecorVarCost({ profile, inAdmin }) {
     var canAddDept = SHEETS.some(function (sh) { return usedDepts.indexOf(sh.code) === -1 })
     return (
       <div className="space-y-3">
-        {header(info.title, info.sub + ' · ' + formatPoints(info.total) + (info.anyDraft ? ' so far' : ''))}
+        {header(info.fullTitle, [info.sub, info.salesPerson ? 'Sales: ' + info.salesPerson : ''].filter(Boolean).join(' · ') + ' · ' + formatPoints(info.total) + (info.anyDraft ? ' so far' : ''))}
         {flashBar()}
         {g.kind !== 'f' && (canApprove || g.records.every(function (r) { return r.created_by === profile.id })) && (
           <div className={CARD + ' p-3.5'}>
