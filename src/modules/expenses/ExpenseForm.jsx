@@ -1822,7 +1822,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
             }
           }
           if (editDefaultDeptId) {
-            var editDeptRow = departments.find(function (d) { return d.id === editDefaultDeptId })
+            // Same bigint (expense_types.department_id) vs int4 (departments.id) mismatch
+            // as the new-expense path below -- see its comment.
+            var editDeptRow = departments.find(function (d) { return String(d.id) === String(editDefaultDeptId) })
             if (editDeptRow) editDefaultDeptName = editDeptRow.name
           }
           editAllocRows.push({
@@ -2062,7 +2064,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
               }
             }
             if (defaultDeptId) {
-              var deptRow = departments.find(function (d) { return d.id === defaultDeptId })
+              // expense_types.department_id is bigint -> PostgREST sends it as a string,
+              // while departments.id is int4 -> a number. A bare === here silently never
+              // matches, leaving `department` (text, NOT NULL) null while department_id
+              // is correctly set -- which fails the DB insert on a constraint that gives
+              // no hint it was actually a type-mismatch lookup bug.
+              var deptRow = departments.find(function (d) { return String(d.id) === String(defaultDeptId) })
               if (deptRow) defaultDeptName = deptRow.name
             }
             allocRows.push({
@@ -2974,9 +2981,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                             var headerWarning = null
                             var scopedType = entry.expenseTypeId ? expenseTypes.find(function (et) { return String(et.id) === String(entry.expenseTypeId) }) : null
                             if (scopedType && scopedType.department_id) {
-                              var mismatches = entry.allocations.filter(function (a) { return a.departmentId && Number(a.departmentId) !== scopedType.department_id })
+                              // scopedType.department_id (expense_types, bigint) arrives as a
+                              // string from PostgREST -- Number(...) !== it always holds, and
+                              // d.id (departments, int4) === it never matches, so this used to
+                              // both false-flag every split as a mismatch and show "dept #<id>"
+                              // instead of the real name. Normalize both sides.
+                              var mismatches = entry.allocations.filter(function (a) { return a.departmentId && Number(a.departmentId) !== Number(scopedType.department_id) })
                               if (mismatches.length > 0) {
-                                var typeDept = departments.find(function (d) { return d.id === scopedType.department_id })
+                                var typeDept = departments.find(function (d) { return String(d.id) === String(scopedType.department_id) })
                                 var typeDeptName = typeDept ? typeDept.name : ('dept #' + scopedType.department_id)
                                 // Name the row and the department: the two
                                 // facts that decide whether this is a slip or

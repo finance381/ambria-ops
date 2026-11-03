@@ -1662,9 +1662,12 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             var headerWarning = null
             var scopedType = expTypeId ? expenseTypes.find(function (et) { return String(et.id) === String(expTypeId) }) : null
             if (scopedType && scopedType.department_id) {
-              var mismatches = expAllocations.filter(function (a) { return a.departmentId && Number(a.departmentId) !== scopedType.department_id })
+              // scopedType.department_id (expense_types, bigint) arrives as a string from
+              // PostgREST -- Number(...) !== it always holds, and d.id (departments, int4)
+              // === it never matches (see ExpenseForm.jsx's identical fix). Normalize both.
+              var mismatches = expAllocations.filter(function (a) { return a.departmentId && Number(a.departmentId) !== Number(scopedType.department_id) })
               if (mismatches.length > 0) {
-                var typeDept = departments.find(function (d) { return d.id === scopedType.department_id })
+                var typeDept = departments.find(function (d) { return String(d.id) === String(scopedType.department_id) })
                 headerWarning = (
                   <div className="px-2.5 py-1.5 bg-amber-50 border border-amber-300 rounded-md text-[11px] text-amber-800">
                     ⚠️ Type "{scopedType.name}" is scoped to <b>{typeDept?.name || ('dept #' + scopedType.department_id)}</b>, but {mismatches.length} allocation{mismatches.length > 1 ? 's use' : ' uses'} a different dept. Allowed but flagged for review.
