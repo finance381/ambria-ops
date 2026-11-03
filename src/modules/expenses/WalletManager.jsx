@@ -355,7 +355,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [expandAllTxns, setExpandAllTxns] = useState(false)
   // A transaction row for a deleted expense stays in the ledger for audit
   // (the debit already happened), but clutters the everyday view.
-  var [showDeletedTxns, setShowDeletedTxns] = useState(false)
+  // Defaults on: hiding a deleted expense also hides the refund that reverses
+  // it (both share its reference_id, see getExportRows), and that pairing was
+  // the exact thing that made an otherwise-correct balance look like broken
+  // math (see the gap-note this screen now shows). Visible by default avoids
+  // the false alarm; the checkbox still lets it be hidden for a quick read.
+  var [showDeletedTxns, setShowDeletedTxns] = useState(true)
   var activeVenues = useReferenceData().venues.filter(function (v) { return v.active }).slice().sort(function (a, b) { return (a.code || '').localeCompare(b.code || '') })
   // events.venue_name is a plain LMS-synced text field with no venue_id —
   // matching it against this app's own venues master by name is the only way
@@ -2283,9 +2288,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // "Show deleted expenses" (or the cash/credit legs of a single expense that
   // the screen nets into one row) would show up as extra/different rows in
   // the export than what was actually on screen when Download was clicked.
-  function getExportRows() {
+  // includeDeleted forces deleted-expense rows (and the refunds reversing
+  // them) in regardless of the on-screen "Show deleted expenses" toggle —
+  // the PDF statement always wants them, since leaving them out is exactly
+  // what made two unrelated balances look like they didn't add up (the
+  // refund that explains a jump is tied to the same now-deleted expense's
+  // reference_id as its debit, so hiding one hides both).
+  function getExportRows(includeDeleted) {
     var visible = walletTxns.filter(function (t) {
-      if (showDeletedTxns) return true
+      if (includeDeleted || showDeletedTxns) return true
       var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
       var xp = isExpRow ? expenseRefs[t.reference_id] : null
       return !(xp && xp.deleted_at)
@@ -2350,11 +2361,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       var opening = oldest ? ((oldest.balance_after_paise || 0) - (oldest.type === 'credit' ? (oldest.amount_paise || 0) : -(oldest.amount_paise || 0))) : 0
       var closing = newest ? (newest.balance_after_paise || 0) : 0
 
-      // The row-by-row breakdown, on the other hand, mirrors exactly what's
-      // on screen: same "Show deleted expenses" filter, same same-expense
-      // cash/credit-leg merge — so what's printed here matches what the admin
-      // was looking at when they clicked Download, not a superset of it.
-      var chrono = getExportRows().sort(function (a, b) {
+      // The row-by-row breakdown mirrors what's on screen except for one
+      // deliberate difference: deleted expenses print here always, on-screen
+      // "Show deleted expenses" toggle or not — a statement that quietly
+      // drops rows (and the refunds tied to them) is how a correct balance
+      // ends up looking wrong to whoever reads it later.
+      var chrono = getExportRows(true).sort(function (a, b) {
         return new Date(a._sortAt || a.created_at).getTime() - new Date(b._sortAt || b.created_at).getTime()
       })
 
@@ -2486,11 +2498,26 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       // Main ledger
       var dateMeta = []
       var particularsMeta = []
-      var body = chrono.map(function (t) {
+      var body = chrono.map(function (t, idx) {
         var dt = t.created_at ? new Date(t.created_at) : null
         var dm = { top: dt ? fmtD(t.created_at.split('T')[0]) : '—', bottom: dt ? dt.toTimeString().slice(0, 5) : '' }
         dateMeta.push(dm)
         var pLines = particularsLinesFor(t)
+        // chrono is oldest -> newest, so idx-1 is the row right before this one
+        // on the page. If this row's own balance doesn't follow from that row
+        // plus this row's own amount, something not printed here (a filtered-
+        // out type, or "Show deleted expenses" being off — which hides a
+        // deleted expense's debit AND the refund reversing it together)
+        // moved it in between. Called out instead of left for someone to
+        // notice the numbers don't add up and go digging.
+        var prevRow = chrono[idx - 1]
+        if (prevRow) {
+          var expectedBal = (prevRow.balance_after_paise || 0) + (t.type === 'credit' ? (t.amount_paise || 0) : -(t.amount_paise || 0))
+          var balGap = (t.balance_after_paise || 0) - expectedBal
+          if (Math.abs(balGap) >= 100) {
+            pLines.push({ kind: 'warn', text: (balGap > 0 ? '+' : '−') + fmtN(Math.abs(balGap)) + ' moved the balance from activity not in this statement' })
+          }
+        }
         particularsMeta.push(pLines)
         var isCredit = t.type === 'credit'
         var amt = fmtN(t.amount_paise || 0)
@@ -4304,6 +4331,24 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     // different card, and 240 lines is not something to keep two copies of.
     function renderTxnRow(t) {
     var isCredit = t.type === 'credit'
+    // Whatever this row's own balance implies happened right before it,
+    // compared with what the next OLDER row in the list actually shows —
+    // a gap means something moved the balance in between that isn't in this
+    // list right now: a type filter, a different page, or (the one that
+    // actually caused this) "Show deleted expenses" being off, which hides
+    // a deleted expense's debit AND the refund that reverses it together,
+    // since both carry that same now-deleted expense's reference_id. Only
+    // meaningful in chronological order — 'amount' sort has no "before".
+    var gapNote = null
+    if (txnSort !== 'amount') {
+      var _selfIdx = sortedTxns.indexOf(t)
+      var _olderNeighbor = txnSort === 'oldest' ? sortedTxns[_selfIdx - 1] : sortedTxns[_selfIdx + 1]
+      if (_selfIdx !== -1 && _olderNeighbor) {
+        var _impliedBefore = isCredit ? (t.balance_after_paise - t.amount_paise) : (t.balance_after_paise + t.amount_paise)
+        var _gap = _impliedBefore - (_olderNeighbor.balance_after_paise || 0)
+        if (Math.abs(_gap) >= 100) gapNote = _gap
+      }
+    }
     var issuedPath = t.issued_image_path || null
     var receivedPath = t.received_image_path || null
     var transferRow = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
@@ -4760,6 +4805,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <p className="text-[11.5px] text-slate-500 tabular-nums" data-notranslate>
               Balance: <span className="font-semibold text-slate-700">{formatPoints(t.balance_after_paise)}</span>
             </p>
+            {gapNote != null && (
+              <p className={"mt-0.5 text-[10.5px] font-bold tabular-nums " + (gapNote > 0 ? "text-emerald-600" : "text-red-500")}
+                title="The balance moved by more than this row's own amount since the row above it — something not in this list changed it in between (a filter, another page, or a deleted expense's hidden refund). Turn on &quot;Show deleted expenses&quot; to check.">
+                {gapNote > 0 ? '+' : '−'}{formatPoints(Math.abs(gapNote))} not shown here
+              </p>
+            )}
             {/* The finance check belongs under the figure it is a check on.
                 Up in the title row it sat among the status chips, where
                 "Mark checked" read as one more label describing the row rather

@@ -1,7 +1,8 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { formatPaise, formatDate, titleCase } from './format'
+import { formatPaise, formatPointsPlain, formatDate, titleCase } from './format'
 import { openOrSharePdf } from './pdfOutput'
+import { cateringMenuLabel } from './constants'
 
 var BRAND = [67, 56, 202]
 var DARK = [31, 41, 55]
@@ -393,4 +394,120 @@ export async function generateUsersListPdf(users, statusFilterLabel) {
   doc.text('Total: ' + users.length, 14, y)
 
   await openOrSharePdf(doc, 'Users_' + new Date().toISOString().split('T')[0] + '.pdf')
+}
+
+// ═══════════════════════════════════════
+// STORE REQUISITION PERIOD REPORT PDF
+// ═══════════════════════════════════════
+// Page 1 is the same summary the on-screen report shows (period, plate
+// totals, linked functions, one merged row per department). Every
+// department then gets its own page of full detail — this is the one place
+// the merge actually gets undone back into individual lines, since that
+// level of detail is exactly what a page-1 summary row cannot show.
+export async function generateStoreRequisitionReportPdf(report) {
+  var doc = newDoc()
+  var period = report.dateFrom === report.dateTo ? formatDate(report.dateFrom) : (formatDate(report.dateFrom) + ' – ' + formatDate(report.dateTo))
+  var filterLabel = report.linkFilter === 'linked' ? 'Linked' : 'Unlinked'
+  var y = addHeader(doc, 'Store Requisition Report', period + '  ·  ' + filterLabel + ' requisitions  ·  ' + report.reqCount + ' merged')
+
+  var ps = report.plateSummary
+  y = addMeta(doc, y, [
+    ['Total', formatPointsPlain(report.totalPaise) + ' pts'],
+    ['Booking Plate', ps ? ps.booking : '—'],
+    ['Extra Plate', ps ? ps.extra : '—'],
+    ['Returned Plate', ps ? ps.balance : '—'],
+    ['Actual Plate', ps ? ps.actual : '—'],
+  ])
+
+  if (report.linkedEvents && report.linkedEvents.length > 0) {
+    doc.setFontSize(9)
+    doc.setFont(undefined, 'bold')
+    doc.setTextColor(DARK[0], DARK[1], DARK[2])
+    doc.text('Linked functions (' + report.linkedEvents.length + ')', 14, y)
+    doc.setFont(undefined, 'normal')
+    y += 5
+    var fnRows = report.linkedEvents.map(function (e) {
+      var menu = cateringMenuLabel(e.catering)
+      return [
+        (e.event_name || e.client_name || 'Event #' + e.id) + (menu ? ' — Menu: ' + menu : ''),
+        e.venue_name || '—',
+        e.function_date ? formatDate(e.function_date) : '—',
+      ]
+    })
+    y = addTable(doc, y, ['Function', 'Venue', 'Date'], fnRows, {
+      styles: { fontSize: 7.5, cellPadding: 1.5, textColor: DARK },
+      headStyles: { fillColor: BRAND, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5 },
+    })
+  }
+
+  var deptHeaders = ['Department', 'Items', 'Casuals', 'Amount']
+  var deptRows = report.groups.map(function (g) {
+    return [g.label + (g.rows.length > 1 ? ' (merged ×' + g.rows.length + ')' : ''), g.items.length, g.casuals.length, formatPointsPlain(g.rowTotal)]
+  })
+  var grandTotal = report.groups.reduce(function (s, g) { return s + g.rowTotal }, 0)
+  var totalItems = report.groups.reduce(function (s, g) { return s + g.items.length }, 0)
+  var totalCasuals = report.groups.reduce(function (s, g) { return s + g.casuals.length }, 0)
+  deptRows.push(['Total', totalItems, totalCasuals, formatPointsPlain(grandTotal)])
+
+  addTable(doc, y, deptHeaders, deptRows, {
+    didParseCell: function (data) {
+      if (data.row.index === deptRows.length - 1) data.cell.styles.fontStyle = 'bold'
+    },
+  })
+
+  // One page per department — the full, unmerged lines behind each summary row.
+  report.groups.forEach(function (g) {
+    doc.addPage()
+    doc.setFontSize(14)
+    doc.setTextColor(DARK[0], DARK[1], DARK[2])
+    doc.text(g.label, 14, 18)
+    doc.setFontSize(12)
+    doc.setTextColor(BRAND[0], BRAND[1], BRAND[2])
+    doc.text(formatPointsPlain(g.rowTotal) + ' pts', 196, 18, { align: 'right' })
+    var dy = 24
+    if (g.rows.length > 1) {
+      doc.setFontSize(8)
+      doc.setTextColor(GRAY[0], GRAY[1], GRAY[2])
+      doc.text('Merged from ' + g.rows.length + ' requisition rows', 14, dy)
+      dy += 6
+    }
+    if (g.remarks.length > 0) {
+      doc.setFontSize(8)
+      doc.setFont(undefined, 'italic')
+      doc.setTextColor(GRAY[0], GRAY[1], GRAY[2])
+      doc.text('Remarks: ' + g.remarks.join('  ·  '), 14, dy)
+      doc.setFont(undefined, 'normal')
+      dy += 7
+    }
+    doc.setDrawColor(BRAND[0], BRAND[1], BRAND[2])
+    doc.setLineWidth(0.3)
+    doc.line(14, dy, 196, dy)
+    dy += 6
+
+    if (g.items.length > 0) {
+      doc.setFontSize(9)
+      doc.setFont(undefined, 'bold')
+      doc.text('Inventory items', 14, dy)
+      doc.setFont(undefined, 'normal')
+      dy += 3
+      var itemRows = g.items.map(function (it) {
+        return [it.item_name, it.item_source === 'inventory' ? 'Inventory' : 'Catering Store', it.unit, it.qty, formatPointsPlain(it.rate_paise), formatPointsPlain(it.amount_paise)]
+      })
+      dy = addTable(doc, dy, ['Item', 'Source', 'Unit', 'Qty', 'Rate', 'Amount'], itemRows)
+    }
+
+    if (g.casuals.length > 0) {
+      doc.setFontSize(9)
+      doc.setFont(undefined, 'bold')
+      doc.text('Casual labour', 14, dy)
+      doc.setFont(undefined, 'normal')
+      dy += 3
+      var casualRows = g.casuals.map(function (c) {
+        return [c.casual_type, c.qty, formatPointsPlain(c.rate_paise), formatPointsPlain(c.amount_paise)]
+      })
+      addTable(doc, dy, ['Role', 'Qty', 'Rate', 'Amount'], casualRows)
+    }
+  })
+
+  await openOrSharePdf(doc, 'Store_Requisition_Report_' + report.dateFrom + '_' + report.dateTo + '.pdf')
 }

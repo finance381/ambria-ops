@@ -4,20 +4,29 @@ import { logActivity } from '../../lib/logger'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import Icon from '../../components/ui/Icon'
 import { appConfirm } from '../../components/ui/AppDialog'
+import { useReferenceData } from '../../lib/referenceData.jsx'
+import ExpenseTypeFields from '../expenses/ExpenseTypeFields'
+import SearchDropdown from '../../components/ui/SearchDropdown'
 
 var KITCHEN_SECTIONS = ['Indian', 'Chinese', 'Chaat', 'Tandoor', 'Conti', 'Halwai', 'Staff Food', 'KST']
 
 function emptyDeptRow(id) {
   return {
     id: id, departmentId: '', subDepartmentId: '', section: '', remarks: '',
-    // reqNo/reqImagePath: the physical slip this row's items/casuals came off
-    // — a requisition commonly carries one slip per department, not one for
-    // the whole thing. reqImageFile is the picked-but-not-yet-uploaded photo;
-    // reqImagePreview is its (or the existing reqImagePath's) display URL.
-    reqNo: '', reqImageFile: null, reqImagePath: null, reqImagePreview: '',
-    showInventory: false, showCasual: false,
+    // reqNo/reqImages: the physical slip this row's items/casuals came off —
+    // a requisition commonly carries one slip per department, not one for
+    // the whole thing, and that slip is routinely more than one photo (a
+    // multi-page slip, the front and the itemized back). reqImages is the
+    // same { id, file, path, previewUrl } shape as the top-level casualSlips.
+    reqNo: '', reqImages: [],
+    showInventory: false, showCasual: false, showExpense: false,
     invSearch: '', invResults: [], invSearching: false,
     inventoryRows: [], casualRows: [],
+    // One row's optional credit against an expense sub-type's own ledger —
+    // see "Adjust Expense" below. expense_type_id/expense_sub_type_id/meta
+    // use ExpenseTypeFields' own key names directly (it reads/writes value.*
+    // by those names), so its onChange patch needs no translation here.
+    expenseRows: [],
   }
 }
 
@@ -56,7 +65,7 @@ var DRAFT_DEBOUNCE_MS = 800
 // reload, so a draft only remembers the slip number, not a pending photo —
 // same reasoning as ExpenseForm's audio/receipt drafts.
 function serializeDraftRow(r) {
-  return Object.assign({}, r, { invSearch: '', invResults: [], invSearching: false, reqImageFile: null, reqImagePreview: r.reqImagePath ? r.reqImagePreview : '' })
+  return Object.assign({}, r, { invSearch: '', invResults: [], invSearching: false, reqImages: serializeDraftImages(r.reqImages) })
 }
 
 function isEmptyDraftRow(r) {
@@ -64,14 +73,15 @@ function isEmptyDraftRow(r) {
   if (r.departmentId || r.subDepartmentId || r.section) return false
   if (r.remarks && r.remarks.trim()) return false
   if (r.reqNo && r.reqNo.trim()) return false
-  if (r.reqImageFile || r.reqImagePath) return false
+  if ((r.reqImages || []).length > 0) return false
   if ((r.inventoryRows || []).length > 0) return false
   if ((r.casualRows || []).length > 0) return false
+  if ((r.expenseRows || []).length > 0) return false
   return true
 }
 
 function isEmptyDraftState(s) {
-  if (s.dateFrom || s.dateTo) return false
+  if (s.entryDate) return false
   if (s.requisitionNo && s.requisitionNo.trim()) return false
   if ((s.selectedEventIds || []).length > 0) return false
   if ((s.casualSlips || []).length > 0) return false
@@ -81,9 +91,10 @@ function isEmptyDraftState(s) {
 
 // Only a path (already uploaded) survives into a draft — a picked-but-
 // unuploaded file's blob: URL dies with the page, so there'd be nothing to
-// restore it from anyway.
-function serializeDraftCasualSlips(list) {
-  return (list || []).filter(function (cs) { return cs.path }).map(function (cs) { return { id: cs.id, path: cs.path } })
+// restore it from anyway. Shared by casualSlips and every dept row's
+// reqImages — same { id, file, path, previewUrl } shape.
+function serializeDraftImages(list) {
+  return (list || []).filter(function (im) { return im.path }).map(function (im) { return { id: im.id, path: im.path } })
 }
 
 function formatDraftAge(ts) {
@@ -99,8 +110,31 @@ function formatDraftAge(ts) {
 }
 
 function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
-  var [dateFrom, setDateFrom] = useState('')
-  var [dateTo, setDateTo] = useState('')
+  // venues/expenseTypes/expenseSubTypes/employees are the shared app-wide
+  // cache (see lib/referenceData.jsx) -- every other screen that needs the
+  // same ExpenseTypeFields renderer already reads them from here rather than
+  // re-fetching, and this form is no different.
+  var refData = useReferenceData()
+  var expenseTypes = refData.expenseTypes
+  var expenseSubTypes = refData.expenseSubTypes
+  var venues = refData.venues
+  var employees = refData.employees
+  var [vendors, setVendors] = useState([])
+  var [staff, setStaff] = useState([])
+  useEffect(function () {
+    supabase.from('vendors').select('id, name, category_ids').eq('active', true).order('name')
+      .then(function (res) { setVendors(res.data || []) })
+    // fn_profile_names, not a direct select -- RLS on profiles only lets a
+    // user read their own row, and the "staff" lookup field needs everyone.
+    supabase.rpc('fn_profile_names').then(function (res) { setStaff(res.data || []) })
+  }, [])
+
+  var [entryDate, setEntryDate] = useState('')
+  // When the function this requisition's consumption was actually for ran —
+  // separate from entryDate (when this form is being filled in, which is
+  // often a day or more later). Drives the contract list below; not its own
+  // column — the functions actually picked are what gets saved (event_ids).
+  var [functionDate, setFunctionDate] = useState('')
   var [requisitionNo, setRequisitionNo] = useState('')
   var [contracts, setContracts] = useState([])
   var [contractsLoading, setContractsLoading] = useState(false)
@@ -111,6 +145,12 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   var [casualRoster, setCasualRoster] = useState([])
 
   var [deptRows, setDeptRows] = useState([emptyDeptRow(1)])
+  // Accordion, not independent toggles — one dept row open at a time, every
+  // other one collapsed to a one-line summary bar. A requisition with four
+  // or five dept rows used to mean four or five full field sets stacked on
+  // screen at once; this keeps the one you're actually editing in view and
+  // everything else out of the way until you tap it.
+  var [expandedRowId, setExpandedRowId] = useState(1)
   var [nextRowId, setNextRowId] = useState(2)
   var [nextLineId, setNextLineId] = useState(1)
   var [loadingExisting, setLoadingExisting] = useState(!!editId)
@@ -120,6 +160,10 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   // path: string|null (already uploaded), previewUrl }.
   var [casualSlips, setCasualSlips] = useState([])
   var [nextCasualSlipId, setNextCasualSlipId] = useState(1)
+  // Shared across every dept row's reqImages, same reasoning as nextLineId
+  // being shared across every row's inventory/casual lines — one counter,
+  // not one per row.
+  var [nextReqImageId, setNextReqImageId] = useState(1)
   // Paths removed during this edit (an existing image taken off a dept row
   // or the casual slips) — deleted from storage only after the save that
   // drops them actually succeeds, so a failed save doesn't orphan nothing.
@@ -153,33 +197,33 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   useEffect(function () {
     if (editId || !draftKey || saving || loadingExisting) return
     if (draftRestorable) return  // don't clobber a pending restore with the blank default
-    var state = { dateFrom: dateFrom, dateTo: dateTo, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId, casualSlips: casualSlips, nextCasualSlipId: nextCasualSlipId }
+    var state = { entryDate: entryDate, functionDate: functionDate, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId, casualSlips: casualSlips, nextCasualSlipId: nextCasualSlipId, nextReqImageId: nextReqImageId }
     if (isEmptyDraftState(state)) return
     if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current)
     draftSaveTimer.current = setTimeout(function () {
       try {
-        var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow), casualSlips: serializeDraftCasualSlips(casualSlips) })
+        var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow), casualSlips: serializeDraftImages(casualSlips) })
         localStorage.setItem(draftKey, JSON.stringify(payload))
         setDraftSavedAt(payload.savedAt)
       } catch (_) {}
     }, DRAFT_DEBOUNCE_MS)
     return function () { if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current) }
-  }, [dateFrom, dateTo, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, casualSlips, nextCasualSlipId, editId, saving, draftRestorable, loadingExisting])
+  }, [entryDate, functionDate, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, casualSlips, nextCasualSlipId, nextReqImageId, editId, saving, draftRestorable, loadingExisting])
 
   // ─── Draft: safety-save on tab close / navigate away ───
   useEffect(function () {
     if (editId || !draftKey) return
     function handler() {
       try {
-        var state = { dateFrom: dateFrom, dateTo: dateTo, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId, casualSlips: casualSlips, nextCasualSlipId: nextCasualSlipId }
+        var state = { entryDate: entryDate, functionDate: functionDate, requisitionNo: requisitionNo, selectedEventIds: selectedEventIds, deptRows: deptRows, nextRowId: nextRowId, nextLineId: nextLineId, casualSlips: casualSlips, nextCasualSlipId: nextCasualSlipId, nextReqImageId: nextReqImageId }
         if (isEmptyDraftState(state)) return
-        var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow), casualSlips: serializeDraftCasualSlips(casualSlips) })
+        var payload = Object.assign({ savedAt: Date.now() }, state, { deptRows: deptRows.map(serializeDraftRow), casualSlips: serializeDraftImages(casualSlips) })
         localStorage.setItem(draftKey, JSON.stringify(payload))
       } catch (_) {}
     }
     window.addEventListener('beforeunload', handler)
     return function () { window.removeEventListener('beforeunload', handler) }
-  }, [dateFrom, dateTo, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, casualSlips, nextCasualSlipId, editId])
+  }, [entryDate, functionDate, requisitionNo, selectedEventIds, deptRows, nextRowId, nextLineId, casualSlips, nextCasualSlipId, nextReqImageId, editId])
 
   // ─── Draft: tick "Xs ago" indicator every 15s ───
   useEffect(function () {
@@ -191,8 +235,8 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   function restoreDraft() {
     if (!draftRestorable) return
     try {
-      setDateFrom(draftRestorable.dateFrom || '')
-      setDateTo(draftRestorable.dateTo || '')
+      setEntryDate(draftRestorable.entryDate || '')
+      setFunctionDate(draftRestorable.functionDate || '')
       setRequisitionNo(draftRestorable.requisitionNo || '')
       setSelectedEventIds(draftRestorable.selectedEventIds || [])
       var rows = (draftRestorable.deptRows && draftRestorable.deptRows.length > 0) ? draftRestorable.deptRows : [emptyDeptRow(1)]
@@ -200,7 +244,9 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       // only the picked-but-unuploaded file (already dropped before saving)
       // couldn't survive the reload.
       setDeptRows(rows.map(function (r) {
-        return Object.assign({}, r, { reqImagePreview: r.reqImagePath ? imagePublicUrl(r.reqImagePath) : '' })
+        return Object.assign({}, r, {
+          reqImages: (r.reqImages || []).map(function (im) { return { id: im.id, file: null, path: im.path, previewUrl: imagePublicUrl(im.path) } }),
+        })
       }))
       setNextRowId(draftRestorable.nextRowId || 2)
       setNextLineId(draftRestorable.nextLineId || 1)
@@ -208,6 +254,8 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
         return { id: cs.id, file: null, path: cs.path, previewUrl: imagePublicUrl(cs.path) }
       }))
       setNextCasualSlipId(draftRestorable.nextCasualSlipId || 1)
+      setNextReqImageId(draftRestorable.nextReqImageId || 1)
+      setExpandedRowId(rows.length > 0 ? rows[0].id : null)
       setDraftSavedAt(draftRestorable.savedAt)
     } catch (_) {}
     setDraftRestorable(null)
@@ -249,12 +297,12 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     setLoadingExisting(true)
     Promise.all([
       supabase.from('store_requisitions').select('date_from, date_to, event_ids, requisition_no, casual_slip_paths').eq('id', editId).single(),
-      supabase.from('store_requisition_dept_rows').select('id, department_id, sub_department_id, section, remarks, req_no, req_image_path, sort_order').eq('store_requisition_id', editId).order('sort_order'),
+      supabase.from('store_requisition_dept_rows').select('id, department_id, sub_department_id, section, remarks, req_no, req_image_paths, sort_order').eq('store_requisition_id', editId).order('sort_order'),
     ]).then(function (res) {
       var reqRow = res[0].data
       var drRows = res[1].data || []
       if (reqRow) {
-        setDateFrom(reqRow.date_from); setDateTo(reqRow.date_to); setRequisitionNo(reqRow.requisition_no || ''); setSelectedEventIds(reqRow.event_ids || [])
+        setEntryDate(reqRow.date_from); setRequisitionNo(reqRow.requisition_no || ''); setSelectedEventIds(reqRow.event_ids || [])
         setCasualSlips((reqRow.casual_slip_paths || []).map(function (p, i) {
           return { id: i + 1, file: null, path: p, previewUrl: imagePublicUrl(p) }
         }))
@@ -262,14 +310,16 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       }
       var drIds = drRows.map(function (r) { return r.id })
       if (drIds.length === 0) {
-        setDeptRows([emptyDeptRow(1)]); setNextRowId(2); setLoadingExisting(false); return
+        setDeptRows([emptyDeptRow(1)]); setNextRowId(2); setExpandedRowId(1); setLoadingExisting(false); return
       }
       Promise.all([
         supabase.from('store_requisition_items').select('*').in('dept_row_id', drIds),
         supabase.from('store_requisition_casuals').select('*').in('dept_row_id', drIds),
+        supabase.from('store_requisition_expense_adjustments').select('*').in('dept_row_id', drIds),
       ]).then(function (res2) {
         var items = res2[0].data || []
         var casuals = res2[1].data || []
+        var adjustments = res2[2].data || []
         var lineId = 1
         var rowId = 1
         var built = drRows.map(function (dr) {
@@ -279,31 +329,45 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           var rowCasuals = casuals.filter(function (c) { return c.dept_row_id === dr.id }).map(function (c) {
             return { id: lineId++, casualRosterId: c.casual_roster_id != null ? String(c.casual_roster_id) : '', qty: Number(c.qty) }
           })
+          var rowExpenseRows = adjustments.filter(function (a) { return a.dept_row_id === dr.id }).map(function (a) {
+            return {
+              id: lineId++,
+              expense_type_id: a.expense_type_id != null ? String(a.expense_type_id) : '',
+              expense_sub_type_id: a.expense_sub_type_id != null ? String(a.expense_sub_type_id) : '',
+              meta: a.meta || {},
+              amountRupees: a.amount_paise != null ? String(a.amount_paise / 100) : '',
+              remarks: a.remarks || '',
+            }
+          })
+          var rowReqImages = (dr.req_image_paths || []).map(function (p) {
+            return { id: lineId++, file: null, path: p, previewUrl: imagePublicUrl(p) }
+          })
           return {
             id: rowId++,
             departmentId: String(dr.department_id), subDepartmentId: String(dr.sub_department_id), section: dr.section || '', remarks: dr.remarks || '',
-            reqNo: dr.req_no || '', reqImageFile: null, reqImagePath: dr.req_image_path || null,
-            reqImagePreview: dr.req_image_path ? imagePublicUrl(dr.req_image_path) : '',
-            showInventory: rowItems.length > 0, showCasual: rowCasuals.length > 0,
+            reqNo: dr.req_no || '', reqImages: rowReqImages,
+            showInventory: rowItems.length > 0, showCasual: rowCasuals.length > 0, showExpense: rowExpenseRows.length > 0,
             invSearch: '', invResults: [], invSearching: false,
-            inventoryRows: rowItems, casualRows: rowCasuals,
+            inventoryRows: rowItems, casualRows: rowCasuals, expenseRows: rowExpenseRows,
           }
         })
         setDeptRows(built)
         setNextRowId(rowId)
         setNextLineId(lineId)
+        setNextReqImageId(lineId)
+        setExpandedRowId(built.length > 0 ? built[0].id : null)
         setLoadingExisting(false)
       })
     })
   }, [editId])
 
   useEffect(function () {
-    if (!dateFrom || !dateTo) { setContracts([]); return }
+    if (!functionDate) { setContracts([]); return }
     setContractsLoading(true)
     supabase.from('events_safe')
       .select('id, event_name, client_name, venue_name, function_date, department, total_plates, complementary_plates')
       .in('department', ['Venue', 'Catering'])
-      .gte('function_date', dateFrom).lte('function_date', dateTo)
+      .eq('function_date', functionDate)
       .is('merged_into_id', null)
       .order('function_date')
       .then(function (evRes) {
@@ -342,18 +406,28 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           setContractsLoading(false)
         })
       })
-  }, [dateFrom, dateTo])
+  }, [functionDate])
 
   function patchRow(rowId, patch) {
     setDeptRows(function (prev) { return prev.map(function (r) { return r.id === rowId ? Object.assign({}, r, patch) : r }) })
   }
 
   function addDeptRow() {
-    setDeptRows(function (prev) { return prev.concat([emptyDeptRow(nextRowId)]) })
+    var newId = nextRowId
+    setDeptRows(function (prev) { return prev.concat([emptyDeptRow(newId)]) })
     setNextRowId(function (n) { return n + 1 })
+    setExpandedRowId(newId)
   }
   function removeDeptRow(rowId) {
     setDeptRows(function (prev) { return prev.filter(function (r) { return r.id !== rowId }) })
+    setExpandedRowId(function (cur) {
+      if (cur !== rowId) return cur
+      var remaining = deptRows.filter(function (r) { return r.id !== rowId })
+      return remaining.length > 0 ? remaining[0].id : null
+    })
+  }
+  function toggleRowExpanded(rowId) {
+    setExpandedRowId(function (cur) { return cur === rowId ? null : rowId })
   }
 
   function subDeptsFor(departmentId) {
@@ -364,8 +438,18 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     var sub = subDepartments.find(function (sd) { return String(sd.id) === String(row.subDepartmentId) })
     return !!(dept && dept.name === 'Catering' && sub && sub.name === 'Kitchen')
   }
-  function casualsFor(departmentId) {
-    return casualRoster.filter(function (c) { return String(c.department_id) === String(departmentId) })
+  // A roster row with no sub_department_id is a department-wide role (e.g.
+  // the legacy "Painter" row predates this column entirely) and still
+  // applies regardless of which sub-department is picked; one that has it
+  // set must match exactly -- that's what was missing before, so every
+  // sub-department under a department (Kitchen *and* Bakery under Catering,
+  // say) shared one undifferentiated casual list.
+  function casualsFor(departmentId, subDepartmentId) {
+    return casualRoster.filter(function (c) {
+      if (String(c.department_id) !== String(departmentId)) return false
+      if (c.sub_department_id == null) return true
+      return String(c.sub_department_id) === String(subDepartmentId)
+    })
   }
 
   function onChangeDepartment(rowId, e) {
@@ -398,17 +482,21 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     return path
   }
 
-  function onPickReqImage(row, e) {
-    var file = e.target.files && e.target.files[0]
+  function onPickReqImages(row, e) {
+    var files = Array.prototype.slice.call(e.target.files || [])
     e.target.value = ''
-    if (!file) return
-    var previewUrl = URL.createObjectURL(file)
-    if (row.reqImagePath) removedPathsRef.current.push(row.reqImagePath)
-    patchRow(row.id, { reqImageFile: file, reqImagePath: null, reqImagePreview: previewUrl })
+    if (files.length === 0) return
+    var startId = nextReqImageId
+    var added = files.map(function (f, i) {
+      return { id: startId + i, file: f, path: null, previewUrl: URL.createObjectURL(f) }
+    })
+    setNextReqImageId(startId + files.length)
+    patchRow(row.id, { reqImages: (row.reqImages || []).concat(added) })
   }
-  function removeReqImage(row) {
-    if (row.reqImagePath) removedPathsRef.current.push(row.reqImagePath)
-    patchRow(row.id, { reqImageFile: null, reqImagePath: null, reqImagePreview: '' })
+  function removeReqImage(row, imageId) {
+    var hit = (row.reqImages || []).find(function (im) { return im.id === imageId })
+    if (hit && hit.path) removedPathsRef.current.push(hit.path)
+    patchRow(row.id, { reqImages: (row.reqImages || []).filter(function (im) { return im.id !== imageId }) })
   }
 
   function onPickCasualSlips(e) {
@@ -495,14 +583,13 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   }
 
   function addCasualRow(row) {
-    var first = casualsFor(row.departmentId)[0]
+    var first = casualsFor(row.departmentId, row.subDepartmentId)[0]
     var lineId = nextLineId
     setNextLineId(function (n) { return n + 1 })
-    var newLine = { id: lineId, casualRosterId: first ? first.id : '', qty: 1 }
+    var newLine = { id: lineId, casualRosterId: first ? String(first.id) : '', qty: 1 }
     patchRow(row.id, { casualRows: row.casualRows.concat([newLine]) })
   }
-  function changeCasualType(row, lineId, e) {
-    var id = e.target.value
+  function changeCasualType(row, lineId, id) {
     patchRow(row.id, {
       casualRows: row.casualRows.map(function (l) { return l.id === lineId ? Object.assign({}, l, { casualRosterId: id }) : l })
     })
@@ -523,14 +610,38 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   }
   function rowInvSubtotal(row) { return row.inventoryRows.reduce(function (s, l) { return s + (Number(l.qty) || 0) * l.ratePaise }, 0) }
   function rowCasSubtotal(row) { return row.casualRows.reduce(function (s, l) { return s + l.qty * casualRateFor(l.casualRosterId) }, 0) }
-  function rowTotal(row) { return rowInvSubtotal(row) + rowCasSubtotal(row) }
+  function addExpenseAdjRow(row) {
+    var lineId = nextLineId
+    setNextLineId(function (n) { return n + 1 })
+    var newLine = { id: lineId, expense_type_id: '', expense_sub_type_id: '', meta: {}, amountRupees: '', remarks: '' }
+    patchRow(row.id, { expenseRows: (row.expenseRows || []).concat([newLine]) })
+  }
+  function changeExpenseAdjField(row, lineId, patch) {
+    patchRow(row.id, {
+      expenseRows: row.expenseRows.map(function (l) { return l.id === lineId ? Object.assign({}, l, patch) : l })
+    })
+  }
+  function removeExpenseAdjRow(row, lineId) {
+    patchRow(row.id, { expenseRows: row.expenseRows.filter(function (l) { return l.id !== lineId }) })
+  }
+  function rowAdjSubtotal(row) {
+    return (row.expenseRows || []).reduce(function (s, l) { return s + Math.round((Number(l.amountRupees) || 0) * 100) }, 0)
+  }
+  // The double entry: crediting an expense sub-type's own ledger (v_ledger)
+  // is the other half of debiting it out of this requisition's own total —
+  // the same recovered value can't count as cost here AND sit untouched on
+  // the sub-type's books, or it's just been invented twice.
+  function rowTotal(row) { return rowInvSubtotal(row) + rowCasSubtotal(row) - rowAdjSubtotal(row) }
+
   var grandTotal = deptRows.reduce(function (s, r) { return s + rowTotal(r) }, 0)
 
-  var canSubmit = dateFrom && dateTo && deptRows.length > 0 &&
+  var canSubmit = entryDate && deptRows.length > 0 &&
     deptRows.every(function (r) {
-      return r.departmentId && r.subDepartmentId && (r.inventoryRows.length > 0 || r.casualRows.length > 0) &&
+      return r.departmentId && r.subDepartmentId &&
+        (r.inventoryRows.length > 0 || r.casualRows.length > 0 || (r.expenseRows || []).length > 0) &&
         r.inventoryRows.every(function (l) { return Number(l.qty) > 0 }) &&
-        r.casualRows.every(function (l) { return Number(l.qty) > 0 })
+        r.casualRows.every(function (l) { return Number(l.qty) > 0 }) &&
+        (r.expenseRows || []).every(function (l) { return l.expense_type_id && Number(l.amountRupees) > 0 })
     })
 
   async function handleSubmit() {
@@ -543,7 +654,13 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       var deptRowImagePaths = {}
       for (var i = 0; i < deptRows.length; i++) {
         var r = deptRows[i]
-        if (r.reqImageFile) deptRowImagePaths[r.id] = await uploadImage(r.reqImageFile, 'storereq_dept')
+        var rowPaths = []
+        for (var k = 0; k < (r.reqImages || []).length; k++) {
+          var im = r.reqImages[k]
+          if (im.file) rowPaths.push(await uploadImage(im.file, 'storereq_dept'))
+          else if (im.path) rowPaths.push(im.path)
+        }
+        deptRowImagePaths[r.id] = rowPaths
       }
       var finalCasualSlipPaths = []
       for (var j = 0; j < casualSlips.length; j++) {
@@ -559,7 +676,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           section: isKitchenRow(r) ? r.section : null,
           remarks: r.remarks ? r.remarks.trim() : null,
           req_no: r.reqNo ? r.reqNo.trim() : null,
-          req_image_path: Object.prototype.hasOwnProperty.call(deptRowImagePaths, r.id) ? deptRowImagePaths[r.id] : r.reqImagePath,
+          req_image_paths: deptRowImagePaths[r.id] || [],
           items: r.inventoryRows.map(function (l) {
             return { item_source: l.itemSource, item_id: l.itemId, item_name: l.name, unit: l.unit, qty: Number(l.qty) || 0, rate_paise: Number(l.ratePaise) || 0 }
           }),
@@ -567,17 +684,26 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
             var c = casualRoster.find(function (x) { return String(x.id) === String(l.casualRosterId) })
             return { casual_roster_id: l.casualRosterId || null, casual_type: c ? c.casual_type : '', qty: Number(l.qty) || 0, rate_paise: c ? c.rate_paise : 0 }
           }),
+          adjustments: (r.expenseRows || []).map(function (l) {
+            return {
+              expense_type_id: Number(l.expense_type_id),
+              expense_sub_type_id: l.expense_sub_type_id ? Number(l.expense_sub_type_id) : null,
+              amount_paise: Math.round((Number(l.amountRupees) || 0) * 100),
+              meta: l.meta || {},
+              remarks: l.remarks ? l.remarks.trim() : null,
+            }
+          }),
         }
       })
       var res = editId
-        ? await supabase.rpc('rpc_update_store_requisition', { p_id: editId, p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload, p_event_ids: selectedEventIds, p_requisition_no: requisitionNo, p_casual_slip_paths: finalCasualSlipPaths })
-        : await supabase.rpc('rpc_submit_store_requisition', { p_date_from: dateFrom, p_date_to: dateTo, p_dept_rows: payload, p_event_ids: selectedEventIds, p_requisition_no: requisitionNo, p_casual_slip_paths: finalCasualSlipPaths })
+        ? await supabase.rpc('rpc_update_store_requisition', { p_id: editId, p_date_from: entryDate, p_date_to: entryDate, p_dept_rows: payload, p_event_ids: selectedEventIds, p_requisition_no: requisitionNo, p_casual_slip_paths: finalCasualSlipPaths })
+        : await supabase.rpc('rpc_submit_store_requisition', { p_date_from: entryDate, p_date_to: entryDate, p_dept_rows: payload, p_event_ids: selectedEventIds, p_requisition_no: requisitionNo, p_casual_slip_paths: finalCasualSlipPaths })
       if (res.error) { setSaving(false); setError(res.error.message); return }
       if (removedPathsRef.current.length > 0) {
         try { await supabase.storage.from('receipts').remove(removedPathsRef.current) } catch (_) {}
         removedPathsRef.current = []
       }
-      try { await logActivity(editId ? 'STORE_REQUISITION_EDIT' : 'STORE_REQUISITION_SUBMIT', dateFrom + ' to ' + dateTo + ' · ' + rupees(grandTotal)) } catch (_) {}
+      try { await logActivity(editId ? 'STORE_REQUISITION_EDIT' : 'STORE_REQUISITION_SUBMIT', entryDate + ' · ' + rupees(grandTotal)) } catch (_) {}
       clearDraftAfterSubmit()
       setSaving(false)
       if (onDone) onDone(res.data)
@@ -587,7 +713,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
     }
   }
 
-  var CARD = 'bg-white border border-gray-200 rounded-2xl p-4 space-y-3'
+  var CARD = 'bg-white border border-gray-200 rounded-2xl p-3.5 space-y-2.5'
   var CTRL = 'w-full h-9 px-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
   var LABEL = 'block text-[11px] font-semibold text-gray-500 mb-0.5'
 
@@ -596,7 +722,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-gray-900">{editId ? 'Edit Store Requisition' : 'New Store Requisition'}</h2>
-          <p className="text-xs text-gray-400">Record inventory and casual labour consumed between two dates.</p>
+          <p className="text-xs text-gray-400">Record inventory and casual labour consumed on a date.</p>
         </div>
         <button onClick={onCancel} className="px-3 py-2 text-sm font-semibold text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
       </div>
@@ -650,60 +776,69 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       {!loadingExisting && <>
 
       <div className={CARD}>
-        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Period</p>
-        <div className="grid grid-cols-2 gap-3">
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Entry Date</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
           <div>
-            <label className={LABEL}>From date</label>
-            <EventDatePicker value={dateFrom} placeholder="From" collapsible plain includePast onChange={function (v) { setDateFrom(v) }} />
-          </div>
-          <div>
-            <label className={LABEL}>To date</label>
-            <EventDatePicker value={dateTo} placeholder="To" collapsible plain includePast onChange={function (v) { setDateTo(v) }} />
-          </div>
-        </div>
-        <div>
-          <label className={LABEL}>Requisition No (optional)</label>
-          <input type="text" value={requisitionNo} onChange={function (e) { setRequisitionNo(e.target.value) }}
-            placeholder="e.g. the slip number from the physical requisition"
-            className={CTRL} />
-        </div>
-        <div>
-          <label className={LABEL}>Casual Slips (optional)</label>
-          <div className="flex flex-wrap gap-2">
-            {casualSlips.map(function (cs) {
+            <label className={LABEL}>Date</label>
+            {(function () {
+              var toYMD = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+              var todayStr = toYMD(new Date())
+              var minStr = toYMD(new Date(Date.now() - 20 * 86400000))
               return (
-                <div key={cs.id} className="relative w-16 h-16 shrink-0">
-                  <a href={cs.previewUrl} target="_blank" rel="noreferrer">
-                    <img src={cs.previewUrl} alt="Casual slip" className="w-16 h-16 object-cover rounded-lg border border-gray-300" />
-                  </a>
-                  <button type="button" onClick={function () { removeCasualSlip(cs.id) }} aria-label="Remove image"
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
-                    <Icon name="close" size={10} />
-                  </button>
-                </div>
+                <EventDatePicker value={entryDate} placeholder="Select date" collapsible plain includePast
+                  minDate={minStr} maxDate={todayStr}
+                  onChange={function (v) { setEntryDate(v) }} />
               )
-            })}
-            <label className="w-16 h-16 shrink-0 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-0.5 text-gray-400 cursor-pointer hover:bg-gray-50">
-              <Icon name="camera" size={16} />
-              <span className="text-[9px] font-bold">Add</span>
-              <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={onPickCasualSlips} />
-            </label>
+            })()}
+          </div>
+          <div>
+            <label className={LABEL}>Requisition No (optional)</label>
+            <input type="text" value={requisitionNo} onChange={function (e) { setRequisitionNo(e.target.value) }}
+              placeholder="e.g. the slip number"
+              className={CTRL} />
+          </div>
+          <div>
+            <label className={LABEL}>Casual Slips (optional)</label>
+            <div className="flex flex-wrap gap-2">
+              {casualSlips.map(function (cs) {
+                return (
+                  <div key={cs.id} className="relative w-9 h-9 shrink-0">
+                    <a href={cs.previewUrl} target="_blank" rel="noreferrer">
+                      <img src={cs.previewUrl} alt="Casual slip" className="w-9 h-9 object-cover rounded-lg border border-gray-300" />
+                    </a>
+                    <button type="button" onClick={function () { removeCasualSlip(cs.id) }} aria-label="Remove image"
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
+                      <Icon name="close" size={8} />
+                    </button>
+                  </div>
+                )
+              })}
+              <label className="w-9 h-9 shrink-0 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 cursor-pointer hover:bg-gray-50">
+                <Icon name="camera" size={14} />
+                <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={onPickCasualSlips} />
+              </label>
+            </div>
           </div>
         </div>
       </div>
 
-      {(dateFrom && dateTo) && (
+      {entryDate && (
         <div className={CARD}>
           <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Contracts in this period</p>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Link to a Function</p>
             {selectedEventIds.length > 0 && (
               <p className="text-xs font-semibold text-indigo-600">{selectedEventIds.length} selected</p>
             )}
           </div>
-          {contractsLoading ? (
+          <div>
+            <label className={LABEL}>Function date (optional)</label>
+            <EventDatePicker value={functionDate} placeholder="Select a function's date" collapsible plain includePast
+              onChange={function (v) { setFunctionDate(v) }} />
+          </div>
+          {!functionDate ? null : contractsLoading ? (
             <p className="text-sm text-gray-400 py-4 text-center">Loading contracts…</p>
           ) : contracts.length === 0 ? (
-            <p className="text-sm text-gray-400 py-4 text-center">No venue/catering contracts in this window.</p>
+            <p className="text-sm text-gray-400 py-4 text-center">No venue/catering contracts on this date.</p>
           ) : (
             <div className="space-y-1.5">
               {contracts.map(function (c) {
@@ -716,11 +851,11 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                         {isSel && <Icon name="check" size={11} className="text-white" />}
                       </span>
                       <p className="min-w-0 flex-1 font-bold text-gray-900 text-sm truncate">{c.event}</p>
-                      <p className="shrink-0 text-sm font-bold text-indigo-600 tabular-nums">{c.actual}</p>
+                      <p className="shrink-0 text-sm font-bold text-indigo-600 tabular-nums" title="Plates actually used so far (issued minus returned)">{c.actual}</p>
                     </div>
                     <div className="flex items-center justify-between gap-2 mt-0.5 pl-[26px]">
                       <p className="text-[11px] text-gray-500 truncate">{c.venueDate}</p>
-                      <p className="shrink-0 text-[11px] text-gray-400 tabular-nums">{c.booking} · {c.extra} · {c.balance}</p>
+                      <p className="shrink-0 text-[11px] text-gray-400 tabular-nums" title={'Quota ' + c.booking + ' · Chargeable extras ' + c.extra + ' · Returned ' + c.balance}>{c.booking} · {c.extra} · {c.balance}</p>
                     </div>
                   </button>
                 )
@@ -735,16 +870,55 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
       {deptRows.map(function (row, idx) {
         var isKitchen = isKitchenRow(row)
         var deptName = (departments.find(function (d) { return String(d.id) === String(row.departmentId) }) || {}).name || ''
+        var subDeptName = (subDepartments.find(function (sd) { return String(sd.id) === String(row.subDepartmentId) }) || {}).name || ''
+        var isOpen = expandedRowId === row.id
+        var itemCount = row.inventoryRows.length
+        var casualCount = row.casualRows.length
+        var adjCount = (row.expenseRows || []).length
+
+        // Collapsed: a one-line summary bar — department, what's on it, its
+        // total — not the full field set. Every row but the one being
+        // actively edited renders this instead.
+        if (!isOpen) {
+          return (
+            <div key={row.id} onClick={function () { toggleRowExpanded(row.id) }}
+              className="bg-white border border-gray-200 rounded-2xl px-4 py-3 flex items-center justify-between gap-3 cursor-pointer hover:border-indigo-300 transition-colors">
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-gray-900 truncate">
+                  {deptName ? (deptName + (subDeptName ? ' · ' + subDeptName : '')) : ('Dept Row ' + (idx + 1))}
+                </p>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {itemCount > 0 && <span className="text-[10px] font-bold text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{itemCount} item{itemCount === 1 ? '' : 's'}</span>}
+                  {casualCount > 0 && <span className="text-[10px] font-bold text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{casualCount} casual{casualCount === 1 ? '' : 's'}</span>}
+                  {adjCount > 0 && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5">{adjCount} adjustment{adjCount === 1 ? '' : 's'}</span>}
+                  {itemCount === 0 && casualCount === 0 && adjCount === 0 && <span className="text-[10px] text-gray-400">Empty — tap to fill in</span>}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <p className="text-sm font-bold text-indigo-600 whitespace-nowrap">{rupees(rowTotal(row))}</p>
+                <button onClick={function (e) { e.stopPropagation(); removeDeptRow(row.id) }} aria-label="Remove row"
+                  className="w-7 h-7 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
+                  <Icon name="close" size={13} />
+                </button>
+                <Icon name="chevronDown" size={14} className="text-gray-400" />
+              </div>
+            </div>
+          )
+        }
+
         return (
           <div key={row.id} className={CARD}>
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-bold text-gray-800">Dept Row {idx + 1}</p>
-              <button onClick={function () { removeDeptRow(row.id) }} aria-label="Remove row" className="w-7 h-7 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
-                <Icon name="close" size={13} />
-              </button>
+            <div className="flex items-center justify-between cursor-pointer" onClick={function () { toggleRowExpanded(row.id) }}>
+              <p className="text-sm font-bold text-gray-800">Dept Row {idx + 1}{deptName ? ' · ' + deptName : ''}</p>
+              <div className="flex items-center gap-1.5">
+                <button onClick={function (e) { e.stopPropagation(); removeDeptRow(row.id) }} aria-label="Remove row" className="w-7 h-7 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
+                  <Icon name="close" size={13} />
+                </button>
+                <Icon name="chevronDown" size={14} className="text-gray-400 rotate-180" />
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <div>
                 <label className={LABEL}>Department</label>
                 <select value={row.departmentId} onChange={function (e) { onChangeDepartment(row.id, e) }} className={CTRL}>
@@ -770,36 +944,38 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
               )}
             </div>
 
-            <div>
-              <label className={LABEL}>Remarks</label>
-              <input type="text" value={row.remarks} onChange={function (e) { onChangeRemarks(row.id, e) }}
-                placeholder="Optional note for this row…" className={CTRL} style={{ fontSize: '16px' }} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className={LABEL}>Remarks</label>
+                <input type="text" value={row.remarks} onChange={function (e) { onChangeRemarks(row.id, e) }}
+                  placeholder="Optional note for this row…" className={CTRL} style={{ fontSize: '16px' }} />
+              </div>
               <div>
                 <label className={LABEL}>Req No (optional)</label>
                 <input type="text" value={row.reqNo} onChange={function (e) { onChangeReqNo(row.id, e) }}
                   placeholder="Slip number" className={CTRL} style={{ fontSize: '16px' }} />
               </div>
-              <div>
-                <label className={LABEL}>Req Image (optional)</label>
-                {row.reqImagePreview ? (
-                  <div className="relative">
-                    <a href={row.reqImagePreview} target="_blank" rel="noreferrer">
-                      <img src={row.reqImagePreview} alt="Requisition slip" className="w-full h-9 object-cover rounded-lg border border-gray-300" />
-                    </a>
-                    <button type="button" onClick={function () { removeReqImage(row) }} aria-label="Remove image"
-                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
-                      <Icon name="close" size={10} />
-                    </button>
-                  </div>
-                ) : (
-                  <label className={CTRL + ' flex items-center justify-center gap-1.5 text-gray-500 cursor-pointer'}>
-                    <Icon name="camera" size={14} /> Add photo
-                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={function (e) { onPickReqImage(row, e) }} />
-                  </label>
-                )}
+            </div>
+            <div>
+              <label className={LABEL}>Req Images (optional)</label>
+              <div className="flex flex-wrap gap-2">
+                {(row.reqImages || []).map(function (im) {
+                  return (
+                    <div key={im.id} className="relative w-11 h-11 shrink-0">
+                      <a href={im.previewUrl} target="_blank" rel="noreferrer">
+                        <img src={im.previewUrl} alt="Requisition slip" className="w-11 h-11 object-cover rounded-lg border border-gray-300" />
+                      </a>
+                      <button type="button" onClick={function () { removeReqImage(row, im.id) }} aria-label="Remove image"
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
+                        <Icon name="close" size={8} />
+                      </button>
+                    </div>
+                  )
+                })}
+                <label className="w-11 h-11 shrink-0 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 cursor-pointer hover:bg-gray-50">
+                  <Icon name="camera" size={14} />
+                  <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={function (e) { onPickReqImages(row, e) }} />
+                </label>
               </div>
             </div>
 
@@ -812,42 +988,40 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                 className={'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg border ' + (row.showCasual ? 'bg-indigo-50 border-indigo-400 text-indigo-700' : 'bg-white border-gray-300 text-gray-600')}>
                 <Icon name="plus" size={13} /> Add Casual
               </button>
+              <button onClick={function () { patchRow(row.id, { showExpense: !row.showExpense }) }}
+                className={'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg border ' + (row.showExpense ? 'bg-emerald-50 border-emerald-400 text-emerald-700' : 'bg-white border-gray-300 text-gray-600')}>
+                <Icon name="plus" size={13} /> Adjust Expense
+              </button>
             </div>
 
             {row.showInventory && (
-              <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
+              <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl space-y-1.5">
                 <p className="text-xs font-bold text-gray-500">Inventory used</p>
                 {row.inventoryRows.length > 0 && (
-                  <div className="space-y-2">
-                    {row.inventoryRows.map(function (l) {
+                  <div className="rounded-lg border border-gray-200 bg-white">
+                    <div className="grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 px-2.5 pt-2 pb-1">
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase">Item</span>
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Qty</span>
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Rate</span>
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Total</span>
+                      <span></span>
+                    </div>
+                    {row.inventoryRows.map(function (l, i) {
                       return (
-                        <div key={l.id} className="rounded-lg border border-gray-200 bg-white p-2.5">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="font-semibold text-sm text-gray-800 truncate">{l.name}</p>
-                              <p className="text-xs text-gray-400">{l.unit}</p>
-                            </div>
-                            <button onClick={function () { removeInventoryRow(row, l.id) }} aria-label="Remove item"
-                              className="shrink-0 w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
-                              <Icon name="trash" size={13} />
-                            </button>
+                        <div key={l.id} className={'grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 items-center px-2.5 py-1.5 ' + (i > 0 ? 'border-t border-gray-100' : '')}>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-[12.5px] text-gray-800 truncate">{l.name}</p>
+                            <p className="text-[10px] text-gray-400">{l.unit}</p>
                           </div>
-                          <div className="flex items-end gap-2 mt-2">
-                            <div className="flex-1">
-                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Qty</label>
-                              <input type="number" value={l.qty} onChange={function (e) { changeInvQty(row, l.id, e) }} placeholder="0"
-                                className="w-full h-9 px-2 text-right border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
-                            </div>
-                            <div className="flex-1">
-                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Rate</label>
-                              <input type="number" value={l.ratePaise === '' ? '' : l.ratePaise / 100} onChange={function (e) { changeInvRate(row, l.id, e) }} placeholder="0"
-                                className="w-full h-9 px-2 text-right border border-gray-300 rounded-lg text-gray-700" style={{ fontSize: '16px' }} />
-                            </div>
-                            <div className="flex-1 text-right pb-1.5">
-                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Total</label>
-                              <p className="text-sm font-bold text-gray-900">{rupees((Number(l.qty) || 0) * l.ratePaise)}</p>
-                            </div>
-                          </div>
+                          <input type="number" value={l.qty} onChange={function (e) { changeInvQty(row, l.id, e) }} placeholder="0"
+                            className="w-full h-8 px-1 text-right border border-gray-300 rounded" style={{ fontSize: '16px' }} />
+                          <input type="number" value={l.ratePaise === '' ? '' : l.ratePaise / 100} onChange={function (e) { changeInvRate(row, l.id, e) }} placeholder="0"
+                            className="w-full h-8 px-1 text-right border border-gray-300 rounded text-gray-700" style={{ fontSize: '16px' }} />
+                          <p className="text-right text-[12.5px] font-bold text-gray-900 truncate">{rupees((Number(l.qty) || 0) * l.ratePaise)}</p>
+                          <button onClick={function () { removeInventoryRow(row, l.id) }} aria-label="Remove item"
+                            className="justify-self-end w-7 h-7 rounded-md bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
+                            <Icon name="trash" size={12} />
+                          </button>
                         </div>
                       )
                     })}
@@ -878,7 +1052,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
             )}
 
             {row.showCasual && (
-              <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
+              <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl space-y-1.5">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-bold text-gray-500">Casuals used</p>
                   <button onClick={function () { addCasualRow(row) }} disabled={!row.departmentId}
@@ -887,36 +1061,31 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                   </button>
                 </div>
                 {row.casualRows.length > 0 && (
-                  <div className="space-y-2">
-                    {row.casualRows.map(function (l) {
+                  <div className="rounded-lg border border-gray-200 bg-white">
+                    <div className="grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 px-2.5 pt-2 pb-1">
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase">Role</span>
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Qty</span>
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Rate</span>
+                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Total</span>
+                      <span></span>
+                    </div>
+                    {row.casualRows.map(function (l, i) {
                       var rate = casualRateFor(l.casualRosterId)
                       return (
-                        <div key={l.id} className="rounded-lg border border-gray-200 bg-white p-2.5">
-                          <div className="flex items-start gap-2">
-                            <select value={l.casualRosterId} onChange={function (e) { changeCasualType(row, l.id, e) }}
-                              className="flex-1 h-9 min-w-0 px-2 border border-gray-300 rounded-lg font-semibold text-sm" style={{ fontSize: '16px' }}>
-                              {casualsFor(row.departmentId).map(function (c) { return <option key={c.id} value={c.id}>{c.casual_type}</option> })}
-                            </select>
-                            <button onClick={function () { removeCasualRow(row, l.id) }} aria-label="Remove casual"
-                              className="shrink-0 w-9 h-9 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
-                              <Icon name="trash" size={13} />
-                            </button>
-                          </div>
-                          <div className="flex items-end gap-2 mt-2">
-                            <div className="flex-1">
-                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Qty</label>
-                              <input type="number" value={l.qty} onChange={function (e) { changeCasualQty(row, l.id, e) }}
-                                className="w-full h-9 px-2 text-right border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
-                            </div>
-                            <div className="flex-1 text-right pb-1.5">
-                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Rate</label>
-                              <p className="text-sm text-gray-500">{rupees(rate)}</p>
-                            </div>
-                            <div className="flex-1 text-right pb-1.5">
-                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Total</label>
-                              <p className="text-sm font-bold text-gray-900">{rupees(l.qty * rate)}</p>
-                            </div>
-                          </div>
+                        <div key={l.id} className={'grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 items-center px-2.5 py-1.5 ' + (i > 0 ? 'border-t border-gray-100' : '')}>
+                          <SearchDropdown noVoice
+                            items={casualsFor(row.departmentId, row.subDepartmentId).map(function (c) { return { value: String(c.id), label: c.casual_type } })}
+                            value={l.casualRosterId}
+                            onChange={function (v) { changeCasualType(row, l.id, v) }}
+                            placeholder="Search role..." />
+                          <input type="number" value={l.qty} onChange={function (e) { changeCasualQty(row, l.id, e) }}
+                            className="w-full h-8 px-1 text-right border border-gray-300 rounded" style={{ fontSize: '16px' }} />
+                          <p className="text-right text-[12px] text-gray-500 truncate">{rupees(rate)}</p>
+                          <p className="text-right text-[12.5px] font-bold text-gray-900 truncate">{rupees(l.qty * rate)}</p>
+                          <button onClick={function () { removeCasualRow(row, l.id) }} aria-label="Remove casual"
+                            className="justify-self-end w-7 h-7 rounded-md bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
+                            <Icon name="trash" size={12} />
+                          </button>
                         </div>
                       )
                     })}
@@ -925,6 +1094,61 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                 {row.casualRows.length > 0 && (
                   <p className="text-right text-xs text-gray-500">Casual subtotal <span className="font-bold text-gray-900">{rupees(rowCasSubtotal(row))}</span></p>
                 )}
+              </div>
+            )}
+
+            {row.showExpense && (
+              <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-gray-500">Expense credit adjustments</p>
+                  <button onClick={function () { addExpenseAdjRow(row) }}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-emerald-700 border border-gray-300 rounded-md bg-white">
+                    <Icon name="plus" size={11} /> Add Row
+                  </button>
+                </div>
+                {row.expenseRows.length > 0 && (
+                  <div className="space-y-1.5">
+                    {row.expenseRows.map(function (l) {
+                      return (
+                        <div key={l.id} className="rounded-lg border border-gray-200 bg-white p-2 space-y-1.5">
+                          <div className="flex items-start gap-2">
+                            {/* Not `stacked` -- Type and Sub-Type sit side by
+                                side (ExpenseTypeFields' own 2-col grid) instead
+                                of each taking its own full-width row. Any
+                                extra_fields the sub-type adds still render
+                                below, full width, since they're arbitrary. */}
+                            <div className="flex-1 min-w-0">
+                              <ExpenseTypeFields value={l}
+                                onChange={function (patch) { changeExpenseAdjField(row, l.id, patch) }}
+                                expTypes={expenseTypes} expSubTypes={expenseSubTypes}
+                                vendors={vendors} venues={venues} employees={employees} staff={staff} />
+                            </div>
+                            <button onClick={function () { removeExpenseAdjRow(row, l.id) }} aria-label="Remove expense adjustment"
+                              className="shrink-0 w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
+                              <Icon name="trash" size={13} />
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Credit amount</label>
+                              <input type="number" value={l.amountRupees} onChange={function (e) { changeExpenseAdjField(row, l.id, { amountRupees: e.target.value }) }} placeholder="0"
+                                className="w-full h-8 px-2 text-right border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Remarks (optional)</label>
+                              <input type="text" value={l.remarks} onChange={function (e) { changeExpenseAdjField(row, l.id, { remarks: e.target.value }) }}
+                                className="w-full h-8 px-2 border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                {row.expenseRows.length > 0 && (
+                  <p className="text-right text-xs text-gray-500">Adjustment total <span className="font-bold text-emerald-600">−{rupees(rowAdjSubtotal(row))}</span></p>
+                )}
+                <p className="text-[10.5px] text-gray-400">Credits the chosen expense sub-type's own ledger, and debits this requisition's total below by the same amount.</p>
               </div>
             )}
 
