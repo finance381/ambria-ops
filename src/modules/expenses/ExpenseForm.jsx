@@ -566,7 +566,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           own dates so the pick into a specific one stays deliberate. */}
       {allEventRows.length > 0 && (
         <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={eventId} onPick={setEventId}
-          extraEventIds={extraEventIds} onExtraChange={setExtraEventIds} wide={wide} />
+          extraEventIds={extraEventIds} onExtraChange={setExtraEventIds} wide={wide} venues={venues} />
       )}
     </div>
     )

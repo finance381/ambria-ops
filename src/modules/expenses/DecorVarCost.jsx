@@ -1176,7 +1176,7 @@ function DecorVarCost({ profile, inAdmin }) {
                   <div className="mt-2.5">
                     <p className="text-[11.5px] font-semibold text-slate-500 mb-1.5">Pick the function this sheet is for</p>
                     <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={hdr.event_id} onPick={pickFunctionById}
-                      extraEventIds={hdr.extra_event_ids || []} onExtraChange={function (ids) { setH({ extra_event_ids: ids }) }} wide={wide} />
+                      extraEventIds={hdr.extra_event_ids || []} onExtraChange={function (ids) { setH({ extra_event_ids: ids }) }} wide={wide} venues={venues} />
                   </div>
                 )}
                 {hdr.function_date && !eventsLoading && !hdr.event_id && (

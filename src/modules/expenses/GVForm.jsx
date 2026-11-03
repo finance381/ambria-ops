@@ -217,7 +217,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
         {eventDate && !eventsLoading && events.length === 0 && <p className="text-[12px] text-slate-500">No events on this date</p>}
         {allEventRows.length > 0 && (
           <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={eventId} onPick={setEventId}
-            extraEventIds={extraEventIds} onExtraChange={setExtraEventIds} />
+            extraEventIds={extraEventIds} onExtraChange={setExtraEventIds} venues={venues} />
         )}
       </div>
     )

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { deptCls } from '../../lib/ui'
 import { formatDate } from '../../lib/format'
+import { VENUE_LEGEND } from '../../lib/venueColors'
 
 // ═══ a grid of tiles, not a stack of bars ═════════════════════════
 // Full-width rows spent the whole column on one function and pushed the
@@ -19,10 +20,26 @@ function gridCls(wide) {
   return "grid gap-2 grid-cols-1 sm:grid-cols-2" + (wide ? " lg:grid-cols-4" : "")
 }
 
+// A booking's venue_name is normally one of the 4 main Ambria properties
+// (VENUE_LEGEND) or sync-events' "Outdoor X" fallback — but a tentative
+// event (fn_create_tentative_event) carries whatever name the venues master
+// table has for the venue picked when it was created, which can be a
+// custom one (e.g. a generic placeholder) that's in neither list. The
+// venues table is the source of truth for those, each with its own `code`
+// already shown everywhere else a venue is picked.
+function venueCodeSuffix(venueName, venues) {
+  if (!venueName) return ''
+  var leg = VENUE_LEGEND.find(function (l) { return venueName.indexOf(l.name) !== -1 })
+  if (leg) return ' (' + leg.code + ')'
+  var v = (venues || []).find(function (x) { return String(x.name || '').trim() === venueName.trim() })
+  return v && v.code ? ' (' + v.code + ')' : ''
+}
+
 function FunctionTile(props) {
   var g = props.group
   var selected = props.selected
   var showDate = props.showDate
+  var venues = props.venues
   var head = g.contracts[0]
   return (
     <button type="button" onClick={props.onClick}
@@ -61,7 +78,8 @@ function FunctionTile(props) {
           inside an opened contract, where two functions can fall on
           different days and the date is the thing that tells them apart. */}
       <span className={"block text-[10px] leading-snug truncate " + (selected ? "text-indigo-600" : "text-slate-500")}>
-        {[showDate ? formatDate(head.function_date) : null, head.venue_name,
+        {[showDate ? formatDate(head.function_date) : null,
+          head.venue_name ? head.venue_name + venueCodeSuffix(head.venue_name, venues) : null,
           (head.location && head.location !== head.venue_name) ? head.location : null, head.session]
           .filter(Boolean).join(' · ')}
       </span>
@@ -126,6 +144,7 @@ function FunctionPickerGrid(props) {
   var extraEventIds = props.extraEventIds || []
   var onExtraChange = props.onExtraChange || function () {}
   var wide = props.wide
+  var venues = props.venues
   var [openContractKey, setOpenContractKey] = useState(null)
   // Once a function is chosen the other cards have done their job. Keeping
   // them on screen pushed the amount, category and receipt fields a full
@@ -190,7 +209,7 @@ function FunctionPickerGrid(props) {
                  to no selection at all (not just a different one), which a
                  write-your-own-detail fallback field needs to be able to
                  show. */
-              <FunctionTile key={f.key} group={f} selected={true} showDate={true}
+              <FunctionTile key={f.key} group={f} selected={true} showDate={true} venues={venues}
                 onClick={function () { toggle(id) }} />
             )
           })}
@@ -236,7 +255,7 @@ function FunctionPickerGrid(props) {
             var id = String(f.contracts[0].id)
             var sel = selectedIds.indexOf(id) !== -1
             return (
-              <FunctionTile key={f.key} group={f} selected={sel} showDate={true}
+              <FunctionTile key={f.key} group={f} selected={sel} showDate={true} venues={venues}
                 onClick={function () { toggle(id) }} />
             )
           })}
@@ -261,7 +280,7 @@ function FunctionPickerGrid(props) {
         var id = String(f.contracts[0].id)
         var sel = id === eventId
         return (
-          <FunctionTile key={f.key} group={f} selected={sel}
+          <FunctionTile key={f.key} group={f} selected={sel} venues={venues}
             onClick={function () { pickStandalone(id) }} />
         )
       })}
