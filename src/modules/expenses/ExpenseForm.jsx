@@ -1841,7 +1841,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         }
         if (editAllocRows.length > 0) {
           var { error: editAllocErr } = await supabase.from('expense_allocations').insert(editAllocRows)
-          if (editAllocErr) throw new Error('Allocations failed: ' + editAllocErr.message)
+          if (editAllocErr) {
+            var editAllocDump = editAllocRows.map(function (r) { return 'dept=' + r.department + '/' + r.department_id + ' venue=' + r.venue_id + ' src=' + r.source }).join('; ')
+            throw new Error('Allocations failed: ' + editAllocErr.message + ' [' + editAllocDump + ']')
+          }
         }
 
         // Wallet diff — use actual wallet exposure (cash portion + tax if credit), not gross amount
@@ -2021,16 +2024,47 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
             }
           }
 
+          // The entry-level type's own department, resolved once up front -- used both as
+          // the fallback for a split row that set a venue but no department (below) and for
+          // the whole-remainder auto-default row further down.
+          var entryExpType = e.expenseTypeId ? expenseTypes.find(function (t) { return String(t.id) === String(e.expenseTypeId) }) : null
+          var entryDeptId = null
+          var entryDeptName = null
+          if (entryExpType) {
+            if (entryExpType.department_id) entryDeptId = entryExpType.department_id
+            else if (entryExpType.sub_department_id) {
+              var entrySd = subDepartments.find(function (s) { return String(s.id) === String(entryExpType.sub_department_id) })
+              if (entrySd && entrySd.department_id) entryDeptId = entrySd.department_id
+            }
+          }
+          if (entryDeptId) {
+            // expense_types.department_id is bigint -> PostgREST sends it as a string,
+            // while departments.id is int4 -> a number. A bare === here silently never
+            // matches, leaving `department` (text, NOT NULL) null while department_id
+            // is correctly set -- which fails the DB insert on a constraint that gives
+            // no hint it was actually a type-mismatch lookup bug.
+            var entryDeptRow = departments.find(function (d) { return String(d.id) === String(entryDeptId) })
+            if (entryDeptRow) entryDeptName = entryDeptRow.name
+          }
+
           var allocRows = e.allocations
             .filter(function (a) { return a.venueId || a.departmentId })
             .map(function (a) {
               // Fallback allocation type to entry's top-level if user left it blank
               var aTypeId = a.expenseTypeId ? Number(a.expenseTypeId) : (e.expenseTypeId ? Number(e.expenseTypeId) : null)
               var aSubTypeId = a.expenseSubTypeId ? Number(a.expenseSubTypeId) : (e.expenseSubTypeId ? Number(e.expenseSubTypeId) : null)
+              // A split row can set just a venue with no department (the filter above lets
+              // it through on venueId alone) -- department is NOT NULL, so that used to
+              // insert a bare null and fail this exact constraint. Falls back to the
+              // entry's own department rather than leaving it unset.
+              var aDeptId = a.departmentId ? Number(a.departmentId) : entryDeptId
+              var aDeptName = a.departmentId
+                ? ((departments.find(function (d) { return String(d.id) === a.departmentId }) || {}).name || null)
+                : entryDeptName
               return {
                 expense_id: exp.id,
-                department: a.departmentId ? (departments.find(function (d) { return String(d.id) === a.departmentId }) || {}).name || null : null,
-                department_id: a.departmentId ? Number(a.departmentId) : null,
+                department: aDeptName,
+                department_id: aDeptId,
                 venue_id: a.venueId ? Number(a.venueId) : null,
                 expense_type_id: aTypeId,
                 expense_sub_type_id: aSubTypeId,
@@ -2053,29 +2087,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           var allocSum = allocRows.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0)
           var remainderPaise = paise - allocSum
           if (remainderPaise > 0) {
-            var expType = e.expenseTypeId ? expenseTypes.find(function (t) { return String(t.id) === String(e.expenseTypeId) }) : null
-            var defaultDeptId = null
-            var defaultDeptName = null
-            if (expType) {
-              if (expType.department_id) defaultDeptId = expType.department_id
-              else if (expType.sub_department_id) {
-                var sd = subDepartments.find(function (s) { return String(s.id) === String(expType.sub_department_id) })
-                if (sd && sd.department_id) defaultDeptId = sd.department_id
-              }
-            }
-            if (defaultDeptId) {
-              // expense_types.department_id is bigint -> PostgREST sends it as a string,
-              // while departments.id is int4 -> a number. A bare === here silently never
-              // matches, leaving `department` (text, NOT NULL) null while department_id
-              // is correctly set -- which fails the DB insert on a constraint that gives
-              // no hint it was actually a type-mismatch lookup bug.
-              var deptRow = departments.find(function (d) { return String(d.id) === String(defaultDeptId) })
-              if (deptRow) defaultDeptName = deptRow.name
-            }
             allocRows.push({
               expense_id: exp.id,
-              department: defaultDeptName,
-              department_id: defaultDeptId,
+              department: entryDeptName,
+              department_id: entryDeptId,
               venue_id: null,
               expense_type_id: e.expenseTypeId ? Number(e.expenseTypeId) : null,
               expense_sub_type_id: e.expenseSubTypeId ? Number(e.expenseSubTypeId) : null,
@@ -2086,7 +2101,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           }
           if (allocRows.length > 0) {
             var { error: aErrIns } = await supabase.from('expense_allocations').insert(allocRows)
-            if (aErrIns) { console.error('ALLOC_INSERT_FAIL', aErrIns, allocRows); throw new Error('Allocations failed: ' + aErrIns.message) }
+            if (aErrIns) {
+              console.error('ALLOC_INSERT_FAIL', aErrIns, allocRows)
+              // Dumped into the error itself (not just the console) so the existing
+              // Copy-error button on a failed submission captures enough to diagnose
+              // without needing access to the device's own devtools.
+              var allocDump = allocRows.map(function (r) { return 'dept=' + r.department + '/' + r.department_id + ' venue=' + r.venue_id + ' src=' + r.source }).join('; ')
+              throw new Error('Allocations failed: ' + aErrIns.message + ' [' + allocDump + ']')
+            }
           }
 
           // Wallet only debits the immediate cash portion the user set as "Cash from Wallet".
