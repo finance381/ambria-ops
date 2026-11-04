@@ -1410,7 +1410,9 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     var ratePaise = bulkVendorRate ? Math.round(Number(bulkVendorRate) * 100) : null
     // allVendorsRaw, not the scoped vendorList -- a vendor outside the viewer's own
     // category tags would otherwise read as "no contact on file" and null out a real one.
-    var vendorRow = (allVendorsRaw || []).find(function (v) { return v.name === vendorName })
+    // Case-insensitive -- vendorName here can be free-typed, and "sharma traders" missing
+    // the stored "Sharma Traders" the same way nulled out a real contact.
+    var vendorRow = (allVendorsRaw || []).find(function (v) { return v.name.toLowerCase() === vendorName.toLowerCase() })
     var vendorContact = vendorRow ? (vendorRow.phone || vendorRow.contact || null) : null
     for (var i = 0; i < targetItems.length; i++) {
       var it = targetItems[i]
@@ -1571,7 +1573,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     var sharedVendor = uniq.length === 1 ? uniq[0] : ''
     var sharedContact = ''
     if (sharedVendor) {
-      var vRow = (allVendorsRaw || []).find(function (v) { return v.name === sharedVendor })
+      var vRow = (allVendorsRaw || []).find(function (v) { return v.name.toLowerCase() === sharedVendor.toLowerCase() })
       sharedContact = vRow ? (vRow.phone || vRow.contact || '') : (selectedItems[0].vendor_contact || '')
     }
     var itemForms = {}
@@ -2245,7 +2247,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                     <input type="text" list="multi-vendor-list" value={multiForm.vendor}
                       onChange={function (e) {
                         var name = e.target.value
-                        var vRow = (allVendorsRaw || []).find(function (v) { return v.name === name })
+                        var vRow = (allVendorsRaw || []).find(function (v) { return v.name.toLowerCase() === name.toLowerCase() })
                         setMultiForm(function (p) { return Object.assign({}, p, { vendor: name, vendorContact: vRow ? (vRow.phone || vRow.contact || '') : p.vendorContact }) })
                       }}
                       placeholder="Type or pick vendor..."
