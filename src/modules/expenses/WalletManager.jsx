@@ -197,6 +197,13 @@ var WALLET_PAGE_SIZES = [30, 60, 120]
 function mergeExpenseWalletRows(txns) {
   var groups = {}
   var out = []
+  // Every sub-row beyond a group's first (an edit, typically) -- its own real
+  // money-effect happened at its own real timestamp, which can fall between
+  // two OTHER, unrelated displayed rows once the merged card is anchored to
+  // its original transaction instead. The gap check uses this to recognize
+  // "the balance here is exactly what this known edit, not anything missing,
+  // accounts for" instead of flagging it as unexplained.
+  var trailingEdits = []
   txns.forEach(function (t) {
     var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
     if (!isExpRow) { out.push(t); return }
@@ -207,6 +214,7 @@ function mergeExpenseWalletRows(txns) {
     var rows = groups[key].slice().sort(function (a, b) { return new Date(a.created_at) - new Date(b.created_at) })
     if (rows.length === 1) { out.push(rows[0]); return }
     var first = rows[0]
+    rows.slice(1).forEach(function (r) { trailingEdits.push(r) })
     var net = rows.reduce(function (s, r) { return s + (r.type === 'credit' ? -(r.amount_paise || 0) : (r.amount_paise || 0)) }, 0)
     // The balance right before this GROUP started (i.e. before its original,
     // first transaction) -- the one stable anchor, since later edits can
@@ -238,6 +246,11 @@ function mergeExpenseWalletRows(txns) {
       _isMerged: true,
     }))
   })
+  // Stashed on the array itself (not a second return value) so every
+  // existing call site -- several of which immediately .sort() this result,
+  // which mutates and returns the same array -- keeps seeing it with no
+  // changes needed there.
+  out._trailingEdits = trailingEdits
   return out
 }
 
@@ -4374,7 +4387,24 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       if (_selfIdx !== -1 && _olderNeighbor && !_olderNeighbor._isMerged) {
         var _impliedBefore = isCredit ? (t.balance_after_paise - t.amount_paise) : (t.balance_after_paise + t.amount_paise)
         var _gap = _impliedBefore - (_olderNeighbor.balance_after_paise || 0)
-        if (Math.abs(_gap) >= 100) gapNote = _gap
+        if (Math.abs(_gap) >= 100) {
+          // An edit elsewhere can land, by its own real timestamp, strictly
+          // between these two neighbors even though its card now sits
+          // somewhere else entirely (anchored to its own original
+          // transaction) -- that's a known, accounted-for amount, not a
+          // missing one. Only whatever's left unexplained after subtracting
+          // it is a real gap worth a look.
+          var _tTime = new Date(t._sortAt || t.created_at).getTime()
+          var _nTime = new Date(_olderNeighbor._sortAt || _olderNeighbor.created_at).getTime()
+          var _lo = Math.min(_tTime, _nTime), _hi = Math.max(_tTime, _nTime)
+          var _explained = (sortedTxns._trailingEdits || []).reduce(function (s, e) {
+            var et = new Date(e.created_at).getTime()
+            if (et <= _lo || et >= _hi) return s
+            return s + (e.type === 'credit' ? (e.amount_paise || 0) : -(e.amount_paise || 0))
+          }, 0)
+          var _residual = _gap - _explained
+          if (Math.abs(_residual) >= 100) gapNote = _residual
+        }
       }
     }
     var issuedPath = t.issued_image_path || null
