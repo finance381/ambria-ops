@@ -206,22 +206,35 @@ function mergeExpenseWalletRows(txns) {
   Object.keys(groups).forEach(function (key) {
     var rows = groups[key].slice().sort(function (a, b) { return new Date(a.created_at) - new Date(b.created_at) })
     if (rows.length === 1) { out.push(rows[0]); return }
-    var latest = rows[rows.length - 1]
+    var first = rows[0]
     var net = rows.reduce(function (s, r) { return s + (r.type === 'credit' ? -(r.amount_paise || 0) : (r.amount_paise || 0)) }, 0)
-    out.push(Object.assign({}, rows[0], {
+    // The balance right before this GROUP started (i.e. before its original,
+    // first transaction) -- the one stable anchor, since later edits can
+    // land after other unrelated transactions and latest.balance_after_paise
+    // would then belong to a different point in time than where this merged
+    // row now sits.
+    var impliedBeforeFirst = first.type === 'credit'
+      ? (first.balance_after_paise - (first.amount_paise || 0))
+      : (first.balance_after_paise + (first.amount_paise || 0))
+    out.push(Object.assign({}, first, {
       amount_paise: Math.abs(net),
       type: net < 0 ? 'credit' : 'debit',
-      balance_after_paise: latest.balance_after_paise,
+      // The balance as if this row's full (merged) effect happened in one
+      // atomic step right here -- what actually reconciles against whatever
+      // sits above/below it in the list, not the literal post-edit balance,
+      // which can reflect other transactions that happened in between.
+      balance_after_paise: net < 0 ? (impliedBeforeFirst + Math.abs(net)) : (impliedBeforeFirst - Math.abs(net)),
       // Anchored to the ORIGINAL transaction, not the latest edit -- editing
       // an old expense shouldn't walk it past newer, unrelated entries that
       // happened in between. Kept sorting by the edit's own time before;
       // that's exactly what made an edited expense jump above whatever had
       // happened since, which read as the ledger reordering itself.
-      _sortAt: rows[0].created_at,
-      // This card can now legitimately span other transactions that happened
-      // between its original debit and its later edit, so the gap check
-      // (renderTxnRow) can't treat its balance_after/amount_paise as one
-      // atomic step -- see _isMerged there.
+      _sortAt: first.created_at,
+      // A residual gap can still show up against whichever row ends up
+      // positioned directly ABOVE this one (an edit that crossed another,
+      // unrelated transaction's position never fully reconciles against
+      // that one specific neighbor) -- the gap check (renderTxnRow) skips
+      // that pairing rather than flag a false alarm nothing is wrong about.
       _isMerged: true,
     }))
   })
