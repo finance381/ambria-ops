@@ -217,7 +217,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
         {eventDate && !eventsLoading && events.length === 0 && <p className="text-[12px] text-slate-500">No events on this date</p>}
         {allEventRows.length > 0 && (
           <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={eventId} onPick={setEventId}
-            extraEventIds={extraEventIds} onExtraChange={setExtraEventIds} />
+            extraEventIds={extraEventIds} onExtraChange={setExtraEventIds} venues={venues} />
         )}
       </div>
     )
@@ -290,11 +290,15 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
   function deriveParentDeptId() {
     var parentTypeId = exp.expense_type_id ? Number(exp.expense_type_id) : null
     if (!parentTypeId) return null
-    var parentType = expenseTypes.find(function (t) { return t.id === parentTypeId })
+    // expense_types.id/department_id/sub_department_id are bigint -> PostgREST
+    // sends them as strings, while departments.id/sub_departments.id are int4
+    // -> numbers. A bare === against those silently never matches (see
+    // ExpenseForm.jsx's identical fix), so every comparison here is String()'d.
+    var parentType = expenseTypes.find(function (t) { return String(t.id) === String(parentTypeId) })
     if (!parentType) return null
     if (parentType.department_id) return parentType.department_id
     if (parentType.sub_department_id) {
-      var sd = subDepartments.find(function (s) { return s.id === parentType.sub_department_id })
+      var sd = subDepartments.find(function (s) { return String(s.id) === String(parentType.sub_department_id) })
       if (sd && sd.department_id) return sd.department_id
     }
     return null
@@ -340,7 +344,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
     })
 
     if (remainderPaise > 0) {
-      var parentDeptRow = departments.find(function (d) { return d.id === parentDeptId })
+      var parentDeptRow = departments.find(function (d) { return String(d.id) === String(parentDeptId) })
       payload.push({
         department: parentDeptRow ? parentDeptRow.name : null,
         department_id: parentDeptId,

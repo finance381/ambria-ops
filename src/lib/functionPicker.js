@@ -203,10 +203,21 @@ export async function computeContractBalance(pool, lmsRows) {
 // contract, not just whichever date happened to be clicked.
 export async function loadFunctionPickerPool(dateStr) {
   if (!dateStr) return { dateRows: [], allRows: [] }
+  // department IS NULL normally means a stale orphan row (no contract_no, no
+  // lms_event_id — never went through sync-events' normalizeVenue): blank
+  // "VENUE"/"VENU" tiles with no real contract to post a cost/collection
+  // against. The one legitimate department-null case is a genuine tentative
+  // event (fn_create_tentative_event, 00040) — it has no department either
+  // since there's no LMS contract yet — so those are let through via
+  // is_tentative instead of lumped in with the junk. A tentative event that's
+  // since been merged into a real one (merged_into_id set) is excluded too,
+  // same as every other pick-list in the app already does for it.
   var { data } = await supabase.from('events')
-    .select(FUNC_PICKER_COLS)
+    .select(FUNC_PICKER_COLS + ', is_tentative, merged_into_id')
     .eq('function_date', dateStr)
     .is('lms_cancelled_at', null)
+    .is('merged_into_id', null)
+    .or('department.not.is.null,is_tentative.eq.true')
     .order('event_name')
   var dateRows = data || []
 

@@ -123,12 +123,12 @@ function Requisitions({ profile, onBack }) {
   }
 
   useEffect(function () {
+    // Not scoped to profile.event_dept_ids -- see ExpenseForm.jsx's identical fix:
+    // that client-side filter duplicated RLS (which already gates real access)
+    // and broke lookups for anyone whose relevant department fell outside their
+    // scoped list, even where picking it was never itself restricted.
     supabase.from('departments').select('id, name').eq('active', true).eq('hide_from_lists', false).then(function (res) {
-      var all = res.data || []
-      var isAdminRole = hasPerm(profile?.permsNew, 'procurement.requisitions.admin_approve')
-      var userDeptIds = profile?.event_dept_ids || []
-      var filtered = (isAdminRole || userDeptIds.length === 0) ? all : all.filter(function (d) { return userDeptIds.indexOf(d.id) !== -1 })
-      setDepartments(filtered)
+      setDepartments(res.data || [])
     })
     supabase.from('sub_departments').select('id, name, department_id').order('name').then(function (res) {
       setSubDeptOptions(res.data || [])
@@ -1662,9 +1662,12 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             var headerWarning = null
             var scopedType = expTypeId ? expenseTypes.find(function (et) { return String(et.id) === String(expTypeId) }) : null
             if (scopedType && scopedType.department_id) {
-              var mismatches = expAllocations.filter(function (a) { return a.departmentId && Number(a.departmentId) !== scopedType.department_id })
+              // scopedType.department_id (expense_types, bigint) arrives as a string from
+              // PostgREST -- Number(...) !== it always holds, and d.id (departments, int4)
+              // === it never matches (see ExpenseForm.jsx's identical fix). Normalize both.
+              var mismatches = expAllocations.filter(function (a) { return a.departmentId && Number(a.departmentId) !== Number(scopedType.department_id) })
               if (mismatches.length > 0) {
-                var typeDept = departments.find(function (d) { return d.id === scopedType.department_id })
+                var typeDept = departments.find(function (d) { return String(d.id) === String(scopedType.department_id) })
                 headerWarning = (
                   <div className="px-2.5 py-1.5 bg-amber-50 border border-amber-300 rounded-md text-[11px] text-amber-800">
                     ⚠️ Type "{scopedType.name}" is scoped to <b>{typeDept?.name || ('dept #' + scopedType.department_id)}</b>, but {mismatches.length} allocation{mismatches.length > 1 ? 's use' : ' uses'} a different dept. Allowed but flagged for review.

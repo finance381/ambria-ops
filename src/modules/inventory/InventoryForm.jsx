@@ -103,6 +103,14 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   var { t } = useLang()
   var seed = item || prefill || null
   var [categories, setCategories] = useState([])
+  // Unfiltered, unlike `categories` above (which is scoped to the viewing user's own
+  // category_ids for the picker). Deciding whether THIS item is a catering-store item
+  // has to use the item's own true category data regardless of who's viewing it --
+  // scoping that lookup used to make isCatStore silently come back false whenever the
+  // item's real category fell outside the editor's own scope, routing a catering-store
+  // item into inventory_items (a different table, its own id sequence) on save, which
+  // can silently overwrite an unrelated item sharing that numeric id.
+  var [allCategoriesRaw, setAllCategoriesRaw] = useState([])
   var [subCategories, setSubCategories] = useState([])
   var [existingItems, setExistingItems] = useState([])
   var [departments, setDepartments] = useState([])
@@ -270,7 +278,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   }, [categoryId])
   useEffect(function () {
     if (!cateringStoreSubDeptId || !categoryId || !name.trim()) { setBrandList([]); return }
-    var cat = categories.find(function (c) { return String(c.id) === categoryId })
+    var cat = allCategoriesRaw.find(function (c) { return String(c.id) === categoryId })
     if (!cat || cat.sub_department_id !== cateringStoreSubDeptId) { setBrandList([]); return }
     supabase.from('catering_store_items')
       .select('brand')
@@ -283,7 +291,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
         var brands = [...new Set((res.data || []).map(function (r) { return r.brand }).filter(Boolean))].sort()
         setBrandList(brands)
       })
-  }, [categoryId, cateringStoreSubDeptId, name])
+  }, [categoryId, cateringStoreSubDeptId, name, allCategoriesRaw])
   function searchItems(term) {
     if (itemSearchTimer.current) clearTimeout(itemSearchTimer.current)
     if (!term || term.length < 2) { setExistingItems([]); return }
@@ -431,6 +439,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
 
    var allCats = filterUserCategories(catRes.data || [], profile)
     setCategories(allCats)
+    setAllCategoriesRaw(catRes.data || [])
     setDepartments(deptRes.data || [])
     setSubVenues(subVenueRes.data || [])
     setSubDepartments(allSubDepts)
@@ -968,7 +977,10 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
 
   var showPackSize = (function () {
     if (!cateringStoreSubDeptId || !categoryId) return false
-    var cat = categories.find(function (c) { return String(c.id) === categoryId })
+    // allCategoriesRaw, not the user-scoped `categories` -- this decides which TABLE the
+    // item is saved into (see isCatStore below), which must follow the item's own real
+    // category regardless of the viewing user's own category scope.
+    var cat = allCategoriesRaw.find(function (c) { return String(c.id) === categoryId })
     return cat?.sub_department_id === cateringStoreSubDeptId
   })()
 

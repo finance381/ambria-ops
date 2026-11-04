@@ -111,14 +111,32 @@ function CsvImportModal({ open, onClose, onSaved }) {
     return { headers: headers, rows: rows }
   }
 
+  // A header match has to ignore case/whitespace — "Phone" in the file vs.
+  // the "phone" default in this field looked identical to the eye but a
+  // literal r[phoneCol] lookup silently returned undefined for every row,
+  // which read as "354 invalid phones" instead of the real "wrong column
+  // name" problem.
+  function findCol(headers, want) {
+    var w = (want || '').trim().toLowerCase()
+    return headers.find(function (h) { return h.trim().toLowerCase() === w })
+  }
+
   async function doImport() {
     if (saving) return
     setSaving(true); setError(''); setResult(null)
     var parsed = parseCsv(rawText)
     if (parsed.rows.length === 0) { setSaving(false); setError('No rows found — paste CSV content with a header row'); return }
 
+    var phoneKey = findCol(parsed.headers, phoneCol)
+    if (!phoneKey) {
+      setSaving(false)
+      setError('No column named "' + phoneCol + '" in this file. Headers found: ' + parsed.headers.join(', '))
+      return
+    }
+    var nameKey = findCol(parsed.headers, nameCol)
+
     var rows = parsed.rows.map(function (r) {
-      return { phone: r[phoneCol] || '', name: r[nameCol] || null, source: 'csv' }
+      return { phone: r[phoneKey] || '', name: (nameKey ? r[nameKey] : '') || null, source: 'csv' }
     })
 
     var res = await supabase.rpc('rpc_wa_contact_upsert_bulk', { p_rows: rows })

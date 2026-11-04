@@ -14,6 +14,11 @@ function imagePublicUrl(path) {
 
 function Vendors({ profile }) {
   var [vendors, setVendors] = useState([])
+  // Unfiltered, unlike `vendors` (scoped to the viewer's own category tags for the list/
+  // export, which is legitimate). The CSV import's duplicate-detection has to check every
+  // vendor regardless of the importer's own tags, or a vendor outside their scope reads
+  // as "new" and gets inserted a second time.
+  var [allVendorsRaw, setAllVendorsRaw] = useState([])
   var [categories, setCategories] = useState([])
   var [departments, setDepartments] = useState([])
   var [subDepartments, setSubDepartments] = useState([])
@@ -54,6 +59,7 @@ function Vendors({ profile }) {
       supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
     ])
     setVendors(filterVisibleVendors(vRes.data || [], profile))
+    setAllVendorsRaw(vRes.data || [])
     setCategories(cRes.data || [])
     setDepartments(dRes.data || [])
     setSubDepartments(sdRes.data || [])
@@ -365,9 +371,9 @@ function Vendors({ profile }) {
 
       var rowId = has.id ? col(raw, 'id') : ''
       var existing = null
-      if (rowId) existing = vendors.find(function (v) { return String(v.id) === rowId })
+      if (rowId) existing = allVendorsRaw.find(function (v) { return String(v.id) === rowId })
       if (rowId && !existing) { skipped.push({ row: r + 1, name: name, reason: 'ID "' + rowId + '" not found' }); continue }
-      if (!existing) existing = vendors.find(function (v) { return v.name.toLowerCase() === name.toLowerCase() })
+      if (!existing) existing = allVendorsRaw.find(function (v) { return v.name.toLowerCase() === name.toLowerCase() })
 
       var catIds; var catUnknown = []
       if (has.cats) {

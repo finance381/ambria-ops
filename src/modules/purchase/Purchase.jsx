@@ -84,6 +84,13 @@ function Purchase({ profile, mode }) {
     }
   }, [view])
   var [vendorList, setVendorList] = useState([])
+  // Unfiltered, unlike `vendorList` (scoped to the viewing user's category tags for the
+  // picker dropdowns). "Does this vendor already exist" / "what's its real contact"
+  // lookups have to check every vendor regardless of who's viewing, or a vendor outside
+  // the viewer's own scope reads as "not found" -- which either nulls out a real
+  // vendor_contact on bulk-apply, or prompts "add to master" and inserts a duplicate
+  // vendor row for one that already exists.
+  var [allVendorsRaw, setAllVendorsRaw] = useState([])
   var [staffList, setStaffList] = useState([])
   var [receivingItems, setReceivingItems] = useState([])
   var [receivingLoading, setReceivingLoading] = useState(false)
@@ -106,8 +113,11 @@ function Purchase({ profile, mode }) {
       loadQueue()
       loadStaff()
       supabase.from('vendors').select('id, name, contact, phone, category_ids, active, expense_sub_type_ids').eq('active', true).order('name')
-        .then(function (r) { setVendorList(filterVisibleVendors(r.data || [], profile)) })
-        .catch(function () { setVendorList([]) })
+        .then(function (r) {
+          setVendorList(filterVisibleVendors(r.data || [], profile))
+          setAllVendorsRaw(r.data || [])
+        })
+        .catch(function () { setVendorList([]); setAllVendorsRaw([]) })
     }
   }, [])
 
@@ -688,6 +698,7 @@ function Purchase({ profile, mode }) {
         staffList={staffList}
         saving={saving}
         vendorList={vendorList}
+        allVendorsRaw={allVendorsRaw}
         onBack={function () { navBack() }}
         onStatusChange={updatePoStatus}
         onAssign={assignPurchaser}
@@ -1297,7 +1308,7 @@ function ReceivingContent({ items, loading, receivingItem, setReceivingItem, rec
 // ═══════════════════════════════════════════════════════════════
 // PO DETAIL
 // ═══════════════════════════════════════════════════════════════
-function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, vendorList, onBack, onStatusChange, onAssign, onSaveVendor, onMarkPurchased, onDeletePo, onRemoveItem, onCancelPo, onConfirmReturn }) {
+function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, vendorList, allVendorsRaw, onBack, onStatusChange, onAssign, onSaveVendor, onMarkPurchased, onDeletePo, onRemoveItem, onCancelPo, onConfirmReturn }) {
   var [editingVendor, setEditingVendor] = useState(null)
   var [vendorForm, setVendorForm] = useState({ name: '', contact: '', rate: '' })
   var [vendorSearch, setVendorSearch] = useState('')
@@ -1397,7 +1408,9 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     var existing = targetItems.filter(function (it) { return it.vendor_name })
     if (existing.length > 0 && !(await appConfirm('Overwrite vendor on ' + existing.length + ' item(s) that already has one?'))) return
     var ratePaise = bulkVendorRate ? Math.round(Number(bulkVendorRate) * 100) : null
-    var vendorRow = (vendorList || []).find(function (v) { return v.name === vendorName })
+    // allVendorsRaw, not the scoped vendorList -- a vendor outside the viewer's own
+    // category tags would otherwise read as "no contact on file" and null out a real one.
+    var vendorRow = (allVendorsRaw || []).find(function (v) { return v.name === vendorName })
     var vendorContact = vendorRow ? (vendorRow.phone || vendorRow.contact || null) : null
     for (var i = 0; i < targetItems.length; i++) {
       var it = targetItems[i]
@@ -1558,7 +1571,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     var sharedVendor = uniq.length === 1 ? uniq[0] : ''
     var sharedContact = ''
     if (sharedVendor) {
-      var vRow = (vendorList || []).find(function (v) { return v.name === sharedVendor })
+      var vRow = (allVendorsRaw || []).find(function (v) { return v.name === sharedVendor })
       sharedContact = vRow ? (vRow.phone || vRow.contact || '') : (selectedItems[0].vendor_contact || '')
     }
     var itemForms = {}
@@ -1673,7 +1686,9 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     setPurchasingItem(null)
 
     if (vendorChanged && newVendorName) {
-      var isInMaster = (vendorList || []).some(function (v) { return v.name.toLowerCase() === newVendorName.toLowerCase() })
+      // allVendorsRaw -- a vendor that exists but falls outside the viewer's own
+      // category tags used to read as "not in master" and prompt inserting a duplicate.
+      var isInMaster = (allVendorsRaw || []).some(function (v) { return v.name.toLowerCase() === newVendorName.toLowerCase() })
       if (!isInMaster) {
         setShowAddVendor({ name: newVendorName, contact: '' })
       }
@@ -2230,7 +2245,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                     <input type="text" list="multi-vendor-list" value={multiForm.vendor}
                       onChange={function (e) {
                         var name = e.target.value
-                        var vRow = (vendorList || []).find(function (v) { return v.name === name })
+                        var vRow = (allVendorsRaw || []).find(function (v) { return v.name === name })
                         setMultiForm(function (p) { return Object.assign({}, p, { vendor: name, vendorContact: vRow ? (vRow.phone || vRow.contact || '') : p.vendorContact }) })
                       }}
                       placeholder="Type or pick vendor..."
