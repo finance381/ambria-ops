@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { supabase } from '../../lib/supabase'
+import { supabase, isJwtExpiredError } from '../../lib/supabase'
 import { stopAllVoice } from '../../lib/voiceRegistry'
 import { useVoice } from '../../hooks/useVoice'
 import { titleCase, formatDate, formatPoints } from '../../lib/format'
@@ -225,6 +225,13 @@ function Requisitions({ profile, onBack }) {
     if (venueFilter) query = query.overlaps('venue_ids', [Number(venueFilter)])
 
     var { data, error } = await query
+    if (error && isJwtExpiredError(error)) {
+      // A stale token after the tab sat backgrounded -- force a refresh and
+      // retry once rather than showing the user a raw "JWT expired" alert.
+      await supabase.auth.getSession()
+      var retry = await query
+      data = retry.data; error = retry.error
+    }
     if (error) { alert('Failed to load approvals: ' + error.message); setLoadingMore(false); return }
 
     var rows = data || []

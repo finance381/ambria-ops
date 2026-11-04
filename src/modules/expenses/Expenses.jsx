@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, isJwtExpiredError } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import ExpenseFormMulti from './ExpenseForm'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
@@ -373,6 +373,13 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     if (amountMax) query = query.lte('amount_paise', Math.round(Number(amountMax) * 100))
 
     var { data, error } = await query
+    if (error && isJwtExpiredError(error)) {
+      // A stale token after the tab sat backgrounded -- force a refresh and
+      // retry once rather than showing the user a raw "JWT expired" alert.
+      await supabase.auth.getSession()
+      var retry = await query
+      data = retry.data; error = retry.error
+    }
     if (error) { alert('Failed to load approvals: ' + error.message); setLoadingMore(false); return }
 
     var rows = data || []

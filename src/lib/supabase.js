@@ -38,6 +38,15 @@ export async function edgeFnErrorMessage(error) {
   return error.message || 'Request failed'
 }
 
+// A stale token (see useAuth.js's visibilitychange fix for why this still
+// happens occasionally despite it) surfaces as this exact PostgREST error.
+// Call sites that would otherwise show it verbatim to the user can instead
+// force a session refresh and retry once -- turning a raw "JWT expired"
+// alert into a silent recovery.
+export function isJwtExpiredError(error) {
+  return !!error && typeof error.message === 'string' && error.message.toLowerCase().indexOf('jwt expired') !== -1
+}
+
 export function getImageUrl(path) {
   if (!path) return null
   if (path.startsWith('http') || path.startsWith('data:')) return path
