@@ -1787,6 +1787,31 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           try { await supabase.storage.from('receipts').remove(removedReceipts) } catch (_) {}
         }
 
+        // The entry-level type's own department, resolved and validated BEFORE the old
+        // allocations are deleted below -- a department that can't be found now fails
+        // loudly with a plain-language reason instead of wiping this expense's existing
+        // allocations and only then failing the replacement insert, which would leave it
+        // with zero allocations and no way back (see the new-expense path's identical
+        // up-front check for why this matters).
+        var editExpType = e0.expenseTypeId ? expenseTypes.find(function (t) { return String(t.id) === String(e0.expenseTypeId) }) : null
+        var editDefaultDeptId = null
+        var editDefaultDeptName = null
+        if (editExpType) {
+          if (editExpType.department_id) editDefaultDeptId = editExpType.department_id
+          else if (editExpType.sub_department_id) {
+            var editSd = subDepartments.find(function (s) { return String(s.id) === String(editExpType.sub_department_id) })
+            if (editSd && editSd.department_id) editDefaultDeptId = editSd.department_id
+          }
+        }
+        if (editDefaultDeptId) {
+          var editDeptRow = departments.find(function (d) { return String(d.id) === String(editDefaultDeptId) })
+          if (editDeptRow) editDefaultDeptName = editDeptRow.name
+          else {
+            throw new Error('Expense type "' + (editExpType.name || e0.expenseTypeId) + '" is set up to use department #' + editDefaultDeptId +
+              ', but that department could not be found -- it may be inactive or hidden. Ask an admin to check Categories > Departments before saving this edit.')
+          }
+        }
+
         // Replace allocations
         await supabase.from('expense_allocations').delete().eq('expense_id', editExp.id)
         var editAllocRows = e0.allocations
@@ -1813,22 +1838,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         var editAllocSum = editAllocRows.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0)
         var editRemainderPaise = newPaise - editAllocSum
         if (editRemainderPaise > 0) {
-          var editExpType = e0.expenseTypeId ? expenseTypes.find(function (t) { return String(t.id) === String(e0.expenseTypeId) }) : null
-          var editDefaultDeptId = null
-          var editDefaultDeptName = null
-          if (editExpType) {
-            if (editExpType.department_id) editDefaultDeptId = editExpType.department_id
-            else if (editExpType.sub_department_id) {
-              var editSd = subDepartments.find(function (s) { return String(s.id) === String(editExpType.sub_department_id) })
-              if (editSd && editSd.department_id) editDefaultDeptId = editSd.department_id
-            }
-          }
-          if (editDefaultDeptId) {
-            // Same bigint (expense_types.department_id) vs int4 (departments.id) mismatch
-            // as the new-expense path below -- see its comment.
-            var editDeptRow = departments.find(function (d) { return String(d.id) === String(editDefaultDeptId) })
-            if (editDeptRow) editDefaultDeptName = editDeptRow.name
-          }
+          // editExpType/editDefaultDeptId/editDefaultDeptName already resolved (and
+          // validated) above, before the old allocations were deleted.
           editAllocRows.push({
             expense_id: editExp.id,
             department: editDefaultDeptName,
@@ -1946,6 +1957,34 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
               }
             }
           }
+
+          // The entry-level type's own department, resolved once up front -- used both as
+          // the fallback for a split row that set a venue but no department (below) and for
+          // the whole-remainder auto-default row further down. Resolved BEFORE the expense
+          // row is inserted (not after) so a department that can't be found fails loudly
+          // here, with a plain-language reason, instead of creating the expense row first
+          // and only then hitting an opaque NOT NULL constraint on expense_allocations --
+          // which is exactly what left #2785 and others orphaned with no allocation or
+          // wallet debit, needing manual DB recovery.
+          var entryExpType = e.expenseTypeId ? expenseTypes.find(function (t) { return String(t.id) === String(e.expenseTypeId) }) : null
+          var entryDeptId = null
+          var entryDeptName = null
+          if (entryExpType) {
+            if (entryExpType.department_id) entryDeptId = entryExpType.department_id
+            else if (entryExpType.sub_department_id) {
+              var entrySd = subDepartments.find(function (s) { return String(s.id) === String(entryExpType.sub_department_id) })
+              if (entrySd && entrySd.department_id) entryDeptId = entrySd.department_id
+            }
+          }
+          if (entryDeptId) {
+            var entryDeptRow = departments.find(function (d) { return String(d.id) === String(entryDeptId) })
+            if (entryDeptRow) entryDeptName = entryDeptRow.name
+            else {
+              throw new Error('Expense type "' + (entryExpType.name || e.expenseTypeId) + '" is set up to use department #' + entryDeptId +
+                ', but that department could not be found -- it may be inactive or hidden. Ask an admin to check Categories > Departments before submitting this expense.')
+            }
+          }
+
           // Payment split: cash + credit = amount (invariant, in paise)
           var _split = getEntrySplit(e)
           var payload = {
@@ -2026,29 +2065,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
             }
           }
 
-          // The entry-level type's own department, resolved once up front -- used both as
-          // the fallback for a split row that set a venue but no department (below) and for
-          // the whole-remainder auto-default row further down.
-          var entryExpType = e.expenseTypeId ? expenseTypes.find(function (t) { return String(t.id) === String(e.expenseTypeId) }) : null
-          var entryDeptId = null
-          var entryDeptName = null
-          if (entryExpType) {
-            if (entryExpType.department_id) entryDeptId = entryExpType.department_id
-            else if (entryExpType.sub_department_id) {
-              var entrySd = subDepartments.find(function (s) { return String(s.id) === String(entryExpType.sub_department_id) })
-              if (entrySd && entrySd.department_id) entryDeptId = entrySd.department_id
-            }
-          }
-          if (entryDeptId) {
-            // expense_types.department_id is bigint -> PostgREST sends it as a string,
-            // while departments.id is int4 -> a number. A bare === here silently never
-            // matches, leaving `department` (text, NOT NULL) null while department_id
-            // is correctly set -- which fails the DB insert on a constraint that gives
-            // no hint it was actually a type-mismatch lookup bug.
-            var entryDeptRow = departments.find(function (d) { return String(d.id) === String(entryDeptId) })
-            if (entryDeptRow) entryDeptName = entryDeptRow.name
-          }
-
+          // entryExpType/entryDeptId/entryDeptName were already resolved (and validated)
+          // before the expense row was inserted, above.
           var allocRows = e.allocations
             .filter(function (a) { return a.venueId || a.departmentId })
             .map(function (a) {
