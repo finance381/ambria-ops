@@ -98,12 +98,35 @@ function CsvImportModal({ open, onClose, onSaved }) {
   var [error, setError] = useState('')
   var [result, setResult] = useState(null)
 
+  // A plain split(',') breaks the moment any cell itself contains a comma --
+  // "Sharma, Riya" as a guest name shifts every column after it, so a row that
+  // reads fine visually still gets its phone/name cells swapped with whatever's
+  // next to them (or goes invalid outright). Handles quoted cells properly
+  // instead, same approach as AdminItems.jsx's own CSV import.
+  function parseCsvLine(line) {
+    var result = []; var current = ''; var inQuotes = false
+    for (var i = 0; i < line.length; i++) {
+      var ch = line[i]
+      if (inQuotes) {
+        if (ch === '"' && line[i + 1] === '"') { current += '"'; i++ }
+        else if (ch === '"') { inQuotes = false }
+        else { current += ch }
+      } else {
+        if (ch === '"') { inQuotes = true }
+        else if (ch === ',') { result.push(current.trim()); current = '' }
+        else { current += ch }
+      }
+    }
+    result.push(current.trim())
+    return result
+  }
+
   function parseCsv(text) {
     var lines = text.split(/\r?\n/).filter(function (l) { return l.trim() })
     if (lines.length === 0) return { headers: [], rows: [] }
-    var headers = lines[0].split(',').map(function (h) { return h.trim() })
+    var headers = parseCsvLine(lines[0])
     var rows = lines.slice(1).map(function (l) {
-      var cells = l.split(',')
+      var cells = parseCsvLine(l)
       var obj = {}
       headers.forEach(function (h, i) { obj[h] = (cells[i] || '').trim() })
       return obj
@@ -118,7 +141,9 @@ function CsvImportModal({ open, onClose, onSaved }) {
   // name" problem.
   function findCol(headers, want) {
     var w = (want || '').trim().toLowerCase()
-    return headers.find(function (h) { return h.trim().toLowerCase() === w })
+    // Strips a leading BOM too -- a file saved as "CSV UTF-8" from Excel prepends one
+    // to the very first header, which would otherwise never match the "phone" default.
+    return headers.find(function (h) { return h.replace(/^﻿/, '').trim().toLowerCase() === w })
   }
 
   async function doImport() {
