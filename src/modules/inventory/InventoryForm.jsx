@@ -390,9 +390,16 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
           var source = prev.length > 0 ? prev : (seed?.dimensions || [])
           return fields.map(function (f) {
             var fType = f.type || 'number'
-            var existing = source.find(function (d) { return d.name === f.name })
+            // Case-insensitive -- a CSV-imported item's dimensions keep whatever casing
+            // was in the file (AdminItems.jsx's import just trims, doesn't normalize
+            // case), and an exact match here silently dropped the value the moment the
+            // item was next opened in this form, since it never matched the category's
+            // own (differently-cased) field name.
+            var existing = source.find(function (d) { return (d.name || '').trim().toLowerCase() === f.name.trim().toLowerCase() })
             if (existing) {
-              var merged = Object.assign({}, existing, { type: fType, options: f.options })
+              // Adopt the category's own canonical casing going forward, so this
+              // self-heals on save instead of needing the case-insensitive match forever.
+              var merged = Object.assign({}, existing, { name: f.name, type: fType, options: f.options })
               // Migrate legacy: select/text values were stored in qty instead of value
               if ((fType === 'select' || fType === 'text') && !merged.value) {
                 var effQ = merged.qty && merged.qty !== 'Pieces' ? merged.qty : ''
