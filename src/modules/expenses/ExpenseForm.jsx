@@ -907,10 +907,15 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       return prev.map(function (e, i) {
         if (i !== idx) return e
         var on = !e.isItemPurchase
-        return Object.assign({}, e, {
+        var updated = Object.assign({}, e, {
           isItemPurchase: on,
           items: on ? (e.items && e.items.length > 0 ? e.items : [makeItem()]) : [makeItem()]
         })
+        // Switching into item mode starts amount fresh at the items floor,
+        // same as before -- whatever was typed in plain-amount mode doesn't
+        // carry over as a head start above it.
+        if (on) updated.amount = computeItemsTotal(updated) ? String(computeItemsTotal(updated)) : ''
+        return updated
       })
     })
     setItemMatches([])
@@ -937,12 +942,31 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     return total
   }
 
+  // The items total is a FLOOR, not the whole amount -- a purchase can carry other
+  // costs on top (cartage, labour) that Split then carves back out as their own
+  // allocation line. `amount` auto-tracks the items floor as items change, UNLESS
+  // the entry's current amount is already ABOVE the floor it was last synced
+  // against (oldEntry) -- that means the user deliberately raised it, and item
+  // edits should only ever push it up further, never pull it back down under them.
+  function syncAmountToItemsFloor(oldEntry, newEntry) {
+    if (!newEntry.isItemPurchase) return newEntry
+    var oldFloor = computeItemsTotal(oldEntry)
+    var newFloor = computeItemsTotal(newEntry)
+    var curAmount = Number(newEntry.amount) || 0
+    var wasTracking = curAmount === oldFloor
+    if (wasTracking || newFloor > curAmount) {
+      return Object.assign({}, newEntry, { amount: newFloor ? String(newFloor) : '' })
+    }
+    return newEntry
+  }
+
   function addItem(entryIdx) {
     setEntries(function (prev) {
       return prev.map(function (e, i) {
         if (i !== entryIdx) return e
         var newItems = e.items.concat([makeItem()])
-        return Object.assign({}, e, { items: newItems, _editingItemIdx: newItems.length - 1 })
+        var updated = Object.assign({}, e, { items: newItems, _editingItemIdx: newItems.length - 1 })
+        return syncAmountToItemsFloor(e, updated)
       })
     })
   }
@@ -955,16 +979,17 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         // back to blank rather than refusing. Refusing left the button hidden
         // and no way to clear a wrongly-filled item.
         if (e.items.length <= 1) {
-          return Object.assign({}, e, { items: [makeItem()], _editingItemIdx: 0 })
+          return syncAmountToItemsFloor(e, Object.assign({}, e, { items: [makeItem()], _editingItemIdx: 0 }))
         }
         // Same default as the render path, so deleting a row does not silently
         // collapse an item that was visibly open.
         var cur = e._editingItemIdx == null ? 0 : e._editingItemIdx
         var next = cur === itemIdx ? -1 : (cur > itemIdx ? cur - 1 : cur)
-        return Object.assign({}, e, {
+        var updated = Object.assign({}, e, {
           items: e.items.filter(function (_, j) { return j !== itemIdx }),
           _editingItemIdx: next,
         })
+        return syncAmountToItemsFloor(e, updated)
       })
     })
     var key = entryIdx + '_' + itemIdx
@@ -1033,7 +1058,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           }
           return ic
         })
-        return copy
+        return syncAmountToItemsFloor(e, copy)
       })
     })
   }
@@ -1256,9 +1281,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   //   Ledger L2 debit  = payment_cash_paise
   //   Wallet debit = payment_cash_paise (tax already included since amount is gross)
   function getEntrySplit(e) {
-    var basePaise = e.isItemPurchase
-      ? Math.round(computeItemsTotal(e) * 100)
-      : Math.round(Number(e.amount || 0) * 100)
+    // e.amount is the authoritative total even in item-select mode now -- it's
+    // kept >= the items floor by syncAmountToItemsFloor, with any amount above
+    // that floor being other costs (cartage, labour) the user added on top.
+    var basePaise = Math.round(Number(e.amount || 0) * 100)
     var taxPaise = e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0
     var payablePaise = basePaise + taxPaise
     var st = expenseSubTypes.find(function (s) { return s.id === Number(e.expenseSubTypeId) })
@@ -1327,7 +1353,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     // Editing cash → credit = payable - cash
     var e = entries[idx]
     if (!e) return
-    var baseRupees = e.isItemPurchase ? computeItemsTotal(e) : Number(e.amount || 0)
+    var baseRupees = Number(e.amount || 0)
     var taxRupees = Number(e.taxAmount || 0)
     var amtRupees = baseRupees + taxRupees  // payable
     var cashN = Number(valRupees || 0)
@@ -1505,7 +1531,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       if (!e.expenseTypeId) return 'Entry ' + (i + 1) + ': Select department'
       if (!e.expenseSubTypeId) return 'Entry ' + (i + 1) + ': Select expense'
       if (!e.description.trim()) return 'Entry ' + (i + 1) + ': Add description'
-      if (!e.isItemPurchase && (!e.amount || Number(e.amount) <= 0)) return 'Entry ' + (i + 1) + ': Enter valid amount'
+      if (!e.amount || Number(e.amount) <= 0) return 'Entry ' + (i + 1) + ': Enter valid amount'
       if (!e.expenseDate) return 'Entry ' + (i + 1) + ': Select date'
       var _toYMD = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
       var _todayStr = _toYMD(new Date())
@@ -1530,6 +1556,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           if (im.itemRate === '' || im.itemRate === null || im.itemRate === undefined || Number(im.itemRate) < 0) return itLabel + ': Rate required'
         }
         if (computeItemsTotal(e) <= 0) return 'Entry ' + (i + 1) + ': Items total must be > 0'
+        if (Number(e.amount) < computeItemsTotal(e)) return 'Entry ' + (i + 1) + ': Amount can\'t be less than the items total'
       }
       var hasExistingReceipt = isEditing && existingReceipts.some(function (p) { return removedReceipts.indexOf(p) === -1 })
       if (e.receiptFiles.length === 0 && !e.audioBlob && !hasExistingReceipt) {
@@ -1569,7 +1596,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       var _allocRowsForCheck = (e.allocations || []).filter(function (a) { return a.venueId || a.departmentId })
       if (_allocRowsForCheck.length > 0) {
         var _allocSumPaise = _allocRowsForCheck.reduce(function (s, a) { return s + (a.amountRupees ? Math.round(Number(a.amountRupees) * 100) : 0) }, 0)
-        var _entryBasePaise = e.isItemPurchase ? Math.round(computeItemsTotal(e) * 100) : Math.round(Number(e.amount || 0) * 100)
+        var _entryBasePaise = Math.round(Number(e.amount || 0) * 100)
         var _entryTaxPaise = e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0
         var _entryTotalPaise = _entryBasePaise + _entryTaxPaise
         if (_allocSumPaise > _entryTotalPaise) {
@@ -1660,9 +1687,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         return
       }
 
-      var newBasePaise = e0.isItemPurchase
-        ? Math.round(computeItemsTotal(e0) * 100)
-        : Math.round(Number(e0.amount) * 100)
+      var newBasePaise = Math.round(Number(e0.amount) * 100)
       var newTaxPaise = e0.taxAmount ? Math.round(Number(e0.taxAmount) * 100) : 0
       var newPaise = newBasePaise + newTaxPaise
       try {
@@ -1909,9 +1934,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
 
     for (var i = 0; i < entries.length; i++) {
         var e = entries[i]
-        var basePaise = e.isItemPurchase
-          ? Math.round(computeItemsTotal(e) * 100)
-          : Math.round(Number(e.amount) * 100)
+        var basePaise = Math.round(Number(e.amount) * 100)
         var taxPaise = e.taxAmount ? Math.round(Number(e.taxAmount) * 100) : 0
         var paise = basePaise + taxPaise
         // Reset each iteration — `var` is function-scoped, and a throw before this
@@ -2617,17 +2640,23 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                 <PanelHead icon="calculator">What It Costs</PanelHead>
                 <div className="p-4 space-y-2">
                 {entry.isItemPurchase && (
-                  <p className="text-[10px] font-semibold text-slate-500">Amount auto-calculated from items × rate</p>
+                  <p className="text-[10px] font-semibold text-slate-500">
+                    Items total {computeItemsTotal(entry).toLocaleString('en-IN')} pts is the floor — raise Amount above it for other costs (cartage, labour), then use Split to break them out.
+                  </p>
                 )}
                 <div className={"grid grid-cols-2 gap-3" + (wide ? " lg:max-w-xl" : "")}>
                   <div>
                     <FieldLabel htmlFor={'exp-amount-' + idx} icon="rupee" required>Amount (pts)</FieldLabel>
                     <input id={'exp-amount-' + idx} type="number" inputMode="decimal"
-                      value={entry.isItemPurchase ? computeItemsTotal(entry).toString() : entry.amount}
-                      onChange={function (e) { if (!entry.isItemPurchase) updateEntry(idx, 'amount', e.target.value) }}
-                      readOnly={entry.isItemPurchase}
+                      value={entry.amount}
+                      onChange={function (e) { updateEntry(idx, 'amount', e.target.value) }}
+                      onBlur={function () {
+                        if (!entry.isItemPurchase) return
+                        var floor = computeItemsTotal(entry)
+                        if ((Number(entry.amount) || 0) < floor) updateEntry(idx, 'amount', floor ? String(floor) : '')
+                      }}
                       placeholder="0" min="0" step="any"
-                      className={"w-full px-3 py-2.5 border rounded-xl text-[13px] tabular-nums focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150 " + (entry.isItemPurchase ? "border-slate-200 bg-slate-100 text-slate-600 font-semibold cursor-not-allowed" : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400")}
+                      className="w-full px-3 py-2.5 border rounded-xl text-[13px] tabular-nums focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150 border-slate-200 bg-white text-slate-900 placeholder:text-slate-400"
                       style={{ fontSize: '16px' }} />
                   </div>
                   <div>
@@ -2640,7 +2669,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                 </div>
                 </div>
                 {(function () {
-                  var amt = entry.isItemPurchase ? computeItemsTotal(entry) : (Number(entry.amount) || 0)
+                  var amt = Number(entry.amount) || 0
                   var gst = Number(entry.taxAmount) || 0
                   var gross = amt + gst
                   return (
@@ -3209,7 +3238,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
               {(function () {
                 var split = getEntrySplit(entry)
                 if (!split.vendorPicked) return null
-                var baseRupees = entry.isItemPurchase ? computeItemsTotal(entry) : Number(entry.amount || 0)
+                var baseRupees = Number(entry.amount || 0)
                 var taxRupees = Number(entry.taxAmount || 0)
                 var amtRupees = baseRupees + taxRupees  // payable = base + tax
                 if (amtRupees <= 0) return null
