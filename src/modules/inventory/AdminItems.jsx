@@ -268,6 +268,8 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
   // Every item's batches (qty and rate, oldest first), keyed
   // "source|item id", for the Stock value on the cards.
   var [batchesByItem, setBatchesByItem] = useState({})
+  // Newest purchase rate per item, keyed "source|item id", for the cards.
+  var [lastRateByItem, setLastRateByItem] = useState({})
   var [holds, setHolds] = useState([])
   var [holdForm, setHoldForm] = useState({ hold_from: '', hold_to: '', qty: 1, reason: '' })
   var [holdSaving, setHoldSaving] = useState(false)
@@ -324,7 +326,29 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
         map[k].push(b)
       })
       setBatchesByItem(map)
+      loadLastRates(rows)
     } catch (_) {}
+  }
+
+  // Last purchase rate: the newest rate across PO / expense receipts and
+  // "Add new stock" batches — the same rule as fn_item_latest_rate (00073).
+  async function loadLastRates(batches) {
+    var history = []
+    try {
+      history = await fetchAllParallel(function (opts) {
+        return supabase.from('v_item_purchase_history').select('item_id, item_source, rate_paise, txn_date', opts)
+      })
+    } catch (_) {}
+    var newest = {}
+    function consider(k, rate, day) {
+      if (rate == null || !day) return
+      if (!newest[k] || day >= newest[k].day) newest[k] = { rate: Number(rate), day: day }
+    }
+    history.forEach(function (h) { consider(h.item_source + '|' + h.item_id, h.rate_paise, String(h.txn_date || '').slice(0, 10)) })
+    batches.forEach(function (b) { consider(b.item_source + '|' + b.item_id, b.rate_paise, String(b.created_at || '').slice(0, 10)) })
+    var map = {}
+    Object.keys(newest).forEach(function (k) { map[k] = newest[k].rate })
+    setLastRateByItem(map)
   }
 
   function applyData(d) {
@@ -1271,14 +1295,19 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
     // costs (the same permission the export's Rate column answers to).
     // Stock value: what the stock on hand is worth, each batch at its own
     // rate (quantity × the item's rate where it has no batches).
+    // Last purchase rate sits right after it.
     if (canViewCosts) {
-      var itemBatchList = batchesByItem[(item._source === 'catering_store' ? 'catering_store' : 'inventory') + '|' + item.id]
+      var itemKey = (item._source === 'catering_store' ? 'catering_store' : 'inventory') + '|' + item.id
+      var itemBatchList = batchesByItem[itemKey]
       var stockVal = itemBatchList && itemBatchList.length > 0
         ? stockValuePaise(itemBatchList, Number(item.qty) || 0, item.rate_paise)
         : Math.round((Number(item.qty) || 0) * (item.rate_paise || 0))
-      if (stockVal > 0) {
+      var costTiles = []
+      if (stockVal > 0) costTiles.push({ label: 'Stock value', value: formatPaise(stockVal) })
+      if (lastRateByItem[itemKey] > 0) costTiles.push({ label: 'Last purchase rate', value: formatPaise(lastRateByItem[itemKey]) })
+      if (costTiles.length) {
         var at = details.findIndex(function (d) { return d.label === 'Material' })
-        details.splice(at === -1 ? 0 : at + 1, 0, { label: 'Stock value', value: formatPaise(stockVal) })
+        details.splice.apply(details, [at === -1 ? 0 : at + 1, 0].concat(costTiles))
       }
     }
     if (details.length === 0) return null
@@ -1286,7 +1315,7 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
       <div className="grid grid-cols-2 gap-px rounded-xl overflow-hidden bg-slate-200">
         {details.map(function (d, i) {
           var wide = details.length % 2 === 1 && i === details.length - 1
-          var glyph = { Material: 'box', 'Stock value': 'rupee', 'Menu zone': 'utensils', Vendor: 'building', 'Vendor name': 'user' }[d.label] || 'info'
+          var glyph = { Material: 'box', 'Stock value': 'rupee', 'Last purchase rate': 'receipt', 'Menu zone': 'utensils', Vendor: 'building', 'Vendor name': 'user' }[d.label] || 'info'
           return (
             <div key={d.label} className={"flex items-center gap-2.5 bg-slate-50 px-3 py-2.5 min-w-0 " + (wide ? "col-span-2" : "")}>
               <span aria-hidden="true" className="shrink-0 w-8 h-8 rounded-lg bg-white border border-slate-200 text-indigo-500 inline-flex items-center justify-center">
