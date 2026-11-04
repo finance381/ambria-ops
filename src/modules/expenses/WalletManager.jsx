@@ -212,7 +212,17 @@ function mergeExpenseWalletRows(txns) {
       amount_paise: Math.abs(net),
       type: net < 0 ? 'credit' : 'debit',
       balance_after_paise: latest.balance_after_paise,
-      _sortAt: latest.created_at,
+      // Anchored to the ORIGINAL transaction, not the latest edit -- editing
+      // an old expense shouldn't walk it past newer, unrelated entries that
+      // happened in between. Kept sorting by the edit's own time before;
+      // that's exactly what made an edited expense jump above whatever had
+      // happened since, which read as the ledger reordering itself.
+      _sortAt: rows[0].created_at,
+      // This card can now legitimately span other transactions that happened
+      // between its original debit and its later edit, so the gap check
+      // (renderTxnRow) can't treat its balance_after/amount_paise as one
+      // atomic step -- see _isMerged there.
+      _isMerged: true,
     }))
   })
   return out
@@ -4340,10 +4350,15 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     // since both carry that same now-deleted expense's reference_id. Only
     // meaningful in chronological order — 'amount' sort has no "before".
     var gapNote = null
-    if (txnSort !== 'amount') {
+    // A merged (edited) row sits at its ORIGINAL transaction's position but
+    // shows the balance after its LATEST sub-part, which can legitimately
+    // span other unrelated transactions in between -- its own amount/balance
+    // pair was never one atomic step, so it can't be checked this way, and
+    // neither can whichever row ends up positioned beside it.
+    if (txnSort !== 'amount' && !t._isMerged) {
       var _selfIdx = sortedTxns.indexOf(t)
       var _olderNeighbor = txnSort === 'oldest' ? sortedTxns[_selfIdx - 1] : sortedTxns[_selfIdx + 1]
-      if (_selfIdx !== -1 && _olderNeighbor) {
+      if (_selfIdx !== -1 && _olderNeighbor && !_olderNeighbor._isMerged) {
         var _impliedBefore = isCredit ? (t.balance_after_paise - t.amount_paise) : (t.balance_after_paise + t.amount_paise)
         var _gap = _impliedBefore - (_olderNeighbor.balance_after_paise || 0)
         if (Math.abs(_gap) >= 100) gapNote = _gap
