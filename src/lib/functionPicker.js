@@ -81,6 +81,7 @@ export function buildContractBuckets(rows) {
       functions: funcs,
       clientName: primary.client_name,
       venueName: primary.venue_name,
+      location: primary.location,
     }
   })
 }
