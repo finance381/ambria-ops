@@ -1092,9 +1092,12 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         }).eq('id', editReq.id)
         if (updErr) throw new Error(updErr.message)
 
-        // Delete old items, insert new
-        var { error: delErr } = await supabase.from('requisition_items').delete().eq('requisition_id', editReq.id)
-        if (delErr) throw new Error(delErr.message)
+        // Insert the new items FIRST, delete the old ones only once the new ones are
+        // confirmed in place -- deleting first (the old order) meant a failure on the
+        // insert left this requisition with its header updated but zero items, having
+        // already destroyed the real ones that used to be there.
+        var { data: oldItemRows } = await supabase.from('requisition_items').select('id').eq('requisition_id', editReq.id)
+        var oldItemIds = (oldItemRows || []).map(function (r) { return r.id })
 
         if (lineItems.length > 0) {
           var itemsWithReqId = lineItems.map(function (li) {
@@ -1113,6 +1116,11 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             var { error: eaErr } = await supabase.from('requisition_item_allocations').insert(editAllocs)
             if (eaErr) throw new Error('Allocation save failed: ' + eaErr.message)
           }
+        }
+
+        if (oldItemIds.length > 0) {
+          var { error: delErr } = await supabase.from('requisition_items').delete().in('id', oldItemIds)
+          if (delErr) throw new Error('New items saved, but the old ones could not be removed: ' + delErr.message + ' — this requisition may now show duplicate items. An admin should check it.')
         }
 
         logActivity('REQUISITION_EDIT', purpose.trim() + ' | ' + lineItems.length + ' items')
@@ -1158,22 +1166,33 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         if (reqErr) throw new Error(reqErr.message)
 
         if (lineItems.length > 0) {
-          var itemsWithId = lineItems.map(function (li) {
-            var row = Object.assign({}, li, { requisition_id: req.id })
-            delete row._allocations
-            if (isAdminRole) { row.item_status = 'po_queued'; row.fulfillment_type = 'purchase' }
-            return row
-          })
-          var { data: insertedItems, error: itemsErr } = await supabase.from('requisition_items').insert(itemsWithId).select('id')
-          if (itemsErr) throw new Error(itemsErr.message)
-          var allAllocs = []
-          ;(insertedItems || []).forEach(function (ins, idx) {
-            var la = lineItems[idx]._allocations || []
-            la.forEach(function (a) { allAllocs.push({ req_item_id: ins.id, venue_id: Number(a.venue_id), qty: Number(a.qty) }) })
-          })
-          if (allAllocs.length > 0) {
-            var { error: allocErr } = await supabase.from('requisition_item_allocations').insert(allAllocs)
-            if (allocErr) throw new Error('Allocation save failed: ' + allocErr.message)
+          try {
+            var itemsWithId = lineItems.map(function (li) {
+              var row = Object.assign({}, li, { requisition_id: req.id })
+              delete row._allocations
+              if (isAdminRole) { row.item_status = 'po_queued'; row.fulfillment_type = 'purchase' }
+              return row
+            })
+            var { data: insertedItems, error: itemsErr } = await supabase.from('requisition_items').insert(itemsWithId).select('id')
+            if (itemsErr) throw new Error(itemsErr.message)
+            var allAllocs = []
+            ;(insertedItems || []).forEach(function (ins, idx) {
+              var la = lineItems[idx]._allocations || []
+              la.forEach(function (a) { allAllocs.push({ req_item_id: ins.id, venue_id: Number(a.venue_id), qty: Number(a.qty) }) })
+            })
+            if (allAllocs.length > 0) {
+              var { error: allocErr } = await supabase.from('requisition_item_allocations').insert(allAllocs)
+              if (allocErr) throw new Error('Allocation save failed: ' + allocErr.message)
+            }
+          } catch (itemsCatchErr) {
+            // The requisition header above is already committed -- without this, a
+            // failure here left a ghost requisition with zero items sitting in
+            // everyone's approval queue, with nothing to actually approve or fulfill.
+            // requisitions has no real DELETE (deleteReq() elsewhere in this file
+            // soft-deletes the same way) -- best-effort mark it 'deleted' so the
+            // failed submission doesn't leave a live, empty requisition behind.
+            try { await supabase.from('requisitions').update({ status: 'deleted', rejection_reason: 'Auto-cancelled: item save failed during creation' }).eq('id', req.id) } catch (_) {}
+            throw itemsCatchErr
           }
         }
 
@@ -1966,6 +1985,11 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
 
     for (var i = 0; i < items.length; i++) {
       var li = items[i]
+      // Already resolved by a prior attempt at this same approve() (e.g. the
+      // browser closed partway through the loop) -- skip it, so a retry can't
+      // call issue_from_stock a second time for an item that already had real
+      // stock decremented, or re-queue one that's already po_queued.
+      if (['po_queued', 'dispatched', 'fulfilled', 'cancelled'].indexOf(li.item_status) !== -1) continue
       var choice = fulfillChoices[li.id] || 'po'
 
       if (choice === 'stock' && li.item_id && li._source !== 'new') {
@@ -2020,11 +2044,17 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
     var { error: reqErr } = await supabase.from('requisitions').update({ status: 'cancelled' }).eq('id', req.id)
     if (reqErr) { alert('Cancel failed: ' + reqErr.message); setSaving(false); return }
     var itemIds = items.map(function (li) { return li.id })
+    var itemCancelWarning = ''
     if (itemIds.length > 0) {
-      await supabase.from('requisition_items').update({ item_status: 'cancelled' }).in('id', itemIds)
+      var { error: itemErr } = await supabase.from('requisition_items').update({ item_status: 'cancelled' }).in('id', itemIds)
+      // The requisition itself is already cancelled above regardless -- an item left
+      // behind (still po_queued, say) would otherwise keep sitting in the procurement
+      // queue for a requisition that looks fully cancelled, with nothing to say so.
+      if (itemErr) itemCancelWarning = '\n\nSome items could not be marked cancelled: ' + itemErr.message + ' — they may still show up in the procurement queue. An admin should check them.'
     }
     try { await logActivity('REQUISITION_CANCEL', req.purpose || 'Req #' + req.id) } catch (_) {}
     setSaving(false)
+    if (itemCancelWarning) alert('Requisition cancelled.' + itemCancelWarning)
     onUpdated()
   }
   async function convertToExpense() {
