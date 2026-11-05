@@ -1779,7 +1779,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           throw new Error('Update blocked — no row returned. Likely RLS: you may not be permitted to edit this expense in its current state. Contact admin if you believe this is a mistake.')
         }
 
-        // Upload new receipts (append via RPC)
+        // Upload new receipts (append via RPC). Failures here used to return early,
+        // which skipped the department validation, allocation replace, and wallet
+        // diff further down entirely -- a receipt hiccup left the expense's fields
+        // updated but its allocations and wallet balance stale against the NEW
+        // amount, with nothing to show for it beyond a message that sounded like
+        // only the receipt was the problem. Keep going instead (same pattern the
+        // new-expense path already uses for this) and surface it in the final result.
+        var editUploadWarnings = []
         if (e0.receiptFiles && e0.receiptFiles.length > 0) {
           var editUploaded = []
           var editUpErrs = []
@@ -1795,16 +1802,18 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
             var { error: eAttErr } = await supabase.rpc('attach_expense_receipts', { p_expense_id: editExp.id, p_paths: editUploaded })
             if (eAttErr) editUpErrs.push('Attach failed: ' + eAttErr.message)
           }
-          if (editUpErrs.length > 0) { setError('Edit saved but some receipts failed:\n' + editUpErrs.join('\n')); setSaving(false); return }
+          if (editUpErrs.length > 0) editUploadWarnings.push('Receipts: ' + editUpErrs.join('; '))
         }
 
-        // Voice (only if no image receipts)
+        // Voice (only if no image receipts) — same reasoning as above.
         if ((!e0.receiptFiles || e0.receiptFiles.length === 0) && e0.audioBlob) {
           var eaPath = profile.id + '/' + editExp.id + '_voice_edit_' + Date.now() + '.webm'
           var { error: eaErr } = await supabase.storage.from('receipts').upload(eaPath, e0.audioBlob, { contentType: 'audio/webm', upsert: true })
-          if (eaErr) { setError('Voice upload failed: ' + eaErr.message); setSaving(false); return }
-          var { error: eaRpcErr } = await supabase.rpc('attach_expense_receipts', { p_expense_id: editExp.id, p_paths: [eaPath] })
-          if (eaRpcErr) { setError('Voice attach failed: ' + eaRpcErr.message); setSaving(false); return }
+          if (eaErr) editUploadWarnings.push('Voice upload failed: ' + eaErr.message)
+          else {
+            var { error: eaRpcErr } = await supabase.rpc('attach_expense_receipts', { p_expense_id: editExp.id, p_paths: [eaPath] })
+            if (eaRpcErr) editUploadWarnings.push('Voice attach failed: ' + eaRpcErr.message)
+          }
         }
 
         // Delete removed receipt files (best-effort)
@@ -1837,8 +1846,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           }
         }
 
-        // Replace allocations
-        await supabase.from('expense_allocations').delete().eq('expense_id', editExp.id)
+        // Replace allocations -- rows built below exactly as before; only the delete+insert
+        // itself now happens atomically (fn_replace_expense_allocations), so a failed insert
+        // can't leave this expense with the old allocations wiped and nothing in their place.
         var editAllocRows = e0.allocations
           .filter(function (a) { return a.venueId || a.departmentId })
           .map(function (a) {
@@ -1877,12 +1887,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
             source: 'auto_default',
           })
         }
-        if (editAllocRows.length > 0) {
-          var { error: editAllocErr } = await supabase.from('expense_allocations').insert(editAllocRows)
-          if (editAllocErr) {
-            var editAllocDump = editAllocRows.map(function (r) { return 'dept=' + r.department + '/' + r.department_id + ' venue=' + r.venue_id + ' src=' + r.source }).join('; ')
-            throw new Error('Allocations failed: ' + editAllocErr.message + ' [' + editAllocDump + ']')
-          }
+        var { error: editAllocErr } = await supabase.rpc('fn_replace_expense_allocations', { p_expense_id: editExp.id, p_rows: editAllocRows })
+        if (editAllocErr) {
+          var editAllocDump = editAllocRows.map(function (r) { return 'dept=' + r.department + '/' + r.department_id + ' venue=' + r.venue_id + ' src=' + r.source }).join('; ')
+          throw new Error('Allocations failed: ' + editAllocErr.message + ' [' + editAllocDump + '] (your previous allocations were kept)')
         }
 
         // Wallet diff — use actual wallet exposure (cash portion + tax if credit), not gross amount
@@ -1912,7 +1920,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           setError('Expense updated, but the wallet adjustment failed — balance may be out of sync. Flag for admin correction.')
           setSaving(false)
         } else {
-          setSuccess('Expense updated')
+          setSuccess('Expense updated' + (editUploadWarnings.length > 0 ? ' — ' + editUploadWarnings.join('; ') : ''))
           // Keep the form locked (saving stays true) until onDone actually navigates away —
           // otherwise the button re-enables for ~1s with the same edits still loaded, and a
           // stray second click re-applies the same update (double wallet diff, etc.).
