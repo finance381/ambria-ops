@@ -1152,6 +1152,12 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
 
   // Tax calc (pure GST math, stays client-side)
   var [dealVal, setDealVal] = useState(14)
+  // Set once the user actually drags the Deal slider — the auto-sync effect
+  // below then stops overwriting it on every later menu/decor/DJ/pax/discount
+  // change, which otherwise silently discarded a real negotiated number mid-
+  // session. Cleared on loadQuote/resetForm so a fresh quote still starts
+  // synced to the computed total.
+  var [dealTouched, setDealTouched] = useState(false)
   var [taxMode, setTaxMode] = useState(0)
   var [split5, setSplit5] = useState(50)
 
@@ -1442,11 +1448,16 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
   var guestPays = taxMode ? dealVal : rd(dealVal + ttx)
   var netToYou = taxMode ? rd(dealVal - ttx) : dealVal
 
-  // Sync tax slider to effective total (post-discount) or quote total.
+  // Sync tax slider to effective total (post-discount) or quote total --
+  // only until the user actually drags it (dealTouched). Without that guard
+  // this ran on every menu/decor/DJ/pax/discount change too, so tweaking
+  // anything after negotiating the deal silently snapped it back to the
+  // freshly computed total, discarding the real number that was agreed.
   // Ceil to nearest half-lakh, matching fmtRound — nearest-rounding here
   // would let this figure disagree with the displayed total (e.g. 22.7
   // would settle at 22.5 instead of the 23 shown everywhere else).
   useEffect(function () {
+    if (dealTouched) return
     var val = effTotal > 0 ? effTotal : adjTotal.q
     if (val) {
       var rounded = Math.ceil(val * 2) / 2
@@ -1729,7 +1740,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
     setVenueId(vid || '')
     setFoodPref(q.food_pref || 0); setPax(q.pax || 400); setSlot(q.slot || 0)
     setCatOverride(q.date_category || 2); setMenuIdx(q.menu_idx != null ? q.menu_idx : 3)
-    setDecorIdx(q.decor_idx != null ? q.decor_idx : 0); setDjIdx(q.dj_idx != null ? q.dj_idx : 1); setTtdIdx(q.ttd_idx != null ? q.ttd_idx : autoTtdIdx(q.event_date, ttdData)); setDealVm(''); setDealDecor(''); setDealEnt(''); setDealDiscount(''); setDealVal(14); setTaxMode(0); setSplit5(50)
+    setDecorIdx(q.decor_idx != null ? q.decor_idx : 0); setDjIdx(q.dj_idx != null ? q.dj_idx : 1); setTtdIdx(q.ttd_idx != null ? q.ttd_idx : autoTtdIdx(q.event_date, ttdData)); setDealVm(''); setDealDecor(''); setDealEnt(''); setDealDiscount(''); setDealVal(14); setDealTouched(false); setTaxMode(0); setSplit5(50)
     if (q.deal_vm_paise != null) setDealVm(String(fromPaise(q.deal_vm_paise)))
     if (q.deal_decor_paise != null) setDealDecor(String(fromPaise(q.deal_decor_paise)))
     if (q.deal_ent_paise != null) setDealEnt(String(fromPaise(q.deal_ent_paise)))
@@ -1751,7 +1762,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
     }
     setParentId(_npFirst); setVenueId(_npIsLeaf ? _npFirst : '')
     setFoodPref(0); setPax(400); setSlot(0); setCatOverride(2); setMenuIdx(3)
-    setDecorIdx(0); setDjIdx(1); setTtdIdx(0); setDealVal(14); setTaxMode(0); setSplit5(50)
+    setDecorIdx(0); setDjIdx(1); setTtdIdx(0); setDealVal(14); setDealTouched(false); setTaxMode(0); setSplit5(50)
     setQuoteStatus('draft'); setSavedId(null); setNotes(''); setLmsRef(null)
     setLocationId(''); setLocationName('')
     setShowQuotes(false); setShowProposal(false); setPage(0)
@@ -2081,8 +2092,8 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
                   color: eventDate ? C.text : C.subtle,
                   fontWeight: eventDate ? 600 : 500,
                 })} />
-              {dc >= 0 && (<div style={{ padding: '6px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, marginTop: 4, background: CAT_BG[dc], color: CAT_COLORS[dc], border: '1px solid ' + C.border }}>
-                {fmtDate(eventDate)} – {CAT_LABELS[dc]}
+              {dc >= 0 && (<div style={{ padding: '6px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, marginTop: 4, background: CAT_BG[ct], color: CAT_COLORS[ct], border: '1px solid ' + C.border }}>
+                {fmtDate(eventDate)} – {CAT_LABELS[ct]}{dc !== ct ? '  (auto: ' + CAT_LABELS[dc] + ')' : ''}
               </div>)}
               {isSummer && (<div style={{ padding: '6px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, marginTop: 4, background: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Ic n="sun" s={13} /> Summer &ndash; Consider Banquet</span>
@@ -2895,7 +2906,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
             <span style={{ padding: '2px 9px', borderRadius: 999, background: RAMP_SOFT, color: C.violetDeep, fontSize: 11.5, fontWeight: 700 }}>{fmtL(dealVal)}</span>
           </div>
           <input className="qc-range" type="range" min={5} max={60} step={0.5} value={dealVal}
-            onInput={function (e) { setDealVal(+e.target.value) }}
+            onInput={function (e) { setDealTouched(true); setDealVal(+e.target.value) }}
             style={{
               width: '100%', accentColor: C.violet, marginBottom: 14,
               background: 'linear-gradient(90deg,#64748B 0%,#64748B ' + (((dealVal - 5) / 55) * 100) + '%,#E5E7EB ' + (((dealVal - 5) / 55) * 100) + '%)',
