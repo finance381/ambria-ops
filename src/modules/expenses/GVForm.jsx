@@ -399,8 +399,11 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
     // on a new expense — a JV's item purchase joins the parent expense's own
     // list rather than starting a separate one, so the (not yet built)
     // receiver step has exactly one list per expense to work through either
-    // way. Appended after fn_create_gv succeeds, not atomically with it — the
-    // same accepted two-call precedent as SalaryPayouts' wallet debit.
+    // way. Appended after fn_create_gv succeeds, not atomically with it -- unlike
+    // SalaryPayouts' now-fixed wallet debit, a failure here isn't a duplicate-money
+    // risk (fn_create_gv already fully succeeded), just a silently-missed item --
+    // so this stays a second call, just no longer a silent one (see below).
+    var itemReceiptsAppendFailed = false
     if (isItemPurchase) {
       var itemReceipts = items.map(function (im) {
         var qtyN = Number(im.itemQty) || 0
@@ -429,15 +432,22 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
         freshMeta.item_receipts = (Array.isArray(freshMeta.item_receipts) ? freshMeta.item_receipts : []).concat(itemReceipts)
         var statusUpdate = { metadata: freshMeta }
         if (!freshExp || freshExp.item_receipt_status !== 'received') statusUpdate.item_receipt_status = 'pending'
-        await supabase.from('expenses').update(statusUpdate).eq('id', exp.id)
+        var { error: itemAppendErr } = await supabase.from('expenses').update(statusUpdate).eq('id', exp.id)
+        if (itemAppendErr) itemReceiptsAppendFailed = true
       } catch (itemErr) {
         console.error('GV_ITEM_RECEIPTS_APPEND_FAIL', itemErr)
+        itemReceiptsAppendFailed = true
       }
     }
 
     try { await logActivity({ action: 'gv_create', entity: 'expense', entity_id: exp.id, meta: { gv_number: data?.gv_number, fields_changed: data?.fields_changed || false } }) } catch (e) {}
 
     setSaving(false)
+    // The GV itself (fn_create_gv) already succeeded by this point -- this failure
+    // only means the purchased item(s) silently never show up in the "receive into
+    // inventory" queue, with nothing but a console error to ever reveal why. Surface
+    // it before navigating away rather than let it disappear.
+    if (itemReceiptsAppendFailed) alert('GV ' + (data?.gv_number || '') + ' was created, but the item(s) on it could not be queued for receiving into inventory. An admin will need to add them manually.')
     if (onSaved) onSaved(data)
   }
 
