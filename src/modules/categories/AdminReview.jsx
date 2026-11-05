@@ -169,28 +169,47 @@ function AdminReview({ profile }) {
       var { data: existing } = await matchQuery.limit(1).maybeSingle()
 
       if (existing) {
-        var newQty = (existing.qty || 0) + (item.qty || 0)
-        await supabase.from(table).update({ qty: newQty }).eq('id', existing.id)
-        // Merge allocations
-        var { data: pendingAllocs } = await supabase.from(allocTable).select('*').eq('item_id', item.id)
-        var { data: existingAllocs } = await supabase.from(allocTable).select('*').eq('item_id', existing.id)
-        for (var ai = 0; ai < (pendingAllocs || []).length; ai++) {
-          var pa = pendingAllocs[ai]
-          var match = (existingAllocs || []).find(function (ea) { return ea.venue_id === pa.venue_id && (ea.sub_venue_id || null) === (pa.sub_venue_id || null) })
-          if (match) {
-            await supabase.from(allocTable).update({ qty: match.qty + pa.qty }).eq('id', match.id)
-          } else {
-            await supabase.from(allocTable).insert({ item_id: existing.id, venue_id: pa.venue_id, sub_venue_id: pa.sub_venue_id || null, qty: pa.qty })
+        // Every write here used to be unchecked -- in particular, if the final
+        // delete of the pending row failed silently, that row stayed in the
+        // queue with status still 'pending' while the target's qty had already
+        // been bumped. Approving it again would detect the same "existing"
+        // match and bump the qty a second time. Checks every step now and, on
+        // a partial failure, raises an explicit "don't approve this again"
+        // warning instead of a generic error that invites a doubling retry.
+        try {
+          var newQty = (existing.qty || 0) + (item.qty || 0)
+          var { error: qtyErr } = await supabase.from(table).update({ qty: newQty }).eq('id', existing.id)
+          if (qtyErr) throw new Error('Qty update failed (target #' + existing.id + ' untouched): ' + qtyErr.message)
+          // Merge allocations
+          var { data: pendingAllocs } = await supabase.from(allocTable).select('*').eq('item_id', item.id)
+          var { data: existingAllocs } = await supabase.from(allocTable).select('*').eq('item_id', existing.id)
+          for (var ai = 0; ai < (pendingAllocs || []).length; ai++) {
+            var pa = pendingAllocs[ai]
+            var match = (existingAllocs || []).find(function (ea) { return ea.venue_id === pa.venue_id && (ea.sub_venue_id || null) === (pa.sub_venue_id || null) })
+            if (match) {
+              var { error: updErr } = await supabase.from(allocTable).update({ qty: match.qty + pa.qty }).eq('id', match.id)
+              if (updErr) throw new Error('Allocation update failed: ' + updErr.message)
+            } else {
+              var { error: insErr } = await supabase.from(allocTable).insert({ item_id: existing.id, venue_id: pa.venue_id, sub_venue_id: pa.sub_venue_id || null, qty: pa.qty })
+              if (insErr) throw new Error('Allocation insert failed: ' + insErr.message)
+            }
           }
+          if (item.image_path && !existing.image_path) {
+            await supabase.from(table).update({ image_path: item.image_path }).eq('id', existing.id)
+          }
+          var { error: delAllocErr } = await supabase.from(allocTable).delete().eq('item_id', item.id)
+          if (delAllocErr) throw new Error('Could not remove pending item\'s old allocations: ' + delAllocErr.message)
+          var { error: delItemErr } = await supabase.from(table).delete().eq('id', item.id)
+          if (delItemErr) throw new Error('Could not remove pending item: ' + delItemErr.message)
+        } catch (mergeErr) {
+          throw new Error('Merge into item #' + existing.id + ' failed partway: ' + (mergeErr.message || mergeErr) +
+            '. Target #' + existing.id + '\'s qty was already updated to ' + newQty + '. Do NOT approve this pending item again (it would bump the qty a second time). ' +
+            'Have an admin check both items in Admin > Items and reconcile manually.')
         }
-        if (item.image_path && !existing.image_path) {
-          await supabase.from(table).update({ image_path: item.image_path }).eq('id', existing.id)
-        }
-        await supabase.from(allocTable).delete().eq('item_id', item.id)
-        await supabase.from(table).delete().eq('id', item.id)
         logActivity('APPROVE_ITEM_MERGE', item.name + ' → merged (qty +' + (item.qty || 0) + ')')
       } else {
-        await supabase.from(table).update({ status: 'approved' }).eq('id', item.id)
+        var { error: approveErr } = await supabase.from(table).update({ status: 'approved' }).eq('id', item.id)
+        if (approveErr) throw new Error('Approve failed: ' + approveErr.message)
         logActivity('APPROVE_ITEM', item.name)
       }
     } catch (err) {
