@@ -1866,7 +1866,6 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
   useBackButtonClose(confirmAction === 'expense', function () { setConfirmAction(null) })
   var [deleteMode, setDeleteMode] = useState(false)
   var [deleteReason, setDeleteReason] = useState('')
-  var refData = useReferenceData()
 
   useEffect(function () {
     // Fetch PO status for items that have po_item_id
@@ -2032,78 +2031,16 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
     if (saving || req.req_type !== 'expense' || req.status !== 'approved' || req.requested_by !== profile?.id) return
     setSaving(true)
     try {
-      var batchId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null
-      var { data: newExp, error: insErr } = await supabase.from('expenses').insert({
-        user_id: profile.id,
-        batch_id: batchId,
-        expense_type_id: req.expense_type_id || null,
-        expense_sub_type_id: req.expense_sub_type_id || null,
-        amount_paise: req.expense_amount_paise,
-        description: req.purpose || 'From requisition #' + req.id,
-        expense_date: req.expense_date || new Date().toISOString().split('T')[0],
-        status: 'recorded',
-        receipt_path: req.receipt_path || null,
-        event_id: req.event_id || null,
-      }).select('id').single()
-      if (insErr) throw new Error(insErr.message)
-
-      // Copy allocations from requisition to expense
-      var allocRows = req.expense_alloc_json || []
-      var expAllocs = []
-      if (allocRows.length > 0) {
-        expAllocs = allocRows.map(function (a) {
-          return {
-            expense_id: newExp.id,
-            department: req.department || null,
-            department_id: a.department_id || null,
-            venue_id: a.venue_id || null,
-            amount_paise: a.amount_paise || 0,
-            expense_type_id: a.expense_type_id || req.expense_type_id || null,
-            expense_sub_type_id: a.expense_sub_type_id || req.expense_sub_type_id || null,
-          }
-        })
-      }
-      // Auto-default from req top-level type for whatever portion of the total wasn't
-      // explicitly allocated, so the whole amount appears in the ledgers (previously only
-      // ran when allocations were empty, silently dropping the remainder whenever a partial
-      // allocation was entered).
-      var reqAllocSum = expAllocs.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0)
-      var reqRemainderPaise = (req.expense_amount_paise || 0) - reqAllocSum
-      if (reqRemainderPaise > 0 && req.expense_type_id) {
-        var defaultDeptId = null
-        var expTypeRow = refData.expenseTypes.find(function (t) { return t.id === req.expense_type_id })
-        if (expTypeRow) {
-          if (expTypeRow.department_id) defaultDeptId = expTypeRow.department_id
-          else if (expTypeRow.sub_department_id) {
-            var { data: sdRow } = await supabase.from('sub_departments')
-              .select('department_id').eq('id', expTypeRow.sub_department_id).single()
-            if (sdRow) defaultDeptId = sdRow.department_id
-          }
-        }
-        expAllocs.push({
-          expense_id: newExp.id,
-          department: req.department || null,
-          department_id: defaultDeptId,
-          venue_id: null,
-          amount_paise: reqRemainderPaise,
-          expense_type_id: req.expense_type_id || null,
-          expense_sub_type_id: req.expense_sub_type_id || null,
-          source: 'auto_default',
-        })
-      }
-      if (expAllocs.length > 0) await supabase.from('expense_allocations').insert(expAllocs)
-
-      try {
-        await supabase.rpc('wallet_self_debit', {
-          p_amount_paise: req.expense_amount_paise,
-          p_description: 'Expense: ' + (req.purpose || '').slice(0, 50),
-          p_ref_type: 'expense',
-          p_ref_id: String(newExp.id),
-        })
-      } catch (_) {}
-
-      var { error: updErr } = await supabase.rpc('fulfill_expense_requisition', { p_req_id: req.id, p_expense_id: newExp.id })
-      if (updErr) console.warn('Requisition status update failed:', updErr.message)
+      // One atomic DB function now does everything that used to be four separate
+      // client calls (expense insert, allocations insert, wallet debit, status
+      // update) with most of the errors unchecked -- a failure partway through
+      // used to leave an orphaned expense behind an unchanged 'approved' status,
+      // which let a retry (or just clicking the button again) create a genuine
+      // second expense and a second wallet debit. A failure anywhere in the DB
+      // function now rolls back the whole thing instead, and it's idempotent if
+      // called again for an already-converted requisition.
+      var { error } = await supabase.rpc('fn_convert_expense_requisition_to_expense', { p_req_id: req.id })
+      if (error) throw new Error(error.message)
 
       try { await logActivity('EXPENSE_FROM_REQ', (req.purpose || 'Req #' + req.id) + ' | ' + formatPoints(req.expense_amount_paise)) } catch (_) {}
       setSaving(false)
