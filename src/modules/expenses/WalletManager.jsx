@@ -2367,7 +2367,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!walletTxns.length || !selectedWallet) return
     var userName = walletProfiles[selectedWallet.user_id]?.name || 'user'
     var headers = ['Date', 'Type', 'Amount (pts)', 'Balance After (pts)', 'Description', 'Performed By', 'Deleted']
-    var rows = getExportRows().map(function (t) {
+    // getExportRows merges each expense's rows into one, but the merge
+    // appends those merged rows by reference_id order (an implementation
+    // detail of how it groups them), not by time -- same as the on-screen
+    // list and the PDF, this needs its own sort by _sortAt afterward, newest
+    // first to match the raw query order these rows would otherwise be in.
+    var rows = getExportRows().sort(function (a, b) {
+      return new Date(b._sortAt || b.created_at) - new Date(a._sortAt || a.created_at)
+    }).map(function (t) {
       var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
       var isDeletedExp = isExpRow && !!expenseRefs[t.reference_id] && !!expenseRefs[t.reference_id].deleted_at
       return [
@@ -2570,11 +2577,29 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         // moved it in between. Called out instead of left for someone to
         // notice the numbers don't add up and go digging.
         var prevRow = chrono[idx - 1]
-        if (prevRow) {
+        // A merged (edited) row's own amount/balance pair was never one atomic
+        // step -- it can legitimately span other unrelated rows in between --
+        // so neither it nor a merged neighbor can be checked this way (mirrors
+        // the on-screen gap check in renderTxnRow).
+        if (prevRow && !t._isMerged && !prevRow._isMerged) {
           var expectedBal = (prevRow.balance_after_paise || 0) + (t.type === 'credit' ? (t.amount_paise || 0) : -(t.amount_paise || 0))
           var balGap = (t.balance_after_paise || 0) - expectedBal
           if (Math.abs(balGap) >= 100) {
-            pLines.push({ kind: 'warn', text: (balGap > 0 ? '+' : '−') + fmtN(Math.abs(balGap)) + ' moved the balance from activity not in this statement' })
+            // Net out any trailing edit (an amendment to some OTHER expense)
+            // whose own real timestamp falls strictly between these two rows --
+            // a known, accounted-for amount, not a missing one.
+            var _tTime = new Date(t._sortAt || t.created_at).getTime()
+            var _pTime = new Date(prevRow._sortAt || prevRow.created_at).getTime()
+            var _lo = Math.min(_tTime, _pTime), _hi = Math.max(_tTime, _pTime)
+            var _explained = (chrono._trailingEdits || []).reduce(function (s, e) {
+              var et = new Date(e.created_at).getTime()
+              if (et <= _lo || et >= _hi) return s
+              return s + (e.type === 'credit' ? (e.amount_paise || 0) : -(e.amount_paise || 0))
+            }, 0)
+            var _residual = balGap - _explained
+            if (Math.abs(_residual) >= 100) {
+              pLines.push({ kind: 'warn', text: (_residual > 0 ? '+' : '−') + fmtN(Math.abs(_residual)) + ' moved the balance from activity not in this statement' })
+            }
           }
         }
         particularsMeta.push(pLines)
