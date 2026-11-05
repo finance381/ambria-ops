@@ -798,50 +798,72 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
         }
 
         if (mergeTarget) {
-          // Bump the target's own qty by the edited item's qty BEFORE touching
-          // allocations — this never happened before, so the allocation-vs-qty
-          // trigger rejected the merge every time the target's existing qty
-          // couldn't cover the incoming allocations, even though the merge
-          // itself was legitimate. Mirrors the equivalent NEW-ITEM merge path
-          // below (existing.qty + qty).
-          var mergedQty = Math.round(((mergeTarget.qty || 0) + totalQty) * 1000) / 1000
-          var { error: qtyBumpErr } = await supabase.from(tableName).update({ qty: mergedQty }).eq('id', mergeTarget.id)
-          if (qtyBumpErr) throw new Error('Merge qty update failed: ' + qtyBumpErr.message)
-          mergeTarget.qty = mergedQty
+          // This whole sequence (qty bump → allocation merge loop → delete the
+          // source item) has no real transaction behind it -- a failure partway
+          // through (the merge loop throwing, a network blip) leaves the
+          // target's qty already bumped by the source's stock while the source
+          // item ITSELF still exists, un-deleted, with its own qty/allocations
+          // still intact -- i.e. that stock is now double-counted across two
+          // rows. Retrying the same edit would detect the same duplicate match
+          // and bump the target's qty again, compounding it a second time. This
+          // doesn't prevent that (making it properly atomic is a larger rewrite
+          // this regression pass is flagging rather than attempting blind), but
+          // catches it here specifically so the error is unmistakable about
+          // what's now inconsistent and that retrying will make it worse.
+          try {
+            // Bump the target's own qty by the edited item's qty BEFORE touching
+            // allocations — this never happened before, so the allocation-vs-qty
+            // trigger rejected the merge every time the target's existing qty
+            // couldn't cover the incoming allocations, even though the merge
+            // itself was legitimate. Mirrors the equivalent NEW-ITEM merge path
+            // below (existing.qty + qty).
+            var mergedQty = Math.round(((mergeTarget.qty || 0) + totalQty) * 1000) / 1000
+            var { error: qtyBumpErr } = await supabase.from(tableName).update({ qty: mergedQty }).eq('id', mergeTarget.id)
+            if (qtyBumpErr) throw new Error('Merge qty update failed (target #' + mergeTarget.id + ' untouched): ' + qtyBumpErr.message)
+            mergeTarget.qty = mergedQty
 
-          // Gather all allocations to merge: form entries + any DB entries not in form
-          var { data: dbAllocs } = await supabase.from(allocTable).select('*').eq('item_id', item.id)
-          var { data: targetAllocs } = await supabase.from(allocTable).select('*').eq('item_id', mergeTarget.id)
-          var formRows = allocsForSave.filter(function (a) { return a.venue_id && Number(a.qty) > 0 })
-          // Build combined allocation list: start with form entries
-          var allAllocsToMerge = formRows.map(function (a) { return { venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, sub_department_id: a.sub_department_id ? Number(a.sub_department_id) : null, qty: Number(a.qty) } })
-          // Add any DB allocations not covered by form (in case form didn't load them)
-          ;(dbAllocs || []).forEach(function (da) {
-            var inForm = allAllocsToMerge.some(function (fa) { return fa.venue_id === da.venue_id && (fa.sub_venue_id || null) === (da.sub_venue_id || null) && (fa.sub_department_id || null) === (da.sub_department_id || null) })
-            if (!inForm) allAllocsToMerge.push({ venue_id: da.venue_id, sub_venue_id: da.sub_venue_id || null, sub_department_id: da.sub_department_id || null, qty: da.qty })
-          })
-          // Merge each into target
-          for (var ai = 0; ai < allAllocsToMerge.length; ai++) {
-            var nr = allAllocsToMerge[ai]
-            if (!nr.qty || nr.qty <= 0) continue
-            var match = (targetAllocs || []).find(function (ta) { return ta.venue_id === nr.venue_id && (ta.sub_venue_id || null) === (nr.sub_venue_id || null) && (ta.sub_department_id || null) === (nr.sub_department_id || null) })
-            if (match) {
-              var { error: updErr } = await supabase.from(allocTable).update({ qty: Math.round((match.qty + nr.qty) * 1000) / 1000 }).eq('id', match.id)
-              if (updErr) throw new Error('Merge allocation update failed: ' + updErr.message)
-            } else {
-              var { error: insErr } = await supabase.from(allocTable).insert({ item_id: mergeTarget.id, venue_id: nr.venue_id, sub_venue_id: nr.sub_venue_id, sub_department_id: nr.sub_department_id, qty: nr.qty })
-              if (insErr) throw new Error('Merge allocation insert failed: ' + insErr.message)
+            // Gather all allocations to merge: form entries + any DB entries not in form
+            var { data: dbAllocs } = await supabase.from(allocTable).select('*').eq('item_id', item.id)
+            var { data: targetAllocs } = await supabase.from(allocTable).select('*').eq('item_id', mergeTarget.id)
+            var formRows = allocsForSave.filter(function (a) { return a.venue_id && Number(a.qty) > 0 })
+            // Build combined allocation list: start with form entries
+            var allAllocsToMerge = formRows.map(function (a) { return { venue_id: Number(a.venue_id), sub_venue_id: a.sub_venue_id ? Number(a.sub_venue_id) : null, sub_department_id: a.sub_department_id ? Number(a.sub_department_id) : null, qty: Number(a.qty) } })
+            // Add any DB allocations not covered by form (in case form didn't load them)
+            ;(dbAllocs || []).forEach(function (da) {
+              var inForm = allAllocsToMerge.some(function (fa) { return fa.venue_id === da.venue_id && (fa.sub_venue_id || null) === (da.sub_venue_id || null) && (fa.sub_department_id || null) === (da.sub_department_id || null) })
+              if (!inForm) allAllocsToMerge.push({ venue_id: da.venue_id, sub_venue_id: da.sub_venue_id || null, sub_department_id: da.sub_department_id || null, qty: da.qty })
+            })
+            // Merge each into target
+            for (var ai = 0; ai < allAllocsToMerge.length; ai++) {
+              var nr = allAllocsToMerge[ai]
+              if (!nr.qty || nr.qty <= 0) continue
+              var match = (targetAllocs || []).find(function (ta) { return ta.venue_id === nr.venue_id && (ta.sub_venue_id || null) === (nr.sub_venue_id || null) && (ta.sub_department_id || null) === (nr.sub_department_id || null) })
+              if (match) {
+                var { error: updErr } = await supabase.from(allocTable).update({ qty: Math.round((match.qty + nr.qty) * 1000) / 1000 }).eq('id', match.id)
+                if (updErr) throw new Error('Merge allocation update failed: ' + updErr.message)
+              } else {
+                var { error: insErr } = await supabase.from(allocTable).insert({ item_id: mergeTarget.id, venue_id: nr.venue_id, sub_venue_id: nr.sub_venue_id, sub_department_id: nr.sub_department_id, qty: nr.qty })
+                if (insErr) throw new Error('Merge allocation insert failed: ' + insErr.message)
+              }
             }
+            // Keep image: if edited item has image and target doesn't, move it
+            if (item.image_path && !mergeTarget.image_path) {
+              await supabase.from(tableName).update({ image_path: item.image_path }).eq('id', mergeTarget.id)
+            }
+            if (imageFile) { var path = await uploadImage(mergeTarget.id, imgPrefix); if (path) await supabase.from(tableName).update({ image_path: path }).eq('id', mergeTarget.id) }
+            // Delete the edited item + its old allocations
+            await supabase.from(allocTable).delete().eq('item_id', item.id)
+            await supabase.from(tableName).delete().eq('id', item.id)
+          } catch (mergeErr) {
+            throw new Error('Merge into item #' + mergeTarget.id + ' failed partway: ' + (mergeErr.message || mergeErr) +
+              '. Target #' + mergeTarget.id + '\'s qty was already updated to ' + mergeTarget.qty + ', and source item #' + item.id +
+              ' may still exist with its own qty/allocations -- stock could now be double-counted. Do NOT retry this edit (it would bump the target again). ' +
+              'Have an admin check both items in Admin > Items and reconcile manually.')
           }
-          // Keep image: if edited item has image and target doesn't, move it
-          if (item.image_path && !mergeTarget.image_path) {
-            await supabase.from(tableName).update({ image_path: item.image_path }).eq('id', mergeTarget.id)
-          }
-          if (imageFile) { var path = await uploadImage(mergeTarget.id, imgPrefix); if (path) await supabase.from(tableName).update({ image_path: path }).eq('id', mergeTarget.id) }
-          // Delete the edited item + its old allocations
-          await supabase.from(allocTable).delete().eq('item_id', item.id)
-          await supabase.from(tableName).delete().eq('id', item.id)
-          // Its stock arrives on the target as a batch, then any new stock.
+          // Its stock arrives on the target as a batch, then any new stock. Past
+          // this point the source item is gone, so a failure here is a stock_batches
+          // bookkeeping gap only, not a double-counted item -- still swallowed
+          // deliberately (best-effort) rather than blocking the whole merge over it.
           try { await supabase.from('stock_batches').delete().eq('item_id', item.id).eq('item_source', isCatStore ? 'catering_store' : 'inventory') } catch (_) {}
           await saveStockBatch(mergeTarget.id, Number(qty) || 0, itemRatePaise, allocations, false)
           await saveStockBatch(mergeTarget.id, addQty, addRatePaise, addAllocs, false)
@@ -879,34 +901,43 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
         }
 
         if (existing) {
-          // Admin merge: add qty + merge allocations into existing approved item
-          var newQty = Math.round(((existing.qty || 0) + (Number(qty) || 0)) * 1000) / 1000
-          var { error: updateErr } = await supabase.from(tableName).update({ qty: newQty }).eq('id', existing.id)
-          if (updateErr) throw updateErr
-          targetItem = { id: existing.id }
-          if (imageFile) { var imgPath = await uploadImage(existing.id, imgPrefix); if (imgPath) await supabase.from(tableName).update({ image_path: imgPath }).eq('id', existing.id) }
+          // Same no-real-transaction risk as the edit-path merge above: if the
+          // allocation loop throws after the qty bump already committed, a
+          // retry would detect the same existing match and bump its qty again.
+          try {
+            // Admin merge: add qty + merge allocations into existing approved item
+            var newQty = Math.round(((existing.qty || 0) + (Number(qty) || 0)) * 1000) / 1000
+            var { error: updateErr } = await supabase.from(tableName).update({ qty: newQty }).eq('id', existing.id)
+            if (updateErr) throw updateErr
+            targetItem = { id: existing.id }
+            if (imageFile) { var imgPath = await uploadImage(existing.id, imgPrefix); if (imgPath) await supabase.from(tableName).update({ image_path: imgPath }).eq('id', existing.id) }
 
-          // Merge allocations
-          var { data: oldAllocs, error: allocErr } = await supabase.from(allocTable).select('id, venue_id, sub_venue_id, sub_department_id, qty').eq('item_id', existing.id)
-          if (allocErr) throw new Error('Failed to fetch allocations: ' + allocErr.message)
-          var newVenueRows = allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 })
-          for (var ai = 0; ai < newVenueRows.length; ai++) {
-            var nr = newVenueRows[ai]
-            var nrVenueId = Number(nr.venue_id)
-            var nrSubVenueId = nr.sub_venue_id ? Number(nr.sub_venue_id) : null
-            var nrSubDeptId = nr.sub_department_id ? Number(nr.sub_department_id) : null
-            var nrQty = Number(nr.qty)
-            if (!nrQty || nrQty <= 0) continue
-            var match = (oldAllocs || []).find(function (oa) { return oa.venue_id === nrVenueId && (oa.sub_venue_id || null) === nrSubVenueId && (oa.sub_department_id || null) === nrSubDeptId })
-            if (match) {
-              var { error: updErr } = await supabase.from(allocTable).update({ qty: Math.round((match.qty + nrQty) * 1000) / 1000 }).eq('id', match.id)
-              if (updErr) throw new Error('Allocation update failed: ' + updErr.message)
-            } else {
-              var { error: insErr } = await supabase.from(allocTable).insert({ item_id: existing.id, venue_id: nrVenueId, sub_venue_id: nrSubVenueId, sub_department_id: nrSubDeptId, qty: nrQty })
-              if (insErr) throw new Error('Allocation insert failed: ' + insErr.message)
+            // Merge allocations
+            var { data: oldAllocs, error: allocErr } = await supabase.from(allocTable).select('id, venue_id, sub_venue_id, sub_department_id, qty').eq('item_id', existing.id)
+            if (allocErr) throw new Error('Failed to fetch allocations: ' + allocErr.message)
+            var newVenueRows = allocations.filter(function (a) { return a.venue_id && Number(a.qty) > 0 })
+            for (var ai = 0; ai < newVenueRows.length; ai++) {
+              var nr = newVenueRows[ai]
+              var nrVenueId = Number(nr.venue_id)
+              var nrSubVenueId = nr.sub_venue_id ? Number(nr.sub_venue_id) : null
+              var nrSubDeptId = nr.sub_department_id ? Number(nr.sub_department_id) : null
+              var nrQty = Number(nr.qty)
+              if (!nrQty || nrQty <= 0) continue
+              var match = (oldAllocs || []).find(function (oa) { return oa.venue_id === nrVenueId && (oa.sub_venue_id || null) === nrSubVenueId && (oa.sub_department_id || null) === nrSubDeptId })
+              if (match) {
+                var { error: updErr } = await supabase.from(allocTable).update({ qty: Math.round((match.qty + nrQty) * 1000) / 1000 }).eq('id', match.id)
+                if (updErr) throw new Error('Allocation update failed: ' + updErr.message)
+              } else {
+                var { error: insErr } = await supabase.from(allocTable).insert({ item_id: existing.id, venue_id: nrVenueId, sub_venue_id: nrSubVenueId, sub_department_id: nrSubDeptId, qty: nrQty })
+                if (insErr) throw new Error('Allocation insert failed: ' + insErr.message)
+              }
             }
+            await saveStockBatch(existing.id, Number(qty) || 0, itemRatePaise, newVenueRows, false)
+          } catch (mergeErr) {
+            throw new Error('Merge into item #' + existing.id + ' failed partway: ' + (mergeErr.message || mergeErr) +
+              '. Its qty was already updated to ' + newQty + '. Do NOT retry this submission (it would bump the qty again). ' +
+              'Have an admin check item #' + existing.id + ' in Admin > Items and reconcile manually.')
           }
-          await saveStockBatch(existing.id, Number(qty) || 0, itemRatePaise, newVenueRows, false)
         } else {
           // Fresh insert — pending or approved depending on role
           var { data: newItem, error: insertError } = await supabase.from(tableName).insert(payload).select().single()
