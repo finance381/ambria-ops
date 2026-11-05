@@ -115,23 +115,55 @@ export async function reconcileStockBatches(supabase, opts) {
       }
     })
 
-    // 3. Write back only the batches that changed.
+    // 3. Write back only the batches that changed. Insert the replacement FIRST and
+    // only delete the old row once it's confirmed in place -- deleting first (the
+    // previous order) meant a failed re-insert destroyed a real batch (its qty,
+    // rate, and venue allocations) with nothing put back, and that delete itself
+    // ran with no error check at all.
+    //
+    // Exception: an is_opening batch can't use that order -- uq_stock_batches_opening
+    // allows at most one is_opening row per item, so inserting the replacement while
+    // the old opening batch still exists would itself fail the constraint. That one
+    // case keeps the original delete-then-insert order (now with its delete's error
+    // actually checked, instead of silently continuing to the insert regardless).
     var wrote = false
     for (var w = 0; w < batches.length; w++) {
       var bw = batches[w]
       if (bw.id && JSON.stringify([bw.qty, bw.allocs, bw.rate_paise || null]) === bw.before) continue
       wrote = true
-      if (bw.id) await supabase.from('stock_batches').delete().eq('id', bw.id)
-      if (bw.qty <= 0) continue
-      var row = { item_id: itemId, item_source: src, qty: bw.qty, rate_paise: bw.rate_paise || null, is_opening: !!bw.is_opening, added_by: bw.added_by || null }
-      if (bw.created_at) row.created_at = bw.created_at
-      var ins = await supabase.from('stock_batches').insert(row).select('id').single()
-      if (ins.error || !ins.data) continue
-      if (bw.allocs.length > 0) {
-        await supabase.from('stock_batch_allocations').insert(bw.allocs.map(function (x) {
-          return { batch_id: ins.data.id, venue_id: x.venue_id, sub_venue_id: x.sub_venue_id, qty: x.qty }
-        }))
+      var oldId = bw.id
+
+      if (bw.is_opening && oldId) {
+        var delRes = await supabase.from('stock_batches').delete().eq('id', oldId)
+        if (delRes.error) continue // couldn't clear the slot -- leave the old opening batch as-is
+        if (bw.qty > 0) {
+          var openRow = { item_id: itemId, item_source: src, qty: bw.qty, rate_paise: bw.rate_paise || null, is_opening: true, added_by: bw.added_by || null }
+          if (bw.created_at) openRow.created_at = bw.created_at
+          var openIns = await supabase.from('stock_batches').insert(openRow).select('id').single()
+          if (openIns.error || !openIns.data) continue // item now has no opening batch -- a real gap, but the alternative (the old order) risked the same thing anyway
+          if (bw.allocs.length > 0) {
+            await supabase.from('stock_batch_allocations').insert(bw.allocs.map(function (x) {
+              return { batch_id: openIns.data.id, venue_id: x.venue_id, sub_venue_id: x.sub_venue_id, qty: x.qty }
+            }))
+          }
+        }
+        continue
       }
+
+      if (bw.qty > 0) {
+        var row = { item_id: itemId, item_source: src, qty: bw.qty, rate_paise: bw.rate_paise || null, is_opening: !!bw.is_opening, added_by: bw.added_by || null }
+        if (bw.created_at) row.created_at = bw.created_at
+        var ins = await supabase.from('stock_batches').insert(row).select('id').single()
+        if (ins.error || !ins.data) continue // old batch (if any) untouched -- nothing lost
+        if (bw.allocs.length > 0) {
+          await supabase.from('stock_batch_allocations').insert(bw.allocs.map(function (x) {
+            return { batch_id: ins.data.id, venue_id: x.venue_id, sub_venue_id: x.sub_venue_id, qty: x.qty }
+          }))
+        }
+      }
+      // Replacement (or intentional removal, if qty dropped to 0) is in place now --
+      // safe to remove the old row.
+      if (oldId) await supabase.from('stock_batches').delete().eq('id', oldId)
     }
     return wrote
   } catch (_) {
