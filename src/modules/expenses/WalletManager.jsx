@@ -1081,9 +1081,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     })
     if (error) { alert((issueType === 'debit' ? 'Deduct' : 'Issue') + ' failed: ' + error.message); setIssueSaving(false); return }
     if (imagePath) {
+      // deduct_money/issue_money don't return the new transaction's id, so this
+      // guesses "whichever is latest" -- a genuine race (another write landing on
+      // this same wallet in between) could attach the receipt to the wrong row.
+      // Narrowing to the exact description just sent doesn't close that window
+      // entirely, but meaningfully shrinks it: a colliding transaction would also
+      // need an identical description, not just a close-enough timestamp.
       var { data: latestTxn } = await supabase.from('wallet_transactions')
         .select('id')
         .eq('wallet_id', issueModal.id)
+        .eq('description', issueDesc.trim() || defaultDesc)
         .order('created_at', { ascending: false })
         .limit(1)
         .single()
@@ -2297,20 +2304,36 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var amountRupees = Math.round(Number(bulkAmount) * 100)
     var desc = bulkDesc.trim() || 'Bulk points issued by admin'
     var succeeded = 0
-    var failed = 0
+    var failedUserIds = []
     var CHUNK = 10
     for (var c = 0; c < userIds.length; c += CHUNK) {
       var chunk = userIds.slice(c, c + CHUNK)
       var results = await Promise.allSettled(chunk.map(function (uid) {
         return supabase.rpc('issue_money', { p_user_id: uid, p_amount_paise: amountRupees, p_description: desc })
       }))
-      results.forEach(function (res) {
+      results.forEach(function (res, idx) {
         if (res.status === 'fulfilled' && !res.value.error) succeeded++
-        else failed++
+        else failedUserIds.push(chunk[idx])
       })
     }
     try { await logActivity('WALLET_BULK_ISSUE', succeeded + ' users | ' + formatPoints(amountRupees) + ' each | ' + desc) } catch (_) {}
-    alert('Done: ' + succeeded + ' issued' + (failed > 0 ? ', ' + failed + ' failed' : ''))
+    if (failedUserIds.length > 0) {
+      // The old message only gave a failure COUNT, with no way to tell which users
+      // actually failed -- an admin trying to "finish the job" would either have to
+      // guess, or re-select everyone again and re-issue to the ones that already
+      // succeeded. Pre-select just the failed ones instead, so retrying is the safe
+      // default rather than something that has to be worked out by hand.
+      var failedNames = failedUserIds.map(function (uid) { return walletProfiles[uid]?.name || uid }).join(', ')
+      alert('Done: ' + succeeded + ' issued, ' + failedUserIds.length + ' failed (' + failedNames + '). ' +
+        'They\'re still selected below -- check the amount/description and run again to retry just them.')
+      var retrySelected = {}
+      failedUserIds.forEach(function (uid) { retrySelected[uid] = true })
+      setBulkSelected(retrySelected)
+      setBulkSaving(false)
+      loadAllWallets()
+      return
+    }
+    alert('Done: ' + succeeded + ' issued')
     setBulkSaving(false)
     setBulkMode(false)
     setBulkSelected({})
