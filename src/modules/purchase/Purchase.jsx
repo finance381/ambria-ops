@@ -456,19 +456,20 @@ function Purchase({ profile, mode }) {
     if (!(await appConfirm('Confirm this item has been returned? Wallet will be credited ' + formatPaise(item.actual_cost_paise) + '.'))) return
     setSaving(true)
     // Update item status
-    var { error } = await supabase.from('purchase_order_items').update({ status: 'returned' }).eq('id', poItemId)
+    var { data: statusRows, error } = await supabase.from('purchase_order_items').update({ status: 'returned' }).eq('id', poItemId).select('id')
     if (error) { alert('Failed: ' + error.message); setSaving(false); return }
+    if (!statusRows || statusRows.length === 0) { alert('Return blocked — no row updated. You may not be permitted to confirm this return.'); setSaving(false); return }
     // Credit purchaser wallet
+    var returnWarnings = []
     if (item.actual_cost_paise > 0 && item.purchased_by) {
-      try {
-        await supabase.rpc('wallet_admin_credit', {
-          p_user_id: item.purchased_by,
-          p_amount_paise: item.actual_cost_paise,
-          p_description: 'PO Return: ' + titleCase(item.item_name),
-          p_ref_type: 'po_return',
-          p_ref_id: String(poItemId),
-        })
-      } catch (_) {}
+      var { error: wErr } = await supabase.rpc('wallet_admin_credit', {
+        p_user_id: item.purchased_by,
+        p_amount_paise: item.actual_cost_paise,
+        p_description: 'PO Return: ' + titleCase(item.item_name),
+        p_ref_type: 'po_return',
+        p_ref_id: String(poItemId),
+      })
+      if (wErr) returnWarnings.push('Wallet credit failed: ' + wErr.message + ' — balance may be out of sync.')
     }
 
     // ─── Reversal expense (negative amount + deduction_type='return') ───
@@ -479,9 +480,14 @@ function Purchase({ profile, mode }) {
           .eq('id', item.expense_id)
           .single()
         if (origExp) {
-          var { data: origAllocs } = await supabase.from('expense_allocations')
-            .select('department, sub_department_id, venue_id, amount_paise')
+          // department_id, not sub_department_id -- expense_allocations has no such
+          // column. That select used to fail silently (its error was never checked),
+          // which read as "no allocations" and left the reversal expense with none at
+          // all, breaking ledger traceability for every return.
+          var { data: origAllocs, error: origAllocsErr } = await supabase.from('expense_allocations')
+            .select('department, department_id, venue_id, amount_paise')
             .eq('expense_id', origExp.id)
+          if (origAllocsErr) returnWarnings.push('Could not read original allocations: ' + origAllocsErr.message + ' — reversal expense has none.')
 
           var { data: revExp, error: revErr } = await supabase.from('expenses').insert({
             user_id: item.purchased_by,
@@ -497,23 +503,24 @@ function Purchase({ profile, mode }) {
             batch_id: origExp.batch_id,
           }).select('id').single()
 
-          if (!revErr && revExp && (origAllocs || []).length > 0) {
+          if (revErr) {
+            returnWarnings.push('Reversal expense insert failed: ' + revErr.message)
+          } else if (revExp && (origAllocs || []).length > 0) {
             var revAllocs = origAllocs.map(function (a) {
               return {
                 expense_id: revExp.id,
                 department: a.department,
-                sub_department_id: a.sub_department_id,
+                department_id: a.department_id,
                 venue_id: a.venue_id,
                 amount_paise: -a.amount_paise,
               }
             })
-            await supabase.from('expense_allocations').insert(revAllocs)
-          } else if (revErr) {
-            console.warn('Reversal insert failed:', revErr.message)
+            var { error: revAllocErr } = await supabase.from('expense_allocations').insert(revAllocs)
+            if (revAllocErr) returnWarnings.push('Reversal allocations failed: ' + revAllocErr.message)
           }
         }
       } catch (err) {
-        console.warn('Return reversal error:', err.message || err)
+        returnWarnings.push('Return reversal error: ' + (err.message || err))
       }
     }
 
@@ -533,6 +540,7 @@ function Purchase({ profile, mode }) {
     }
     try { await logActivity('PO_ITEM_RETURNED', titleCase(item.item_name) + ' returned | ' + formatPaise(item.actual_cost_paise) + ' credited') } catch (_) {}
     setSaving(false)
+    if (returnWarnings.length > 0) alert('Return confirmed, but: \n' + returnWarnings.join('\n') + '\nFlag for admin correction.')
     loadPos()
   }
 
