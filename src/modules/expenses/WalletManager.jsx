@@ -1074,29 +1074,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       if (upErr) { alert('Image upload failed: ' + upErr.message); setIssueSaving(false); return }
       imagePath = path
     }
-    var { error } = await supabase.rpc(rpcName, {
+    var { data: newTxnId, error } = await supabase.rpc(rpcName, {
       p_user_id: issueModal.user_id,
       p_amount_paise: amountRupees,
       p_description: issueDesc.trim() || defaultDesc,
     })
     if (error) { alert((issueType === 'debit' ? 'Deduct' : 'Issue') + ' failed: ' + error.message); setIssueSaving(false); return }
-    if (imagePath) {
-      // deduct_money/issue_money don't return the new transaction's id, so this
-      // guesses "whichever is latest" -- a genuine race (another write landing on
-      // this same wallet in between) could attach the receipt to the wrong row.
-      // Narrowing to the exact description just sent doesn't close that window
-      // entirely, but meaningfully shrinks it: a colliding transaction would also
-      // need an identical description, not just a close-enough timestamp.
-      var { data: latestTxn } = await supabase.from('wallet_transactions')
-        .select('id')
-        .eq('wallet_id', issueModal.id)
-        .eq('description', issueDesc.trim() || defaultDesc)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-      if (latestTxn) {
-        await supabase.from('wallet_transactions').update({ issued_image_path: imagePath }).eq('id', latestTxn.id)
-      }
+    if (imagePath && newTxnId) {
+      await supabase.from('wallet_transactions').update({ issued_image_path: imagePath }).eq('id', newTxnId)
     }
     var logAction = issueType === 'debit' ? 'WALLET_DEDUCT' : 'WALLET_ISSUE'
     try { await logActivity(logAction, (walletProfiles[issueModal.user_id]?.name || '—') + ' | ' + formatPoints(amountRupees) + ' | ' + (issueDesc.trim() || '—')) } catch (_) {}
