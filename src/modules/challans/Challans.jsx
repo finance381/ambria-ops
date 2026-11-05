@@ -617,9 +617,16 @@ function Challans({ profile }) {
         qty_received: received,
         condition: condition,
         damage_note: damageNote,
-      }).eq('id', ci.id)
+      }).eq('id', ci.id).then(function (res) { return { itemId: ci.id, error: res.error } })
     })
-    await Promise.allSettled(updates)
+    var updateResults = await Promise.allSettled(updates)
+    // Ignored before -- a failed per-item update left that item's received qty/
+    // condition however it was before, while the challan as a whole still got
+    // marked 'received' right below, with nothing to say one item's record didn't
+    // actually update.
+    var itemUpdateFailures = updateResults
+      .map(function (r) { return (r.status === 'rejected' || (r.value && r.value.error)) ? r.value?.itemId : null })
+      .filter(Boolean)
 
     var { error } = await supabase.from('challans').update({
       status: 'received',
@@ -634,8 +641,15 @@ function Challans({ profile }) {
     challanItems.forEach(function (ci) {
       if (ci.box_id && boxIds.indexOf(ci.box_id) === -1) boxIds.push(ci.box_id)
     })
+    var boxWarning = ''
     if (boxIds.length > 0) {
-      await supabase.from('boxes').update({ status: 'at_venue' }).in('id', boxIds)
+      var { error: boxErr } = await supabase.from('boxes').update({ status: 'at_venue' }).in('id', boxIds)
+      if (boxErr) boxWarning = '\n\nBox statuses could not be updated: ' + boxErr.message
+    }
+    if (itemUpdateFailures.length > 0 || boxWarning) {
+      alert('Challan marked received, but ' +
+        (itemUpdateFailures.length > 0 ? itemUpdateFailures.length + ' item(s) (ids: ' + itemUpdateFailures.join(', ') + ') did not save their received qty/condition. ' : '') +
+        boxWarning)
     }
 
     await logActivity('CHALLAN_RECEIVE', activeChallan.challan_no + ' received')
@@ -656,13 +670,15 @@ function Challans({ profile }) {
     if (error) { alert('Failed: ' + error.message); setSaving(false); return }
 
     // Return type: update box statuses back to stored
+    var closeBoxWarning = ''
     if (activeChallan.type === 'event_return' || (activeChallan.type === 'inter_store' && activeChallan.return_for_challan_id)) {
       var boxIds = []
       challanItems.forEach(function (ci) {
         if (ci.box_id && boxIds.indexOf(ci.box_id) === -1) boxIds.push(ci.box_id)
       })
       if (boxIds.length > 0) {
-        await supabase.from('boxes').update({ status: 'stored' }).in('id', boxIds)
+        var { error: boxErr } = await supabase.from('boxes').update({ status: 'stored' }).in('id', boxIds)
+        if (boxErr) closeBoxWarning = 'Challan closed, but box statuses could not be updated to stored: ' + boxErr.message
       }
     }
 
@@ -670,6 +686,7 @@ function Challans({ profile }) {
     setSaving(false)
     var updated = Object.assign({}, activeChallan, { status: 'closed' })
     setActiveChallan(updated)
+    if (closeBoxWarning) alert(closeBoxWarning)
     loadChallans()
   }
 
@@ -709,13 +726,18 @@ function Challans({ profile }) {
         if (ci.box_id) row.box_id = ci.box_id
         return row
       })
+      var itemsInsertFailed = false
       if (rows.length > 0) {
-        await supabase.from('challan_items').insert(rows)
+        var { error: itemsErr } = await supabase.from('challan_items').insert(rows)
+        // The challan header above is already committed -- unchecked, this used to
+        // leave a ghost return challan with zero items and nothing to say why.
+        if (itemsErr) itemsInsertFailed = true
       }
     }
 
     await logActivity('CHALLAN_CREATE', 'Return ' + newChallan.challan_no + ' for ' + activeChallan.challan_no)
     setSaving(false)
+    if (itemsInsertFailed) alert('Return challan ' + newChallan.challan_no + ' was created, but its items could not be copied over. Add them manually before dispatching it.')
     openDetail(newChallan)
     loadChallans()
   }
