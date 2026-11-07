@@ -14,7 +14,7 @@ import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
 import CameraCapture from '../../components/ui/CameraCapture'
 import ImageCropper from '../../components/ui/ImageCropper'
-import { hasPerm } from '../../lib/permissions'
+import { hasPerm, isPrivilegedRole } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { deptInk } from '../../lib/ui'
 import { buildContractBuckets, loadFunctionPickerPool } from '../../lib/functionPicker'
@@ -1417,7 +1417,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         // Filter vendors: (1) user-tag gating (admin/auditor bypass, else intersect with user's expense_sub_type_ids),
         // then (2) match on current sub-type or parent type if tagged at type level.
         var raw = lookupCache.vendors || []
-        var isAdminVend = hasPerm(profile?.permsNew, 'finance.expenses.approve')
+        var isAdminVend = isPrivilegedRole(profile) || hasPerm(profile?.permsNew, 'finance.expenses.approve')
         var userEstIdsV = profile?.expense_sub_type_ids || []
         var subTypeIdNum = entry ? Number(entry.expenseSubTypeId) : 0
         var subType = subTypeIdNum ? expenseSubTypes.find(function (s) { return s.id === subTypeIdNum }) : null
@@ -2370,7 +2370,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       )}
       {isAdminEdit && entries.length > 0 && (function () {
         var e0 = entries[0]
-        var isAdminEt = hasPerm(profile?.permsNew, 'finance.expenses.approve')
+        var isAdminEt = isPrivilegedRole(profile) || hasPerm(profile?.permsNew, 'finance.expenses.approve')
         var userEtIds = profile?.expense_type_ids || []
         var typeList = isAdminEt ? expenseTypes : expenseTypes.filter(function (et) { return userEtIds.indexOf(et.id) !== -1 })
         var userEstIds = profile?.expense_sub_type_ids || []
@@ -2417,7 +2417,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
 
       {entries.map(function (entry, idx) {
         if (isAdminEdit) return null
-        var isAdminEst = hasPerm(profile?.permsNew, 'finance.expenses.approve')
+        var isAdminEst = isPrivilegedRole(profile) || hasPerm(profile?.permsNew, 'finance.expenses.approve')
         var userEstIds = profile?.expense_sub_type_ids || []
         var subTypesForType = expenseSubTypes.filter(function (st) {
           if (st.expense_type_id !== Number(entry.expenseTypeId)) return false
@@ -2554,7 +2554,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
 
               {/* Expense Type */}
               {(function () {
-                var isAdminEt = hasPerm(profile?.permsNew, 'finance.expenses.approve')
+                var isAdminEt = isPrivilegedRole(profile) || hasPerm(profile?.permsNew, 'finance.expenses.approve')
                 var userEtIds = profile?.expense_type_ids || []
                 var typeList = isAdminEt ? expenseTypes : expenseTypes.filter(function (et) { return userEtIds.indexOf(et.id) !== -1 })
                 return (
