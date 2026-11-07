@@ -58,8 +58,22 @@ function Vendors({ profile }) {
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('sub_departments').select('id, name, department_id').eq('active', true).order('name'),
     ])
-    setVendors(filterVisibleVendors(vRes.data || [], profile))
-    setAllVendorsRaw(vRes.data || [])
+    // vendors.expense_type_ids/expense_sub_type_ids are bigint[] -- PostgREST
+    // hands these back as JSON strings ("405"), while every id they're ever
+    // compared against (categories/expense_types/expense_sub_types' own ids,
+    // profiles.expense_sub_type_ids) is integer and comes back as a plain
+    // number. Normalized to numbers once here, at the one place vendor rows
+    // enter this screen, so every indexOf() against them below (and in
+    // filterVisibleVendors) stays consistent instead of silently never
+    // matching.
+    var vRows = (vRes.data || []).map(function (v) {
+      return Object.assign({}, v, {
+        expense_type_ids: (v.expense_type_ids || []).map(Number),
+        expense_sub_type_ids: (v.expense_sub_type_ids || []).map(Number),
+      })
+    })
+    setVendors(filterVisibleVendors(vRows, profile))
+    setAllVendorsRaw(vRows)
     setCategories(cRes.data || [])
     setDepartments(dRes.data || [])
     setSubDepartments(sdRes.data || [])
@@ -90,8 +104,13 @@ function Vendors({ profile }) {
       email: v.email || '',
       address: v.address || '',
       category_ids: v.category_ids || [],
-      expense_type_ids: v.expense_type_ids || [],
-      expense_sub_type_ids: v.expense_sub_type_ids || [],
+      // vendors.expense_type_ids/expense_sub_type_ids are bigint[], so
+      // PostgREST hands these back as JSON strings ("405") -- normalized to
+      // numbers here so every indexOf() against expense_types/expense_sub_types'
+      // own (integer) ids below, and the toggle functions pushing those same
+      // ids, stays consistent instead of silently never matching.
+      expense_type_ids: (v.expense_type_ids || []).map(Number),
+      expense_sub_type_ids: (v.expense_sub_type_ids || []).map(Number),
       notes: v.notes || '',
       opening_balance: v.opening_balance_paise ? String(Math.abs(v.opening_balance_paise) / 100) : '',
       opening_balance_direction: (v.opening_balance_paise || 0) < 0 ? 'debit' : 'credit',

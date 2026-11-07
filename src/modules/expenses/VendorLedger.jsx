@@ -783,8 +783,13 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
     var finalMap = {}
     ;(tagRows || []).forEach(function (r) {
       finalMap[String(r.vendor_id)] = {
-        types: r.expense_type_ids || [],
-        subTypes: r.expense_sub_type_ids || [],
+        // v_vendor_tags' expense_type_ids/expense_sub_type_ids trace back to
+        // vendors' own bigint[] columns -- PostgREST hands bigint array
+        // elements back as JSON strings, while the filter below compares
+        // against Number(fExpType)/Number(fExpSubType). Normalized to
+        // numbers here so that match doesn't silently fail.
+        types: (r.expense_type_ids || []).map(Number),
+        subTypes: (r.expense_sub_type_ids || []).map(Number),
         cats: r.category_ids || [],
         subCats: r.sub_category_ids || [],
       }

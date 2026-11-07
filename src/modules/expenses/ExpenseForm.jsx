@@ -1416,12 +1416,23 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       if (field.source === 'vendors') {
         // Filter vendors: (1) user-tag gating (admin/auditor bypass, else intersect with user's expense_sub_type_ids),
         // then (2) match on current sub-type or parent type if tagged at type level.
+        //
+        // vendors.expense_sub_type_ids/expense_type_ids are bigint[], but
+        // profiles' and expense_sub_types'/expense_types' own id columns are
+        // integer -- PostgREST serializes a bigint array's elements as JSON
+        // strings (precision safety past JS's safe-integer range) but an
+        // integer array's as plain numbers, so a vendor's own tags always
+        // came back as ["405",...] against this form's numeric ids. Every
+        // comparison below is done as strings so the column-width mismatch
+        // can't silently fail the match again.
         var raw = lookupCache.vendors || []
         var isAdminVend = isPrivilegedRole(profile) || hasPerm(profile?.permsNew, 'finance.expenses.approve')
-        var userEstIdsV = profile?.expense_sub_type_ids || []
+        var userEstIdsV = (profile?.expense_sub_type_ids || []).map(String)
         var subTypeIdNum = entry ? Number(entry.expenseSubTypeId) : 0
         var subType = subTypeIdNum ? expenseSubTypes.find(function (s) { return s.id === subTypeIdNum }) : null
         var parentTypeId = subType ? subType.expense_type_id : 0
+        var subTypeIdStr = subTypeIdNum ? String(subTypeIdNum) : ''
+        var parentTypeIdStr = parentTypeId ? String(parentTypeId) : ''
         items = raw.filter(function (v) {
           // User-tag gate
           if (!isAdminVend) {
@@ -1429,15 +1440,15 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
             var vTags = v.expense_sub_type_ids || []
             var hit = false
             for (var gi = 0; gi < vTags.length; gi++) {
-              if (userEstIdsV.indexOf(vTags[gi]) !== -1) { hit = true; break }
+              if (userEstIdsV.indexOf(String(vTags[gi])) !== -1) { hit = true; break }
             }
             if (!hit) return false
           }
           // Existing sub-type / parent-type filter
-          if (!subTypeIdNum) return true
-          var stIds = v.expense_sub_type_ids || []
-          var tIds = v.expense_type_ids || []
-          return stIds.indexOf(subTypeIdNum) !== -1 || (parentTypeId && tIds.indexOf(parentTypeId) !== -1)
+          if (!subTypeIdStr) return true
+          var stIds = (v.expense_sub_type_ids || []).map(String)
+          var tIds = (v.expense_type_ids || []).map(String)
+          return stIds.indexOf(subTypeIdStr) !== -1 || (parentTypeIdStr && tIds.indexOf(parentTypeIdStr) !== -1)
         }).map(function (v) {
           var suffix = v.status === 'incomplete' ? ' · incomplete' : (v.contact ? ' — ' + v.contact : '')
           return { label: v.name + suffix, value: String(v.id) }
