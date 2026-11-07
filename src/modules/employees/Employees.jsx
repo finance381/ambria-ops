@@ -82,7 +82,14 @@ function Employees({ profile }) {
       supabase.from('job_departments').select('*').order('sort_order').order('name'),
     ])
     if (empRes.error) { console.error('Employees load:', empRes.error); }
-    setRows(empRes.data || [])
+    // employees.job_department_ids is an ad-hoc bigint[] column (not in tracked
+    // migrations) while job_departments.id is a plain integer -- PostgREST hands
+    // bigint array elements back as JSON strings, so the dept filter's indexOf()
+    // below would silently never match without this normalization.
+    var empRows = (empRes.data || []).map(function (r) {
+      return Object.assign({}, r, { job_department_ids: (r.job_department_ids || []).map(Number) })
+    })
+    setRows(empRows)
     setJobDepartments(jdRes.data || [])
     setLoading(false)
   }

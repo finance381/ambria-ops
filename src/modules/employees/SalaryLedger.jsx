@@ -375,7 +375,9 @@ function SalaryLedger({ profile, inAdmin }) {
       if (statusFilter === 'with_balance' && (e.balance_paise || 0) === 0) return false
       if (statusFilter === 'stale' && ((e.unpaid_since_days || 0) < 30)) return false
       if (deptFilter) {
-        var ids = e.job_department_ids || []
+        // job_department_ids is an ad-hoc bigint[] column, so its elements
+        // come back as JSON strings -- normalize before comparing.
+        var ids = (e.job_department_ids || []).map(Number)
         if (ids.indexOf(Number(deptFilter)) === -1) return false
       }
       return true

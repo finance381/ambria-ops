@@ -68,6 +68,7 @@ function Vendors({ profile }) {
     // matching.
     var vRows = (vRes.data || []).map(function (v) {
       return Object.assign({}, v, {
+        category_ids: (v.category_ids || []).map(Number),
         expense_type_ids: (v.expense_type_ids || []).map(Number),
         expense_sub_type_ids: (v.expense_sub_type_ids || []).map(Number),
       })
@@ -103,12 +104,13 @@ function Vendors({ profile }) {
       phone2: v.phone2 || '',
       email: v.email || '',
       address: v.address || '',
-      category_ids: v.category_ids || [],
-      // vendors.expense_type_ids/expense_sub_type_ids are bigint[], so
-      // PostgREST hands these back as JSON strings ("405") -- normalized to
-      // numbers here so every indexOf() against expense_types/expense_sub_types'
-      // own (integer) ids below, and the toggle functions pushing those same
-      // ids, stays consistent instead of silently never matching.
+      // vendors.category_ids/expense_type_ids/expense_sub_type_ids are bigint[],
+      // so PostgREST hands these back as JSON strings ("405") -- normalized to
+      // numbers here so every indexOf() against categories/expense_types/
+      // expense_sub_types' own (integer) ids below, and the toggle functions
+      // pushing those same ids, stays consistent instead of silently never
+      // matching.
+      category_ids: (v.category_ids || []).map(Number),
       expense_type_ids: (v.expense_type_ids || []).map(Number),
       expense_sub_type_ids: (v.expense_sub_type_ids || []).map(Number),
       notes: v.notes || '',

@@ -80,7 +80,12 @@ function Categories() {
       supabase.from('expense_types').select('id, name').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('sort_order').order('name'),
     ])
-    setDepartments(deptRes.data || [])
+    // departments.category_ids is an ad-hoc bigint[] column -- PostgREST
+    // hands its elements back as JSON strings, which would otherwise never
+    // match categories' own (integer) ids in the checkboxes below.
+    setDepartments((deptRes.data || []).map(function (d) {
+      return Object.assign({}, d, { category_ids: (d.category_ids || []).map(Number) })
+    }))
     setCategories(catRes.data || [])
     setSubCategories(subRes.data || [])
     setVenues(venueRes.data || [])
