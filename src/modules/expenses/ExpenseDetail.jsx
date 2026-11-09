@@ -6,6 +6,7 @@ import { logActivity } from '../../lib/logger'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
+import { venueLabel } from '../../components/ui/FunctionPickerGrid'
 import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
 import CheckedStamp from '../../components/ui/CheckedStamp'
@@ -237,7 +238,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
 
   useEffect(function () {
     supabase.from('expense_allocations')
-      .select('id, department, venue_id, sub_venue_id, amount_paise, department_id, expense_type_id, expense_sub_type_id, remarks, source')
+      .select('id, department, venue_id, sub_venue_id, amount_paise, department_id, expense_type_id, expense_sub_type_id, remarks, source, event_id')
       .eq('expense_id', exp.id)
       .then(function (res) {
         var rows = res.data || []
@@ -245,9 +246,15 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         if (rows.length > 0) {
           var svIds = rows.map(function (r) { return r.sub_venue_id }).filter(Boolean)
           var dIds = rows.map(function (r) { return r.department_id }).filter(Boolean)
+          // Period-mode allocations (ExpenseForm.jsx) each carry their own
+          // event_id instead of the whole expense anchoring to one -- fetch
+          // whichever functions those rows actually hit, same columns the
+          // function pickers elsewhere already use.
+          var evIds = Array.from(new Set(rows.map(function (r) { return r.event_id }).filter(Boolean)))
           Promise.all([
             svIds.length > 0 ? supabase.from('sub_venues').select('id, name').in('id', svIds) : { data: [] },
             dIds.length > 0 ? supabase.from('departments').select('id, name').in('id', dIds) : { data: [] },
+            evIds.length > 0 ? supabase.from('events').select('id, event_name, client_name, venue_name, location, session, function_date').in('id', evIds) : { data: [] },
           ]).then(function (results) {
             var map = {}
             refData.venues.forEach(function (v) { map['v_' + v.id] = v.code + ' — ' + v.name })
@@ -255,6 +262,15 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
             refData.expenseSubTypes.forEach(function (est) { map['est_' + est.id] = est.name })
             ;(results[0].data || []).forEach(function (sv) { map['sv_' + sv.id] = sv.name })
             ;(results[1].data || []).forEach(function (d) { map['d_' + d.id] = d.name })
+            ;(results[2].data || []).forEach(function (ev) {
+              var subline = [
+                venueLabel(ev.venue_name, refData.venues),
+                (ev.location && ev.location !== ev.venue_name) ? ev.location : null,
+                ev.session
+              ].filter(Boolean).join(' · ')
+              map['ev_' + ev.id] = (ev.event_name ? ev.event_name + ' — ' : '') +
+                (ev.client_name || 'Unnamed') + (subline ? ' · ' + subline : '') + ' · ' + formatDate(ev.function_date)
+            })
             setAllocVenues(map)
           })
         }
@@ -910,6 +926,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
               var subTypeLabel = a.expense_sub_type_id && allocVenues['est_' + a.expense_sub_type_id] ? allocVenues['est_' + a.expense_sub_type_id] : null
               var venueLabel = a.venue_id && allocVenues['v_' + a.venue_id] ? allocVenues['v_' + a.venue_id] : null
               var subVenueLabel = a.sub_venue_id && allocVenues['sv_' + a.sub_venue_id] ? allocVenues['sv_' + a.sub_venue_id] : null
+              // Period-mode row (ExpenseForm.jsx) -- this allocation hit its
+              // own function's ledger instead of (or regardless of) whatever
+              // the whole expense's own event_id is.
+              var functionLabel = a.event_id && allocVenues['ev_' + a.event_id] ? allocVenues['ev_' + a.event_id] : null
               // Four lines of the same size and nearly the same grey, stacked
               // flush left, read as one paragraph — you have to parse each one
               // to learn what it is. They are four different kinds of thing, so
@@ -934,6 +954,12 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                         <p className="flex items-center gap-1.5 text-[12.5px] font-medium text-slate-500">
                           <Icon name="mapPin" size={12} className="shrink-0 text-slate-400" />
                           <span className="min-w-0 truncate">{venueLabel}{subVenueLabel ? ' › ' + subVenueLabel : ''}</span>
+                        </p>
+                      )}
+                      {functionLabel && (
+                        <p className="flex items-center gap-1.5 text-[12.5px] font-medium text-indigo-500">
+                          <Icon name="calendar" size={12} className="shrink-0 text-indigo-400" />
+                          <span className="min-w-0 truncate">{functionLabel}</span>
                         </p>
                       )}
                     </div>
