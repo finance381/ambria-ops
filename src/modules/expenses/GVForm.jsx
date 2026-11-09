@@ -49,7 +49,7 @@ function isItemComplete(im) {
 }
 
 function makeAlloc() {
-  return { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8), departmentId: '', expenseTypeId: '', expenseSubTypeId: '', venueId: '', subVenueId: '', amountPts: '', remarks: '' }
+  return { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8), departmentId: '', expenseTypeId: '', expenseSubTypeId: '', venueId: '', subVenueId: '', amountPts: '', remarks: '', eventId: '' }
 }
 
 function GVForm({ exp, profile, onCancel, onSaved }) {
@@ -228,7 +228,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('sub_departments').select('id, department_id'),
       supabase.from('expense_allocations')
-        .select('id, department, department_id, expense_type_id, expense_sub_type_id, venue_id, sub_venue_id, amount_paise, remarks')
+        .select('id, department, department_id, expense_type_id, expense_sub_type_id, venue_id, sub_venue_id, amount_paise, remarks, event_id')
         .eq('expense_id', exp.id)
         .order('id'),
     ]).then(function (res) {
@@ -247,6 +247,11 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
           amountPts: a.amount_paise != null ? String(a.amount_paise / 100) : '',
           remarks: a.remarks || '',
           _departmentText: a.department || '',
+          // This form has no period-mode UI (no per-row function picker) --
+          // carried through unchanged so a GV that only touches department/
+          // type doesn't silently wipe out a period-mode row's own function
+          // attribution (see fn_create_gv, 00185).
+          eventId: a.event_id ? String(a.event_id) : '',
         }
       })
       if (prefill.length === 0) {
@@ -340,6 +345,8 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
         sub_venue_id: a.subVenueId ? Number(a.subVenueId) : null,
         amount_paise: Math.round(Number(a.amountPts) * 100),
         remarks: (a.remarks || '').trim() || null,
+        // Pass-through only -- see the eventId comment on prefill above.
+        event_id: a.eventId ? Number(a.eventId) : null,
       }
     })
 
@@ -492,6 +499,18 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
             </div>
           </button>
         </div>
+        {allocations.some(function (a) { return !!a.eventId }) && (
+          // This form has no period-mode UI of its own (see ExpenseForm.jsx) --
+          // some/all of these rows already post to their own function, and
+          // that's preserved as-is through a GV. The toggle below only ever
+          // sets the expense-level fallback (expenses.event_id), which a
+          // period-mode row's own event_id always wins over -- so it won't
+          // move an already-attributed row, only a never-attributed one.
+          <p className="mt-3 flex items-start gap-1.5 text-[11px] text-amber-700 font-medium">
+            <Icon name="alert" size={12} className="shrink-0 mt-0.5" />
+            Some split rows here were set up in Period mode and already post to their own function — the toggle below won't move those, only rows with no function of their own.
+          </p>
+        )}
         {isFunction && (
           <div className="mt-3 pt-3 border-t border-gray-100">
             {renderFunctionPicker()}
