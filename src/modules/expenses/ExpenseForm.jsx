@@ -18,7 +18,7 @@ import { hasPerm, isPrivilegedRole } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { deptInk } from '../../lib/ui'
 import { buildContractBuckets, loadFunctionPickerPool, loadFunctionPickerPoolRange } from '../../lib/functionPicker'
-import FunctionPickerGrid from '../../components/ui/FunctionPickerGrid'
+import FunctionPickerGrid, { venueLabel } from '../../components/ui/FunctionPickerGrid'
 import { appConfirm } from '../../components/ui/AppDialog'
 import BottomSheet from '../../components/ui/BottomSheet'
 import { useBackButtonClose } from '../../lib/useBackButtonClose'
@@ -3228,10 +3228,23 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                             var periodBuckets = (periodMode && isFunction) ? buildContractBuckets(allEventRows) : []
                             var periodFuncItems = periodBuckets.map(function (b) {
                               var primary = b.functions[0].contracts[0]
+                              // Same elements (and same venueLabel resolution/dedup rules)
+                              // FunctionTile uses for a single-function bucket -- a
+                              // tentative event's venue_name can be a generic placeholder
+                              // (e.g. "Venue") with no location of its own, so event_name
+                              // (its function type, e.g. "Wedding") is what actually
+                              // distinguishes it; a real synced event's event_name carries
+                              // the same identifying weight.
+                              var subline = [
+                                venueLabel(b.venueName, venues),
+                                (b.location && b.location !== b.venueName) ? b.location : null,
+                                primary.session
+                              ].filter(Boolean).join(' · ')
                               return {
                                 value: String(primary.id),
-                                label: (b.clientName || 'Unnamed') + ' — ' + (b.venueName || '—') +
-                                  (b.location ? ' · ' + b.location : '') + ' · ' + formatDate(primary.function_date)
+                                label: (primary.event_name ? primary.event_name + ' — ' : '') +
+                                  (b.clientName || 'Unnamed') +
+                                  (subline ? ' · ' + subline : '') + ' · ' + formatDate(primary.function_date)
                               }
                             })
                             var periodBucketByAnchorId = {}

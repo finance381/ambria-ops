@@ -34,7 +34,7 @@ function gridCls(wide) {
 // actual address (location), which sits right after it on the same line --
 // the code alone (when the venues master has one) carries the same
 // information in a fifth of the space.
-function venueLabel(venueName, venues) {
+export function venueLabel(venueName, venues) {
   if (!venueName) return null
   var leg = VENUE_LEGEND.find(function (l) { return venueName.indexOf(l.name) !== -1 })
   if (leg) return venueName + ' (' + leg.code + ')'
