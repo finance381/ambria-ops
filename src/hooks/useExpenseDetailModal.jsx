@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import ExpenseDetail from '../modules/expenses/ExpenseDetail'
 import { useBackButtonClose } from '../lib/useBackButtonClose'
 
-var EXPENSE_DETAIL_SELECT = 'id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, checked_by, checked_at, tally_entered_by, tally_entered_at, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), expense_allocations(department, department_id, venue_id, amount_paise)'
+var EXPENSE_DETAIL_SELECT = 'id, user_id, batch_id, expense_type_id, expense_sub_type_id, amount_paise, tax_paise, description, status, expense_date, receipt_path, receipt_paths, created_at, rejection_reason, flag_reason, penalty_paise, penalized_at, penalized_by, reviewed_at, reviewed_by, acknowledged_at, acknowledged_by, deduction_type, vendor_name, travel_from, travel_to, travel_mode, metadata, event_id, deleted_at, checked_by, checked_at, tally_entered_by, tally_entered_at, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), events(event_name, venue_name, function_date, pax), expense_allocations(department, department_id, venue_id, amount_paise, event_id)'
 
 // Shared "click an expense-linked ledger row → open the ExpenseDetail overlay"
 // behavior, used by every ledger tab except Cost Transfers (which has no

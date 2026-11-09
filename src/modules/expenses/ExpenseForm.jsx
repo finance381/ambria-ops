@@ -17,7 +17,7 @@ import ImageCropper from '../../components/ui/ImageCropper'
 import { hasPerm, isPrivilegedRole } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import { deptInk } from '../../lib/ui'
-import { buildContractBuckets, loadFunctionPickerPool } from '../../lib/functionPicker'
+import { buildContractBuckets, loadFunctionPickerPool, loadFunctionPickerPoolRange } from '../../lib/functionPicker'
 import FunctionPickerGrid from '../../components/ui/FunctionPickerGrid'
 import { appConfirm } from '../../components/ui/AppDialog'
 import BottomSheet from '../../components/ui/BottomSheet'
@@ -73,7 +73,7 @@ function makeEntry() {
     taxAmount: '',
     expenseDate: new Date().toISOString().split('T')[0],
     fieldValues: {},
-    allocations: [{ departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountRupees: '', remarks: '' }],
+    allocations: [{ departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountRupees: '', remarks: '', eventId: '' }],
     showAllocations: false,
     receiptFiles: [],
     receiptPreviews: [],
@@ -98,7 +98,7 @@ function makeEntry() {
 }
 
 function makeAllocation() {
-  return { departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountRupees: '', remarks: '' }
+  return { departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountRupees: '', remarks: '', eventId: '' }
 }
 
 // ── Auto-save draft (new-entry only) ──────────────────────────
@@ -207,11 +207,12 @@ function hydrateEntry(exp) {
       expenseTypeId: a.expense_type_id ? String(a.expense_type_id) : '',
       expenseSubTypeId: a.expense_sub_type_id ? String(a.expense_sub_type_id) : '',
       amountRupees: a.amount_paise != null ? String(a.amount_paise / 100) : '',
-      remarks: a.remarks || ''
+      remarks: a.remarks || '',
+      eventId: a.event_id ? String(a.event_id) : ''
     }
   })
   if (allocs.length === 0) {
-    allocs = [{ departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountRupees: '', remarks: '' }]
+    allocs = [{ departmentId: '', venueId: '', expenseTypeId: '', expenseSubTypeId: '', amountRupees: '', remarks: '', eventId: '' }]
   }
 
   var itemsFromMeta = Array.isArray(meta.item_receipts) ? meta.item_receipts.map(function (it, i) {
@@ -262,7 +263,7 @@ function hydrateEntry(exp) {
     isItemPurchase: isItemP,
     itemsLocked: itemsLocked,
     items: isItemP && itemsFromMeta.length > 0 ? itemsFromMeta : [makeItem()],
-    showAllocations: allocs.length > 1 || allocs.some(function (a) { return !!a.venueId }),
+    showAllocations: allocs.length > 1 || allocs.some(function (a) { return !!a.venueId || !!a.eventId }),
     paymentCreditRupees: exp.payment_credit_paise ? String(exp.payment_credit_paise / 100) : '',
     payWithCash: (exp.payment_credit_cash_paise || 0) > 0,
     payWithBank: (exp.payment_credit_bank_paise || 0) > 0,
@@ -292,7 +293,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   // the same tick and the next re-render — a plain ref mutation is synchronous and closes
   // it, guarding against a fast double-tap submitting the same entries twice.
   var submitLockRef = useRef(false)
-  var [isFunction, setIsFunction] = useState(!!(editExp && editExp.event_id))
+  // Period mode anchors on allocation-level event ids instead (hydrateEntry
+  // below), so an edit of a period-mode expense has no single event_id to
+  // detect isFunction from — the mount effect further down backfills both
+  // once it sees an allocation carrying its own event_id.
+  var _editHasAllocEvents = !!(editExp && (editExp.expense_allocations || []).some(function (a) { return a.event_id }))
+  var [isFunction, setIsFunction] = useState(!!(editExp && (editExp.event_id || _editHasAllocEvents)))
   var [eventDate, setEventDate] = useState(editExp && editExp.event_id ? (editExp.expense_date || '') : '')
   var [eventId, setEventId] = useState(editExp && editExp.event_id ? String(editExp.event_id) : '')
   // Other functions in the same contract this entry also covers — tags
@@ -301,6 +307,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   var [events, setEvents] = useState([])
   var [allEventRows, setAllEventRows] = useState([])
   var [eventsLoading, setEventsLoading] = useState(false)
+  // Period mode: a bill spanning several days (e.g. a Dihari labour sheet)
+  // where each split-allocation row hits a different function instead of the
+  // whole expense anchoring to one (see loadFunctionPickerPoolRange).
+  var [periodMode, setPeriodMode] = useState(_editHasAllocEvents)
+  var [eventDateTo, setEventDateTo] = useState('')
   var voice = useVoice()
   var [error, setError] = useState('')
   var [success, setSuccess] = useState('')
@@ -345,9 +356,25 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   useEffect(function () { loadRefData(); ensureLookupData('vendors') }, [])
 
   useEffect(function () {
-    if (isEditing && editExp && editExp.event_id && editExp.expense_date) {
-      loadEventsByDate(editExp.expense_date)
-    }
+    if (!isEditing || !editExp) return
+    if (editExp.event_id && editExp.expense_date) { loadEventsByDate(editExp.expense_date); return }
+    if (!_editHasAllocEvents) return
+    // Period-mode edit: the expense itself carries no single event_id, only
+    // its allocations do. Fetch just those events to learn their dates, then
+    // pool the whole min..max range so every row's picker still resolves to
+    // a real label instead of a bare id.
+    var allocEventIds = (editExp.expense_allocations || [])
+      .map(function (a) { return a.event_id }).filter(Boolean).map(Number)
+    if (allocEventIds.length === 0) return
+    supabase.from('events').select('id, function_date').in('id', allocEventIds)
+      .then(function (res) {
+        var dates = (res.data || []).map(function (r) { return r.function_date }).filter(Boolean).sort()
+        if (dates.length === 0) return
+        var from = dates[0], to = dates[dates.length - 1]
+        setEventDate(from); setEventDateTo(to)
+        loadEventsByRange(from, to)
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Editing an existing item-purchase expense hydrates items already
@@ -493,6 +520,16 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     else if (!pool.allRows.some(function (r) { return String(r.id) === eventId })) { setEventId(''); setExtraEventIds([]) }
   }
 
+  // Period mode's loader -- no single eventId to auto-pick or clear here,
+  // since each split-allocation row picks its own function from the pool.
+  async function loadEventsByRange(fromStr, toStr) {
+    if (!fromStr || !toStr) { setAllEventRows([]); return }
+    setEventsLoading(true)
+    var pool = await loadFunctionPickerPoolRange(fromStr, toStr)
+    setAllEventRows(pool.allRows)
+    setEventsLoading(false)
+  }
+
   // Same tentative-event escape hatch WalletManager's Collect flow already
   // offers when a real LMS contract for a booking hasn't synced in yet —
   // gated behind the same permission, calling the same RPC, so a tentative
@@ -549,26 +586,66 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   function renderFunctionPicker() {
     return (
     <div className="space-y-2">
-      <EventDatePicker label="Function Date" value={eventDate} collapsible
-        onChange={function (dateStr) { setEventDate(dateStr); loadEventsByDate(dateStr) }} />
-      {eventsLoading && <p className="text-[12px] text-slate-500">Loading events...</p>}
-      {eventDate && !eventsLoading && events.length === 0 && <p className="text-[12px] text-slate-500">No events on this date</p>}
-      {eventDate && !eventsLoading && canCreateTentativeEvent && (
-        <button type="button" onClick={openTentativeModal}
-          className="w-full py-2 text-[12px] font-semibold text-indigo-600 border border-dashed border-indigo-300 rounded-lg hover:bg-indigo-50 transition-colors">
-          + Booking not in the list? Create tentative event
-        </button>
-      )}
-      {/* A card list, not a <select>: one function needs THREE department
-          colours on the same row, and a native option can only carry one
-          (the iOS wheel ignores even that). Real markup gets the chips —
-          and it matches the Extra Plates and Wallet function pickers. A
-          contract running more than one function (same day or different
-          days) reads as one tile; opening it lists its functions with their
-          own dates so the pick into a specific one stays deliberate. */}
-      {allEventRows.length > 0 && (
-        <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={eventId} onPick={setEventId}
-          extraEventIds={extraEventIds} onExtraChange={setExtraEventIds} wide={wide} venues={venues} />
+      {/* Single date anchors the whole expense to one function, same as
+          always. Period lets a bill that spans several days (a Dihari
+          labour sheet, a multi-venue vendor bill) pick a different function
+          PER split-allocation row below instead -- see the Split
+          allocations panel, which is where the actual picking happens once
+          a range is set here. */}
+      <div className="flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 w-fit">
+        {[['Single date', false], ['Period', true]].map(function (opt) {
+          return (
+            <button key={String(opt[1])} type="button" onClick={function () { togglePeriodMode(opt[1]) }}
+              className={"px-3 py-1.5 text-[11px] font-semibold rounded-md transition-colors " +
+                (periodMode === opt[1] ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-700")}>
+              {opt[0]}
+            </button>
+          )
+        })}
+      </div>
+      {!periodMode ? (
+        <>
+          <EventDatePicker label="Function Date" value={eventDate} collapsible
+            onChange={function (dateStr) { setEventDate(dateStr); loadEventsByDate(dateStr) }} />
+          {eventsLoading && <p className="text-[12px] text-slate-500">Loading events...</p>}
+          {eventDate && !eventsLoading && events.length === 0 && <p className="text-[12px] text-slate-500">No events on this date</p>}
+          {eventDate && !eventsLoading && canCreateTentativeEvent && (
+            <button type="button" onClick={openTentativeModal}
+              className="w-full py-2 text-[12px] font-semibold text-indigo-600 border border-dashed border-indigo-300 rounded-lg hover:bg-indigo-50 transition-colors">
+              + Booking not in the list? Create tentative event
+            </button>
+          )}
+          {/* A card list, not a <select>: one function needs THREE department
+              colours on the same row, and a native option can only carry one
+              (the iOS wheel ignores even that). Real markup gets the chips —
+              and it matches the Extra Plates and Wallet function pickers. A
+              contract running more than one function (same day or different
+              days) reads as one tile; opening it lists its functions with their
+              own dates so the pick into a specific one stays deliberate. */}
+          {allEventRows.length > 0 && (
+            <FunctionPickerGrid buckets={buildContractBuckets(allEventRows)} eventId={eventId} onPick={setEventId}
+              extraEventIds={extraEventIds} onExtraChange={setExtraEventIds} wide={wide} venues={venues} />
+          )}
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <EventDatePicker label="From" value={eventDate} collapsible
+              onChange={function (dateStr) { setEventDate(dateStr); loadEventsByRange(dateStr, eventDateTo) }} />
+            <EventDatePicker label="To" value={eventDateTo} collapsible
+              onChange={function (dateStr) { setEventDateTo(dateStr); loadEventsByRange(eventDate, dateStr) }} />
+          </div>
+          {eventsLoading && <p className="text-[12px] text-slate-500">Loading functions...</p>}
+          {eventDate && eventDateTo && !eventsLoading && allEventRows.length === 0 && (
+            <p className="text-[12px] text-slate-500">No functions in this period</p>
+          )}
+          {eventDate && eventDateTo && !eventsLoading && allEventRows.length > 0 && (
+            <p className="text-[12px] text-slate-500">
+              {buildContractBuckets(allEventRows).length} function{buildContractBuckets(allEventRows).length === 1 ? '' : 's'} found —
+              pick one per row in Split allocations below.
+            </p>
+          )}
+        </>
       )}
     </div>
     )
@@ -632,7 +709,19 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
 
   function toggleFunction(val) {
     setIsFunction(val)
-    if (!val) { setEventId(''); setExtraEventIds([]); setEventDate(''); setEvents([]) }
+    if (!val) {
+      setEventId(''); setExtraEventIds([]); setEventDate(''); setEvents([]); setAllEventRows([])
+      setPeriodMode(false); setEventDateTo('')
+    }
+  }
+
+  function togglePeriodMode(val) {
+    setPeriodMode(val)
+    setEventId(''); setExtraEventIds([]); setEventDate(''); setEventDateTo(''); setEvents([]); setAllEventRows([])
+    // Period mode's whole point lives inside Split allocations -- open it so
+    // the per-row function picker (and its validation) isn't hidden behind a
+    // collapsed panel.
+    if (val) setEntries(function (prev) { return prev.map(function (e) { return Object.assign({}, e, { showAllocations: true }) }) })
   }
 
   // ── Lookup data loader ──
@@ -1253,6 +1342,46 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     return fallback
   }
 
+  // Period mode's per-row function picker (see renderExpanded below). A
+  // function's own venue_name is a free-text label from LMS, not an id —
+  // resolved against the venues master by exact name match, same lookup
+  // FunctionPickerGrid's venueLabel does for the same reason. Left blank
+  // (not every booking's venue resolves, e.g. a custom tentative-event name)
+  // rather than guessed.
+  function resolveVenueIdByName(name) {
+    if (!name) return ''
+    var v = venues.find(function (x) { return String(x.name || '').trim() === String(name).trim() })
+    return v ? String(v.id) : ''
+  }
+
+  function pickAllocationFunction(entryIdx, allocIdx, bucket) {
+    var anchorId = String(bucket.functions[0].contracts[0].id)
+    var resolvedVenueId = resolveVenueIdByName(bucket.venueName)
+    setEntries(function (prev) {
+      return prev.map(function (en, i) {
+        if (i !== entryIdx) return en
+        var copy = Object.assign({}, en)
+        copy.allocations = en.allocations.map(function (a, j) {
+          return j === allocIdx ? Object.assign({}, a, { eventId: anchorId, venueId: resolvedVenueId }) : a
+        })
+        return copy
+      })
+    })
+  }
+
+  function clearAllocationFunction(entryIdx, allocIdx) {
+    setEntries(function (prev) {
+      return prev.map(function (en, i) {
+        if (i !== entryIdx) return en
+        var copy = Object.assign({}, en)
+        copy.allocations = en.allocations.map(function (a, j) {
+          return j === allocIdx ? Object.assign({}, a, { eventId: '', venueId: '' }) : a
+        })
+        return copy
+      })
+    })
+  }
+
   // ── Sub-type field helpers ──
   function getSubTypeFields(subTypeId) {
     var st = expenseSubTypes.find(function (s) { return s.id === Number(subTypeId) })
@@ -1604,7 +1733,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       // instead of dividing it between them, silently doubling what the
       // ledgers show against those departments while the wallet only ever
       // debited the entry's real total.
-      var _allocRowsForCheck = (e.allocations || []).filter(function (a) { return a.venueId || a.departmentId })
+      var _allocRowsForCheck = (e.allocations || []).filter(function (a) { return a.venueId || a.departmentId || a.eventId })
       if (_allocRowsForCheck.length > 0) {
         var _allocSumPaise = _allocRowsForCheck.reduce(function (s, a) { return s + (a.amountRupees ? Math.round(Number(a.amountRupees) * 100) : 0) }, 0)
         var _entryBasePaise = Math.round(Number(e.amount || 0) * 100)
@@ -1614,6 +1743,21 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           return 'Entry ' + (i + 1) + ': Allocations total ' + (_allocSumPaise / 100).toLocaleString('en-IN') +
             ' but the entry is only ' + (_entryTotalPaise / 100).toLocaleString('en-IN') + ' — fix the split'
         }
+        // Period mode has no auto-filled "remainder" row (unlike single-date/no-function
+        // mode) -- an unattributed leftover there would have no function to post
+        // against, so it's a hard block here instead of a silent auto_default row.
+        if (periodMode && isFunction) {
+          if (_allocSumPaise < _entryTotalPaise) {
+            return 'Entry ' + (i + 1) + ': Split rows total ' + (_allocSumPaise / 100).toLocaleString('en-IN') +
+              ' but the entry is ' + (_entryTotalPaise / 100).toLocaleString('en-IN') + ' — in Period mode every point needs a function'
+          }
+          var _missingFuncIdx = _allocRowsForCheck.findIndex(function (a) { return !a.eventId })
+          if (_missingFuncIdx !== -1) {
+            return 'Entry ' + (i + 1) + ': Row ' + (_missingFuncIdx + 1) + ' needs a function picked'
+          }
+        }
+      } else if (periodMode && isFunction) {
+        return 'Entry ' + (i + 1) + ': Period mode requires at least one Split allocation row with a function picked'
       }
     }
     // Wallet negative allowed — inline warning shown near the submit bar, no hard block here.
@@ -1861,7 +2005,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         // itself now happens atomically (fn_replace_expense_allocations), so a failed insert
         // can't leave this expense with the old allocations wiped and nothing in their place.
         var editAllocRows = e0.allocations
-          .filter(function (a) { return a.venueId || a.departmentId })
+          .filter(function (a) { return a.venueId || a.departmentId || a.eventId })
           .map(function (a) {
             var aTypeId = a.expenseTypeId ? Number(a.expenseTypeId) : (e0.expenseTypeId ? Number(e0.expenseTypeId) : null)
             var aSubTypeId = a.expenseSubTypeId ? Number(a.expenseSubTypeId) : (e0.expenseSubTypeId ? Number(e0.expenseSubTypeId) : null)
@@ -1874,6 +2018,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
               expense_sub_type_id: aSubTypeId,
               amount_paise: a.amountRupees ? Math.round(Number(a.amountRupees) * 100) : 0,
               remarks: (a.remarks || '').trim() || null,
+              // Period mode's per-row function pick (null in every other mode --
+              // see fn_event_group_balance, which falls back to the whole
+              // expense's own event_id when no allocation carries its own).
+              event_id: a.eventId ? Number(a.eventId) : null,
               source: 'allocation',
             }
           })
@@ -2110,7 +2258,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           // entryExpType/entryDeptId/entryDeptName were already resolved (and validated)
           // before the expense row was inserted, above.
           var allocRows = e.allocations
-            .filter(function (a) { return a.venueId || a.departmentId })
+            .filter(function (a) { return a.venueId || a.departmentId || a.eventId })
             .map(function (a) {
               // Fallback allocation type to entry's top-level if user left it blank
               var aTypeId = a.expenseTypeId ? Number(a.expenseTypeId) : (e.expenseTypeId ? Number(e.expenseTypeId) : null)
@@ -2132,6 +2280,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                 expense_sub_type_id: aSubTypeId,
                 amount_paise: a.amountRupees ? Math.round(Number(a.amountRupees) * 100) : 0,
                 remarks: (a.remarks || '').trim() || null,
+                // Period mode's per-row function pick (null in every other mode --
+                // see fn_event_group_balance, which falls back to the whole
+                // expense's own event_id when no allocation carries its own).
+                event_id: a.eventId ? Number(a.eventId) : null,
                 // expense_allocations.source is NOT NULL (allocation | auto_default). Omitting
                 // it here works fine when every row in the batch omits it (the column default
                 // applies), but as soon as the auto-default remainder row below is also present
@@ -3069,6 +3221,21 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                               </div>
                               {entry.showAllocations && <div className="mt-3">{(function () {
                             var headerWarning = null
+                            // Period mode's per-row function picker pool -- every function in
+                            // the picked date range, bucketed by contract (see FunctionPickerGrid's
+                            // one-tap contract pick: which function within a contract anchors it
+                            // doesn't change what it hits financially, so no drill-down here either).
+                            var periodBuckets = (periodMode && isFunction) ? buildContractBuckets(allEventRows) : []
+                            var periodFuncItems = periodBuckets.map(function (b) {
+                              var primary = b.functions[0].contracts[0]
+                              return {
+                                value: String(primary.id),
+                                label: (b.clientName || 'Unnamed') + ' — ' + (b.venueName || '—') +
+                                  (b.location ? ' · ' + b.location : '') + ' · ' + formatDate(primary.function_date)
+                              }
+                            })
+                            var periodBucketByAnchorId = {}
+                            periodBuckets.forEach(function (b) { periodBucketByAnchorId[String(b.functions[0].contracts[0].id)] = b })
                             var scopedType = entry.expenseTypeId ? expenseTypes.find(function (et) { return String(et.id) === String(entry.expenseTypeId) }) : null
                             if (scopedType && scopedType.department_id) {
                               // scopedType.department_id (expense_types, bigint) arrives as a
@@ -3125,7 +3292,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                 onAdd={function () { addAllocation(idx) }}
                                 onRemove={function (aIdx) { removeAllocation(idx, aIdx) }}
                                 onDuplicate={function (aIdx) { duplicateAllocation(idx, aIdx) }}
-                                isComplete={function (a) { return !!a.departmentId && !!a.venueId && !!a.expenseTypeId && !!a.amountRupees && Number(a.amountRupees) > 0 }}
+                                isComplete={function (a) {
+                                  return !!a.departmentId && !!a.venueId && !!a.expenseTypeId && !!a.amountRupees && Number(a.amountRupees) > 0 &&
+                                    (!periodMode || !isFunction || !!a.eventId)
+                                }}
                                 renderChip={function (a) {
                                   var v = venues.find(function (x) { return String(x.id) === String(a.venueId) })
                                   var d = departments.find(function (x) { return String(x.id) === String(a.departmentId) })
@@ -3133,10 +3303,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                   var st = expenseSubTypes.find(function (x) { return String(x.id) === String(a.expenseSubTypeId) })
                                   var typeLabel = st ? st.name : (et ? et.name : '')
                                   var amt = Number(a.amountRupees) || 0
+                                  var periodBucket = (periodMode && a.eventId) ? periodBucketByAnchorId[String(a.eventId)] : null
                                   return {
                                     left: (
                                       <>
-                                        {v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-[10px] font-semibold text-indigo-700 shrink-0">{v.code}</span>}
+                                        {periodBucket
+                                          ? <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-[10px] font-semibold text-indigo-700 shrink-0 truncate max-w-[140px]">{periodBucket.clientName || 'Unnamed'}</span>
+                                          : (v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-[10px] font-semibold text-indigo-700 shrink-0">{v.code}</span>)}
+                                        {periodMode && isFunction && !periodBucket && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-50 text-[10px] font-semibold text-amber-700 shrink-0">No function</span>}
                                         {d && <span className={"font-medium truncate " + deptInk(d.name)}>{d.name}</span>}
                                         {typeLabel && <span className="text-slate-500 shrink-0">›</span>}
                                         {typeLabel && <span className="text-slate-500 truncate">{typeLabel}</span>}
@@ -3165,13 +3339,29 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                           <option value="">Dept</option>
                                           {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
                                         </select>
-                                        <select value={alloc.venueId}
-                                          onChange={function (e) { updateAllocation(idx, aIdx, 'venueId', e.target.value) }}
-                                          className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }}>
-                                          <option value="">Venue</option>
-                                          {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code}</option> })}
-                                        </select>
+                                        {periodMode && isFunction ? (
+                                          <SearchDropdown items={periodFuncItems} value={alloc.eventId} noVoice
+                                            placeholder="Search guest or venue..."
+                                            onChange={function (id) {
+                                              if (!id) { clearAllocationFunction(idx, aIdx); return }
+                                              var bucket = periodBucketByAnchorId[id]
+                                              if (bucket) pickAllocationFunction(idx, aIdx, bucket)
+                                            }} />
+                                        ) : (
+                                          <select value={alloc.venueId}
+                                            onChange={function (e) { updateAllocation(idx, aIdx, 'venueId', e.target.value) }}
+                                            className="w-full min-w-0 px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }}>
+                                            <option value="">Venue</option>
+                                            {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code}</option> })}
+                                          </select>
+                                        )}
                                       </div>
+                                      {periodMode && isFunction && !alloc.eventId && (
+                                        <p className="flex items-center gap-1.5 text-[10px] text-amber-700 font-medium">
+                                          <Icon name="alert" size={12} className="shrink-0" />
+                                          Pick a function — required for every row in period mode
+                                        </p>
+                                      )}
                                       <div className="grid grid-cols-2 gap-2">
                                         <select value={alloc.expenseTypeId}
                                           onChange={function (e) { setEntries(function (prev) { return prev.map(function (en, i) { if (i !== idx) return en; var copy = Object.assign({}, en); copy.allocations = en.allocations.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { expenseTypeId: e.target.value, expenseSubTypeId: '' }) : a }); return copy }) }) }}

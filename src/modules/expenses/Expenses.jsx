@@ -28,7 +28,7 @@ var PAGE_SIZE = 20
 // these drifted out of sync once already (a past edit added expense_type_id/
 // expense_sub_type_id to some but not all of the embeds below, silently wiping
 // per-allocation types back to the entry-level one on re-edit).
-var ALLOC_COLS = 'department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id'
+var ALLOC_COLS = 'department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id, event_id'
 
 // One label and one field, written once, so the filter panel cannot drift out
 // of alignment with itself the way it had.

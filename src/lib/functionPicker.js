@@ -247,6 +247,50 @@ export async function loadFunctionPickerPool(dateStr) {
   return { dateRows: dateRows, allRows: allRows }
 }
 
+// Same as loadFunctionPickerPool above, but for a whole date range instead of
+// one day -- the Expense form's "Period" mode, where a single bill (e.g. a
+// Dihari labour sheet) covers several days and needs every function booked
+// across all of them, so each split-allocation row can pick which one it
+// hits. Same sibling-expansion rule applies: a multi-day contract that only
+// partially overlaps the picked range still resolves to its one whole
+// contract, not a truncated slice of it.
+export async function loadFunctionPickerPoolRange(fromStr, toStr) {
+  if (!fromStr || !toStr) return { rangeRows: [], allRows: [] }
+  var { data } = await supabase.from('events')
+    .select(FUNC_PICKER_COLS + ', is_tentative, merged_into_id')
+    .gte('function_date', fromStr)
+    .lte('function_date', toStr)
+    .is('lms_cancelled_at', null)
+    .is('merged_into_id', null)
+    .or('department.not.is.null,is_tentative.eq.true')
+    .order('function_date').order('event_name')
+  var rangeRows = data || []
+
+  var pairs = {}
+  rangeRows.forEach(function (r) {
+    if (r.contract_no) pairs[r.contract_no + '|' + r.department] = { contract_no: r.contract_no, department: r.department }
+  })
+  var pairList = Object.keys(pairs).map(function (k) { return pairs[k] })
+
+  var siblingRows = []
+  for (var i = 0; i < pairList.length; i++) {
+    var p = pairList[i]
+    var res = await supabase.from('events')
+      .select(FUNC_PICKER_COLS)
+      .eq('contract_no', p.contract_no)
+      .eq('department', p.department)
+      .is('merged_into_id', null)
+      .is('lms_cancelled_at', null)
+    siblingRows = siblingRows.concat(res.data || [])
+  }
+
+  var byId = {}
+  rangeRows.concat(siblingRows).forEach(function (r) { byId[r.id] = r })
+  var allRows = Object.keys(byId).map(function (k) { return byId[k] })
+
+  return { rangeRows: rangeRows, allRows: allRows }
+}
+
 // Every event row for a (contract_no, department) pair, for balance/history
 // purposes — deliberately NOT filtering lms_cancelled_at, unlike the picker
 // pool above. A resync mints a new event row for the same function and marks
