@@ -1743,21 +1743,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           return 'Entry ' + (i + 1) + ': Allocations total ' + (_allocSumPaise / 100).toLocaleString('en-IN') +
             ' but the entry is only ' + (_entryTotalPaise / 100).toLocaleString('en-IN') + ' — fix the split'
         }
-        // Period mode has no auto-filled "remainder" row (unlike single-date/no-function
-        // mode) -- an unattributed leftover there would have no function to post
-        // against, so it's a hard block here instead of a silent auto_default row.
-        if (periodMode && isFunction) {
-          if (_allocSumPaise < _entryTotalPaise) {
-            return 'Entry ' + (i + 1) + ': Split rows total ' + (_allocSumPaise / 100).toLocaleString('en-IN') +
-              ' but the entry is ' + (_entryTotalPaise / 100).toLocaleString('en-IN') + ' — in Period mode every point needs a function'
-          }
-          var _missingFuncIdx = _allocRowsForCheck.findIndex(function (a) { return !a.eventId })
-          if (_missingFuncIdx !== -1) {
-            return 'Entry ' + (i + 1) + ': Row ' + (_missingFuncIdx + 1) + ' needs a function picked'
-          }
-        }
-      } else if (periodMode && isFunction) {
-        return 'Entry ' + (i + 1) + ': Period mode requires at least one Split allocation row with a function picked'
+        // Period mode doesn't require a function on every row -- a row can be a
+        // plain department/venue cost with no event_id, same as any other mode
+        // (it just posts nowhere in event_ledger, same as today's non-function
+        // expenses). Whatever's left under-allocated still auto-fills as an
+        // untagged remainder below, same as every other mode.
       }
     }
     // Wallet negative allowed — inline warning shown near the submit bar, no hard block here.
@@ -3305,10 +3295,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                 onAdd={function () { addAllocation(idx) }}
                                 onRemove={function (aIdx) { removeAllocation(idx, aIdx) }}
                                 onDuplicate={function (aIdx) { duplicateAllocation(idx, aIdx) }}
-                                isComplete={function (a) {
-                                  return !!a.departmentId && !!a.venueId && !!a.expenseTypeId && !!a.amountRupees && Number(a.amountRupees) > 0 &&
-                                    (!periodMode || !isFunction || !!a.eventId)
-                                }}
+                                isComplete={function (a) { return !!a.departmentId && !!a.venueId && !!a.expenseTypeId && !!a.amountRupees && Number(a.amountRupees) > 0 }}
                                 renderChip={function (a) {
                                   var v = venues.find(function (x) { return String(x.id) === String(a.venueId) })
                                   var d = departments.find(function (x) { return String(x.id) === String(a.departmentId) })
@@ -3323,7 +3310,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                         {periodBucket
                                           ? <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-[10px] font-semibold text-indigo-700 shrink-0 truncate max-w-[140px]">{periodBucket.clientName || 'Unnamed'}</span>
                                           : (v && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-[10px] font-semibold text-indigo-700 shrink-0">{v.code}</span>)}
-                                        {periodMode && isFunction && !periodBucket && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-50 text-[10px] font-semibold text-amber-700 shrink-0">No function</span>}
+                                        {periodMode && isFunction && !periodBucket && <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-[10px] font-semibold text-slate-500 shrink-0">Dept only</span>}
                                         {d && <span className={"font-medium truncate " + deptInk(d.name)}>{d.name}</span>}
                                         {typeLabel && <span className="text-slate-500 shrink-0">›</span>}
                                         {typeLabel && <span className="text-slate-500 truncate">{typeLabel}</span>}
@@ -3353,13 +3340,28 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                           {departments.map(function (d) { return <option key={d.id} value={String(d.id)}>{d.name}</option> })}
                                         </select>
                                         {periodMode && isFunction ? (
-                                          <SearchDropdown items={periodFuncItems} value={alloc.eventId} noVoice
-                                            placeholder="Search guest or venue..."
-                                            onChange={function (id) {
-                                              if (!id) { clearAllocationFunction(idx, aIdx); return }
-                                              var bucket = periodBucketByAnchorId[id]
-                                              if (bucket) pickAllocationFunction(idx, aIdx, bucket)
-                                            }} />
+                                          <div className="space-y-1">
+                                            <SearchDropdown items={periodFuncItems} value={alloc.eventId} noVoice
+                                              placeholder="Search guest or venue (optional)..."
+                                              onChange={function (id) {
+                                                if (!id) { clearAllocationFunction(idx, aIdx); return }
+                                                var bucket = periodBucketByAnchorId[id]
+                                                if (bucket) pickAllocationFunction(idx, aIdx, bucket)
+                                              }} />
+                                            {/* A row doesn't have to hit a function at all -- a plain
+                                                department cost in the same period-mode bill is just as
+                                                valid, it just never shows up in any event_ledger. Picking
+                                                a function above fills this in automatically; this is only
+                                                a manual fallback for a row that won't get one. */}
+                                            {!alloc.eventId && (
+                                              <select value={alloc.venueId}
+                                                onChange={function (e) { updateAllocation(idx, aIdx, 'venueId', e.target.value) }}
+                                                className="w-full min-w-0 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-500 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }}>
+                                                <option value="">No function — venue only</option>
+                                                {venues.map(function (v) { return <option key={v.id} value={String(v.id)}>{v.code}</option> })}
+                                              </select>
+                                            )}
+                                          </div>
                                         ) : (
                                           <select value={alloc.venueId}
                                             onChange={function (e) { updateAllocation(idx, aIdx, 'venueId', e.target.value) }}
@@ -3369,12 +3371,6 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                           </select>
                                         )}
                                       </div>
-                                      {periodMode && isFunction && !alloc.eventId && (
-                                        <p className="flex items-center gap-1.5 text-[10px] text-amber-700 font-medium">
-                                          <Icon name="alert" size={12} className="shrink-0" />
-                                          Pick a function — required for every row in period mode
-                                        </p>
-                                      )}
                                       <div className="grid grid-cols-2 gap-2">
                                         <select value={alloc.expenseTypeId}
                                           onChange={function (e) { setEntries(function (prev) { return prev.map(function (en, i) { if (i !== idx) return en; var copy = Object.assign({}, en); copy.allocations = en.allocations.map(function (a, j) { return j === aIdx ? Object.assign({}, a, { expenseTypeId: e.target.value, expenseSubTypeId: '' }) : a }); return copy }) }) }}
