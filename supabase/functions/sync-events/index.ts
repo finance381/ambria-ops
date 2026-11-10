@@ -226,6 +226,11 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
     contact_number: e[dep.contactNo] || null,
     event_name: (e.functionname || FUNC_NAMES[String(e[dep.funcCode])] || "").trim(),
     client_name: e[h + "guest_name"] || null,
+    // Who actually gets invoiced -- can differ from the guest above (e.g. a
+    // company, or a relative footing the bill). Print-receipt-only use for
+    // now (generateCollectionReceiptPdf's "Client Name" field).
+    billing_name: e[h + "billing_name"] || null,
+    billing_address: e[h + "billing_address"] || null,
     session: e[d + "session"] || null,
     catering: e[d + "catering"] || e[d + "menu"] || null,
     // total_plates is the free quota (Extra Plate Collect charges only past

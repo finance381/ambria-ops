@@ -1580,11 +1580,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var dealBy = ''
     if (txn.reference_id) {
       var { data: ev } = await supabase.from('events')
-        .select('contract_no, client_name, function_date, created_user_name')
+        .select('contract_no, client_name, billing_name, function_date, created_user_name')
         .eq('id', Number(txn.reference_id)).maybeSingle()
       if (ev) {
         contractNo = ev.contract_no || null
-        clientName = ev.client_name || ''
+        // Receipt-only: the contract's billing name (who gets invoiced), not
+        // the guest, when LMS has one on file.
+        clientName = ev.billing_name || ev.client_name || ''
         eventDate = ev.function_date || ''
         dealBy = ev.created_user_name || ''
       }
