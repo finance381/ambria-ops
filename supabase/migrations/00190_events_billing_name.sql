@@ -20,6 +20,11 @@ ALTER TABLE public.events
   ADD COLUMN IF NOT EXISTS billing_name text,
   ADD COLUMN IF NOT EXISTS billing_address text;
 
+-- CREATE OR REPLACE VIEW only allows appending new columns at the END of
+-- the existing list -- inserting billing_name/billing_address after
+-- client_name (preserving the original order otherwise) made Postgres read
+-- it as renaming "session" to "billing_name", since it matches new column
+-- lists to old ones by position. Appended at the end instead.
 CREATE OR REPLACE VIEW events_safe AS
  SELECT id,
     lms_event_id,
@@ -33,8 +38,6 @@ CREATE OR REPLACE VIEW events_safe AS
     contact_number,
     event_name,
     client_name,
-    billing_name,
-    billing_address,
     session,
     catering,
     total_plates,
@@ -68,7 +71,9 @@ CREATE OR REPLACE VIEW events_safe AS
     decor_amount_paise,
     entertainment_amount_paise,
     tentative_created_by,
-    tentative_created_at
+    tentative_created_at,
+    billing_name,
+    billing_address
    FROM events
   WHERE lms_cancelled_at IS NULL;
 
