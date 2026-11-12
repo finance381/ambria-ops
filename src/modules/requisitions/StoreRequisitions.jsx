@@ -11,9 +11,11 @@ import Icon from '../../components/ui/Icon'
 // Orders/Vendors — not a tab nested inside Requisitions, since this flow has
 // no approval/dispatch lifecycle at all (it deducts stock on submit).
 //
-// List has no filters yet — that's still a separate pass. Clicking a row
-// (not its edit/delete icons) drills into StoreRequisitionDetail, a
-// read-only department-by-department breakdown with per-plate costing.
+// Clicking a row (not its edit/delete icons) drills into
+// StoreRequisitionDetail, a read-only department-by-department breakdown
+// with per-plate costing.
+var PAGE_SIZE = 50
+
 function StoreRequisitions({ profile }) {
   var [view, setView] = useState('list')
   var [editId, setEditId] = useState(null)
@@ -33,6 +35,8 @@ function StoreRequisitions({ profile }) {
   }, [view])
   var [reqs, setReqs] = useState([])
   var [loading, setLoading] = useState(true)
+  var [loadingMore, setLoadingMore] = useState(false)
+  var [hasMore, setHasMore] = useState(false)
   var [deletingId, setDeletingId] = useState(null)
   var [confirmDeleteId, setConfirmDeleteId] = useState(null)
 
@@ -48,18 +52,43 @@ function StoreRequisitions({ profile }) {
   // comma-separated in one field) — substring match, not an exact lookup.
   var [searchNo, setSearchNo] = useState('')
 
-  async function load() {
-    setLoading(true)
+  // Guards against two overlapping load() calls landing out of order (e.g. a
+  // realtime reset firing while a Load More fetch is still in flight) — only
+  // the response to the most recently *started* call is ever applied.
+  var loadSeq = useRef(0)
+
+  async function load(append) {
+    var mySeq = ++loadSeq.current
+    var offset = append ? reqs.length : 0
+    // A reset (non-append) re-fetches however many rows were already
+    // showing, not just the first PAGE_SIZE — otherwise a realtime event, or
+    // a delete/save elsewhere, silently collapsed someone several Load Mores
+    // deep back down to page 1 every time.
+    var want = append ? PAGE_SIZE : Math.max(reqs.length, PAGE_SIZE)
+    if (!append) setLoading(true)
+    else setLoadingMore(true)
     var query = supabase.from('store_requisitions')
       .select('id, date_from, date_to, requisition_no, total_paise, created_at, created_by, event_ids')
+      // The date the requisition is FOR, not when it was logged — a slip
+      // backdated or entered late otherwise surfaced under today's date
+      // rather than its own, and the newest-first order silently became
+      // "most recently entered" instead of what it says it shows. id DESC
+      // is the final tiebreak, so the sort is fully deterministic and a
+      // row can never land on both sides of a page boundary.
+      .order('date_from', { ascending: false })
+      .order('date_to', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(50)
+      .order('id', { ascending: false })
+      .range(offset, offset + want)
     // Overlap, not containment — a requisition spanning 28 Sep–2 Oct should
     // still show up for a From=1 Oct filter, not just ones starting on/after it.
     if (dateFrom) query = query.gte('date_to', dateFrom)
     if (dateTo) query = query.lte('date_from', dateTo)
     var { data } = await query
+    if (mySeq !== loadSeq.current) return  // a newer load() has since started — drop this response
     var rows = data || []
+    var more = rows.length > want
+    if (more) rows = rows.slice(0, want)
     var uids = []
     rows.forEach(function (r) { if (r.created_by && uids.indexOf(r.created_by) === -1) uids.push(r.created_by) })
     if (uids.length > 0) {
@@ -86,18 +115,39 @@ function StoreRequisitions({ profile }) {
         return Object.assign({}, r, { _linkedEvents: linked })
       })
     }
-    setReqs(rows)
+    if (mySeq !== loadSeq.current) return  // superseded during the name/event lookups above
+    if (append) {
+      // Backstop against the same row appearing twice — a concurrent insert
+      // can shift page boundaries by one between the first page and a Load
+      // More click (see the comment on loadSeq above for the race this
+      // guards against; this covers the rarer case where both requests were
+      // legitimately the latest one in turn, just over a moving table).
+      setReqs(function (prev) {
+        var seen = prev.map(function (p) { return p.id })
+        var fresh = rows.filter(function (r) { return seen.indexOf(r.id) === -1 })
+        return prev.concat(fresh)
+      })
+    } else {
+      setReqs(rows)
+    }
+    setHasMore(more)
     setLoading(false)
+    setLoadingMore(false)
   }
 
-  // load() closes over dateFrom/dateTo, so it's re-run whenever they change —
-  // but useRealtime only ever subscribes once (on mount) and would otherwise
-  // keep calling that first, now-stale closure forever. Routing its callback
-  // through a ref means it always calls whatever load() most recently was.
+  // load() closes over dateFrom/dateTo/reqs.length, so it's re-run whenever
+  // they change — but useRealtime only ever subscribes once (on mount) and
+  // would otherwise keep calling that first, now-stale closure forever.
+  // Routing its callback through a ref means it always calls whatever load()
+  // most recently was.
   var loadRef = useRef(load)
   loadRef.current = load
-  useEffect(function () { load() }, [dateFrom, dateTo])
-  useRealtime(['store_requisitions'], function () { loadRef.current() })
+  useEffect(function () { load(false) }, [dateFrom, dateTo])
+  // A realtime change re-syncs the rows already on screen (load()'s `want`
+  // covers however many that is) rather than appending past them — a filter
+  // change or a deletion elsewhere can shift which rows belong in that
+  // window, and range()-based paging has no way to patch just the delta in.
+  useRealtime(['store_requisitions'], function () { loadRef.current(false) })
 
   var visibleReqs = reqs.filter(function (r) {
     if (searchNo.trim() && (r.requisition_no || '').toLowerCase().indexOf(searchNo.trim().toLowerCase()) === -1) return false
@@ -249,10 +299,25 @@ function StoreRequisitions({ profile }) {
       ) : loading ? (
         <p className="text-gray-400 text-sm text-center py-8">Loading...</p>
       ) : visibleReqs.length === 0 ? (
-        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-          <p className="text-gray-400 text-sm">{reqs.length === 0 ? 'No store requisitions yet' : 'No store requisitions match these filters'}</p>
+        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center space-y-3">
+          <p className="text-gray-400 text-sm">
+            {reqs.length === 0 ? 'No store requisitions yet'
+              // searchNo/linkFilter only ever run over the rows already
+              // fetched (date range is the one filter the query itself
+              // applies) — so a miss here can just mean the match is on an
+              // older page, not that nothing matches at all.
+              : hasMore ? "No match in what's loaded so far — there are older requisitions to search"
+              : 'No store requisitions match these filters'}
+          </p>
+          {hasMore && (
+            <button onClick={function () { load(true) }} disabled={loadingMore}
+              className="px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+              {loadingMore ? 'Loading...' : 'Load More'}
+            </button>
+          )}
         </div>
       ) : (
+        <>
         <div className="space-y-3">
           {visibleReqs.map(function (r) {
             return (
@@ -320,6 +385,17 @@ function StoreRequisitions({ profile }) {
             )
           })}
         </div>
+        {/* Loads another 50 past the server-side range() window above —
+            visibleReqs can run short of PAGE_SIZE once a search/link filter
+            is applied over a page that still has more to give, so this
+            checks the fetch's own hasMore rather than the filtered count. */}
+        {hasMore && (
+          <button onClick={function () { load(true) }} disabled={loadingMore}
+            className="w-full py-3 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+            {loadingMore ? 'Loading...' : 'Load More'}
+          </button>
+        )}
+        </>
       )}
     </div>
   )
