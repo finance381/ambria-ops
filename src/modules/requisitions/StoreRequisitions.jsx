@@ -16,6 +16,20 @@ import Icon from '../../components/ui/Icon'
 // with per-plate costing.
 var PAGE_SIZE = 20
 
+// Same label and grouping StoreRequisitionReport.jsx uses for the merged
+// report's department rows — a card's badges are the same groups, just one
+// requisition's worth instead of a whole period's.
+function deptRowLabel(dr) {
+  var dept = (dr.departments && dr.departments.name) || 'Unknown dept'
+  var sub = dr.sub_departments && dr.sub_departments.name
+  var label = sub ? dept + ' – ' + sub : dept
+  if (dr.section) label += ' (' + dr.section + ')'
+  return label
+}
+function deptRowGroupKey(dr) {
+  return (dr.department_id || '') + '|' + (dr.sub_department_id || '') + '|' + (dr.section || '')
+}
+
 // One page's worth (or, with no range, one chunk of the "fetch everything"
 // loop below) — no name/event resolution here, that's done once on the
 // combined rows by the wrapper, not per chunk.
@@ -51,7 +65,10 @@ async function fetchRequisitionsPage(filters, range) {
 // "page N of M" and the report's totals reflect the whole table rather than
 // whatever page happened to already be loaded. `range` is {from, to} for one
 // page of the list, or null for the report's "every matching row" fetch.
-async function fetchRequisitions(filters, range) {
+// `includeDeptBadges` resolves each row's `_deptBadges` (used by the list's
+// cards) — skipped for the report's fetch, which already pulls every
+// dept row itself for the aggregated table and has no per-card use for this.
+async function fetchRequisitions(filters, range, includeDeptBadges) {
   var rows, count
 
   if (range) {
@@ -106,6 +123,39 @@ async function fetchRequisitions(filters, range) {
     rows = rows.map(function (r) {
       var linked = (r.event_ids || []).map(function (id) { return evMap[id] }).filter(Boolean)
       return Object.assign({}, r, { _linkedEvents: linked })
+    })
+  }
+  if (includeDeptBadges && rows.length > 0) {
+    var reqIds = rows.map(function (r) { return r.id })
+    var CHUNK = 500
+    var deptRowsAll = []
+    for (var di = 0; di < reqIds.length; di += CHUNK) {
+      var idChunk = reqIds.slice(di, di + CHUNK)
+      var { data: chunkRows } = await supabase.from('store_requisition_dept_rows')
+        .select('store_requisition_id, department_id, sub_department_id, section, departments(name), sub_departments(name)')
+        .in('store_requisition_id', idChunk)
+      deptRowsAll = deptRowsAll.concat(chunkRows || [])
+    }
+    // Two slips for the same department/sub-department/section within one
+    // requisition (e.g. two separate Indian Kitchen rows) collapse to one
+    // badge — the badge says which departments touched this requisition,
+    // not how many rows it took to say so.
+    var seenKeysByReq = {}
+    var badgesByReq = {}
+    deptRowsAll.forEach(function (dr) {
+      var reqId = dr.store_requisition_id
+      var seen = seenKeysByReq[reqId] || (seenKeysByReq[reqId] = {})
+      var key = deptRowGroupKey(dr)
+      if (seen[key]) return
+      seen[key] = true
+      ;(badgesByReq[reqId] || (badgesByReq[reqId] = [])).push(deptRowLabel(dr))
+    })
+    rows = rows.map(function (r) {
+      // Sorted rather than left in whatever order the query happened to
+      // return — the dept-rows query has no ORDER BY, so without this the
+      // badges could shuffle between an edit and a realtime refresh.
+      var badges = (badgesByReq[r.id] || []).slice().sort(function (a, b) { return a.localeCompare(b) })
+      return Object.assign({}, r, { _deptBadges: badges })
     })
   }
   return { rows: rows, count: count || 0, error: null }
@@ -170,7 +220,8 @@ function StoreRequisitions({ profile }) {
     var offset = page * PAGE_SIZE
     var res = await fetchRequisitions(
       { dateFrom: dateFrom, dateTo: dateTo, searchNo: searchNoDebounced, linkFilter: linkFilter },
-      { from: offset, to: offset + PAGE_SIZE - 1 }
+      { from: offset, to: offset + PAGE_SIZE - 1 },
+      true
     )
     if (mySeq !== loadSeq.current) return  // a newer load() has since started — drop this response
     if (res.error) {
@@ -448,6 +499,17 @@ function StoreRequisitions({ profile }) {
                             (e.venue_name ? ' (' + e.venue_name + ')' : '')
                         }).join(', ')}
                       </p>
+                    )}
+                    {r._deptBadges && r._deptBadges.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                        {r._deptBadges.map(function (label, bi) {
+                          return (
+                            <span key={bi} className="text-[10px] font-semibold text-gray-600 bg-gray-100 border border-gray-200 rounded-full px-2 py-0.5">
+                              {label}
+                            </span>
+                          )
+                        })}
+                      </div>
                     )}
                   </div>
                   <div className="flex items-center gap-3">
