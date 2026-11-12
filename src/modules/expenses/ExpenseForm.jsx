@@ -2994,49 +2994,53 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                             {entry.isItemPurchase && (
                               <div className={"mt-3 space-y-2 " + (entry.itemsLocked ? "pointer-events-none opacity-70" : "")}>
                                 {entry.items.length > 0 && (
-                                  <div className="space-y-2">
+                                  <div className="rounded-xl border border-slate-200 bg-white overflow-hidden divide-y divide-slate-100">
+                                    <div className="grid grid-cols-[1fr_60px_76px_68px_28px] gap-2 px-2.5 pt-2 pb-1">
+                                      <span className="text-[9.5px] font-bold text-slate-400 uppercase">Item</span>
+                                      <span className="text-[9.5px] font-bold text-slate-400 uppercase text-right">Qty</span>
+                                      <span className="text-[9.5px] font-bold text-slate-400 uppercase text-right">Rate</span>
+                                      <span className="text-[9.5px] font-bold text-slate-400 uppercase text-right">Pts</span>
+                                      <span></span>
+                                    </div>
                                     {entry.items.map(function (im, iIdx) {
                                       var lineTotal = (Number(im.itemQty) || 0) * (Number(im.itemRate) || 0)
                                       var complete = isItemComplete(im)
                                       var detailOpen = entry._editingItemIdx === iIdx
                                       return (
-                                        <div key={im._key} className={"border rounded-xl px-2.5 py-2 transition-colors " + (complete ? "bg-white border-slate-200" : "bg-amber-50/40 border-amber-200")}>
-                                          <div className="flex items-center gap-2">
+                                        <div key={im._key} className={"transition-colors " + (complete ? "bg-white" : "bg-amber-50/40")}>
+                                          <div className="grid grid-cols-[1fr_60px_76px_68px_28px] gap-2 items-center px-2.5 py-1.5">
                                             <button type="button" onClick={function () { if (!entry.itemsLocked) toggleItemDetail(idx, iIdx) }}
-                                              className="flex-1 min-w-0 flex items-center gap-1.5 text-left">
+                                              className="min-w-0 overflow-hidden flex items-center gap-1 text-left">
                                               {im.itemMode === 'new'
                                                 ? <Icon name="sparkle" className="w-3.5 h-3.5 shrink-0 text-slate-400" />
                                                 : (im.itemMatchedId && <Icon name="check" className="w-3.5 h-3.5 shrink-0 text-indigo-600" />)}
                                               <span className="min-w-0 flex-1">
-                                                <span className="block text-[13px] font-semibold text-slate-900 truncate">
+                                                <span className="block text-[12.5px] font-semibold text-slate-900 truncate">
                                                   {im.itemQuery ? im.itemQuery : <span className="font-normal text-slate-400">Unnamed item</span>}
                                                 </span>
                                                 <span className="block text-[10px] text-slate-500 truncate">{im.itemUnit}{im.itemNotes ? ' · ' + im.itemNotes : ''}</span>
                                               </span>
-                                              <Icon name={detailOpen ? 'chevronUp' : 'chevronDown'} className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                                              <Icon name={detailOpen ? 'chevronUp' : 'chevronDown'} className="w-3 h-3 shrink-0 text-slate-400" />
                                             </button>
+                                            <input id={'item-qty-' + idx + '-' + iIdx} type="number" inputMode="numeric" value={im.itemQty} disabled={entry.itemsLocked}
+                                              onChange={function (e) { updateItem(idx, iIdx, 'itemQty', e.target.value) }}
+                                              placeholder="0" min="0" step="any"
+                                              className="w-full h-8 px-1 text-right border border-slate-300 rounded text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-50 disabled:text-slate-400" style={{ fontSize: '16px' }} />
+                                            <input id={'item-rate-' + idx + '-' + iIdx} type="number" inputMode="decimal" value={im.itemRate} disabled={entry.itemsLocked}
+                                              onChange={function (e) { updateItem(idx, iIdx, 'itemRate', e.target.value) }}
+                                              placeholder="0" min="0" step="any"
+                                              className="w-full h-8 px-1 text-right border border-slate-300 rounded text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-50 disabled:text-slate-400" style={{ fontSize: '16px' }} />
+                                            <p className="text-right text-[12.5px] font-bold text-slate-900 tabular-nums truncate" title={lineTotal > 0 ? lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : ''}>
+                                              {lineTotal > 0 ? lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '—'}
+                                            </p>
                                             {!entry.itemsLocked && (
                                               <button type="button" onClick={function () { removeItem(idx, iIdx) }}
-                                                className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors" title="Delete item" aria-label="Delete item"><Icon name="trash" className="w-3.5 h-3.5" /></button>
+                                                className="justify-self-end w-7 h-7 rounded-md bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100 transition-colors" title="Delete item" aria-label="Delete item"><Icon name="trash" className="w-3 h-3" /></button>
                                             )}
                                           </div>
 
-                                          <div className="grid grid-cols-3 gap-2 mt-2">
-                                            <input id={'item-qty-' + idx + '-' + iIdx} type="number" inputMode="numeric" value={im.itemQty} disabled={entry.itemsLocked}
-                                              onChange={function (e) { updateItem(idx, iIdx, 'itemQty', e.target.value) }}
-                                              placeholder="Qty" min="0" step="any"
-                                              className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[13px] text-right text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-50 disabled:text-slate-400" style={{ fontSize: '16px' }} />
-                                            <input id={'item-rate-' + idx + '-' + iIdx} type="number" inputMode="decimal" value={im.itemRate} disabled={entry.itemsLocked}
-                                              onChange={function (e) { updateItem(idx, iIdx, 'itemRate', e.target.value) }}
-                                              placeholder="Rate" min="0" step="any"
-                                              className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[13px] text-right text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-50 disabled:text-slate-400" style={{ fontSize: '16px' }} />
-                                            <p className="flex items-center justify-end text-[13px] font-bold text-slate-900 tabular-nums px-1">
-                                              {lineTotal > 0 ? lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 }) + ' pts' : '—'}
-                                            </p>
-                                          </div>
-
                                           {detailOpen && (
-                                            <div className="mt-2 pt-2 border-t border-slate-100 space-y-2">
+                                            <div className="px-2.5 pb-2.5 pt-1 border-t border-slate-100 space-y-2">
                                               {!entry.itemsLocked && (
                                                 <button type="button" onClick={function () { toggleItemMode(idx, iIdx) }}
                                                   className="flex items-center gap-1.5" title={im.itemMode === 'new' ? 'Switch to inventory search' : 'Create as new item'}>
