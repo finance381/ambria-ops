@@ -30,6 +30,24 @@ export function useAuth() {
     return function () { ignore = true; subscription.unsubscribe() }
   }, [])
 
+  // supabase-js's own auto-refresh runs on a setTimeout scheduled ahead of the
+  // access token's expiry -- browsers throttle/pause that timer while the tab
+  // is backgrounded (common for a PWA people leave open and come back to), so
+  // the token can sit expired until the user reopens the app and immediately
+  // taps something, firing a request with the stale token before a refresh
+  // gets a chance to run. getSession() re-validates (and refreshes if needed)
+  // on every foreground, closing that window. Same pattern UpdateBanner.jsx
+  // already uses for its own update check on visibilitychange.
+  useEffect(function () {
+    function onVisible() {
+      if (document.visibilityState === 'visible') {
+        supabase.auth.getSession().catch(function () {})
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return function () { document.removeEventListener('visibilitychange', onVisible) }
+  }, [])
+
   function fetchProfile(authUser) {
     supabase.rpc('ensure_profile').then(function ({ data, error }) {
       if (error) {

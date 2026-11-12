@@ -49,7 +49,7 @@ function isItemComplete(im) {
 }
 
 function makeAlloc() {
-  return { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8), departmentId: '', expenseTypeId: '', expenseSubTypeId: '', venueId: '', subVenueId: '', amountPts: '', remarks: '' }
+  return { _key: Date.now() + '_' + Math.random().toString(36).slice(2, 8), departmentId: '', expenseTypeId: '', expenseSubTypeId: '', venueId: '', subVenueId: '', amountPts: '', remarks: '', eventId: '' }
 }
 
 function GVForm({ exp, profile, onCancel, onSaved }) {
@@ -228,7 +228,7 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
       supabase.from('departments').select('id, name').eq('active', true).order('name'),
       supabase.from('sub_departments').select('id, department_id'),
       supabase.from('expense_allocations')
-        .select('id, department, department_id, expense_type_id, expense_sub_type_id, venue_id, sub_venue_id, amount_paise, remarks')
+        .select('id, department, department_id, expense_type_id, expense_sub_type_id, venue_id, sub_venue_id, amount_paise, remarks, event_id')
         .eq('expense_id', exp.id)
         .order('id'),
     ]).then(function (res) {
@@ -247,6 +247,11 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
           amountPts: a.amount_paise != null ? String(a.amount_paise / 100) : '',
           remarks: a.remarks || '',
           _departmentText: a.department || '',
+          // This form has no period-mode UI (no per-row function picker) --
+          // carried through unchanged so a GV that only touches department/
+          // type doesn't silently wipe out a period-mode row's own function
+          // attribution (see fn_create_gv, 00185).
+          eventId: a.event_id ? String(a.event_id) : '',
         }
       })
       if (prefill.length === 0) {
@@ -340,6 +345,8 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
         sub_venue_id: a.subVenueId ? Number(a.subVenueId) : null,
         amount_paise: Math.round(Number(a.amountPts) * 100),
         remarks: (a.remarks || '').trim() || null,
+        // Pass-through only -- see the eventId comment on prefill above.
+        event_id: a.eventId ? Number(a.eventId) : null,
       }
     })
 
@@ -399,8 +406,11 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
     // on a new expense — a JV's item purchase joins the parent expense's own
     // list rather than starting a separate one, so the (not yet built)
     // receiver step has exactly one list per expense to work through either
-    // way. Appended after fn_create_gv succeeds, not atomically with it — the
-    // same accepted two-call precedent as SalaryPayouts' wallet debit.
+    // way. Appended after fn_create_gv succeeds, not atomically with it -- unlike
+    // SalaryPayouts' now-fixed wallet debit, a failure here isn't a duplicate-money
+    // risk (fn_create_gv already fully succeeded), just a silently-missed item --
+    // so this stays a second call, just no longer a silent one (see below).
+    var itemReceiptsAppendFailed = false
     if (isItemPurchase) {
       var itemReceipts = items.map(function (im) {
         var qtyN = Number(im.itemQty) || 0
@@ -429,15 +439,22 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
         freshMeta.item_receipts = (Array.isArray(freshMeta.item_receipts) ? freshMeta.item_receipts : []).concat(itemReceipts)
         var statusUpdate = { metadata: freshMeta }
         if (!freshExp || freshExp.item_receipt_status !== 'received') statusUpdate.item_receipt_status = 'pending'
-        await supabase.from('expenses').update(statusUpdate).eq('id', exp.id)
+        var { error: itemAppendErr } = await supabase.from('expenses').update(statusUpdate).eq('id', exp.id)
+        if (itemAppendErr) itemReceiptsAppendFailed = true
       } catch (itemErr) {
         console.error('GV_ITEM_RECEIPTS_APPEND_FAIL', itemErr)
+        itemReceiptsAppendFailed = true
       }
     }
 
     try { await logActivity({ action: 'gv_create', entity: 'expense', entity_id: exp.id, meta: { gv_number: data?.gv_number, fields_changed: data?.fields_changed || false } }) } catch (e) {}
 
     setSaving(false)
+    // The GV itself (fn_create_gv) already succeeded by this point -- this failure
+    // only means the purchased item(s) silently never show up in the "receive into
+    // inventory" queue, with nothing but a console error to ever reveal why. Surface
+    // it before navigating away rather than let it disappear.
+    if (itemReceiptsAppendFailed) alert('GV ' + (data?.gv_number || '') + ' was created, but the item(s) on it could not be queued for receiving into inventory. An admin will need to add them manually.')
     if (onSaved) onSaved(data)
   }
 
@@ -482,6 +499,18 @@ function GVForm({ exp, profile, onCancel, onSaved }) {
             </div>
           </button>
         </div>
+        {allocations.some(function (a) { return !!a.eventId }) && (
+          // This form has no period-mode UI of its own (see ExpenseForm.jsx) --
+          // some/all of these rows already post to their own function, and
+          // that's preserved as-is through a GV. The toggle below only ever
+          // sets the expense-level fallback (expenses.event_id), which a
+          // period-mode row's own event_id always wins over -- so it won't
+          // move an already-attributed row, only a never-attributed one.
+          <p className="mt-3 flex items-start gap-1.5 text-[11px] text-amber-700 font-medium">
+            <Icon name="alert" size={12} className="shrink-0 mt-0.5" />
+            Some split rows here were set up in Period mode and already post to their own function — the toggle below won't move those, only rows with no function of their own.
+          </p>
+        )}
         {isFunction && (
           <div className="mt-3 pt-3 border-t border-gray-100">
             {renderFunctionPicker()}

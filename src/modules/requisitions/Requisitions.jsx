@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { supabase } from '../../lib/supabase'
+import { supabase, isJwtExpiredError } from '../../lib/supabase'
 import { stopAllVoice } from '../../lib/voiceRegistry'
 import { useVoice } from '../../hooks/useVoice'
 import { titleCase, formatDate, formatPoints } from '../../lib/format'
@@ -225,6 +225,13 @@ function Requisitions({ profile, onBack }) {
     if (venueFilter) query = query.overlaps('venue_ids', [Number(venueFilter)])
 
     var { data, error } = await query
+    if (error && isJwtExpiredError(error)) {
+      // A stale token after the tab sat backgrounded -- force a refresh and
+      // retry once rather than showing the user a raw "JWT expired" alert.
+      await supabase.auth.getSession()
+      var retry = await query
+      data = retry.data; error = retry.error
+    }
     if (error) { alert('Failed to load approvals: ' + error.message); setLoadingMore(false); return }
 
     var rows = data || []
@@ -1085,9 +1092,12 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         }).eq('id', editReq.id)
         if (updErr) throw new Error(updErr.message)
 
-        // Delete old items, insert new
-        var { error: delErr } = await supabase.from('requisition_items').delete().eq('requisition_id', editReq.id)
-        if (delErr) throw new Error(delErr.message)
+        // Insert the new items FIRST, delete the old ones only once the new ones are
+        // confirmed in place -- deleting first (the old order) meant a failure on the
+        // insert left this requisition with its header updated but zero items, having
+        // already destroyed the real ones that used to be there.
+        var { data: oldItemRows } = await supabase.from('requisition_items').select('id').eq('requisition_id', editReq.id)
+        var oldItemIds = (oldItemRows || []).map(function (r) { return r.id })
 
         if (lineItems.length > 0) {
           var itemsWithReqId = lineItems.map(function (li) {
@@ -1106,6 +1116,11 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             var { error: eaErr } = await supabase.from('requisition_item_allocations').insert(editAllocs)
             if (eaErr) throw new Error('Allocation save failed: ' + eaErr.message)
           }
+        }
+
+        if (oldItemIds.length > 0) {
+          var { error: delErr } = await supabase.from('requisition_items').delete().in('id', oldItemIds)
+          if (delErr) throw new Error('New items saved, but the old ones could not be removed: ' + delErr.message + ' — this requisition may now show duplicate items. An admin should check it.')
         }
 
         logActivity('REQUISITION_EDIT', purpose.trim() + ' | ' + lineItems.length + ' items')
@@ -1151,22 +1166,33 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         if (reqErr) throw new Error(reqErr.message)
 
         if (lineItems.length > 0) {
-          var itemsWithId = lineItems.map(function (li) {
-            var row = Object.assign({}, li, { requisition_id: req.id })
-            delete row._allocations
-            if (isAdminRole) { row.item_status = 'po_queued'; row.fulfillment_type = 'purchase' }
-            return row
-          })
-          var { data: insertedItems, error: itemsErr } = await supabase.from('requisition_items').insert(itemsWithId).select('id')
-          if (itemsErr) throw new Error(itemsErr.message)
-          var allAllocs = []
-          ;(insertedItems || []).forEach(function (ins, idx) {
-            var la = lineItems[idx]._allocations || []
-            la.forEach(function (a) { allAllocs.push({ req_item_id: ins.id, venue_id: Number(a.venue_id), qty: Number(a.qty) }) })
-          })
-          if (allAllocs.length > 0) {
-            var { error: allocErr } = await supabase.from('requisition_item_allocations').insert(allAllocs)
-            if (allocErr) throw new Error('Allocation save failed: ' + allocErr.message)
+          try {
+            var itemsWithId = lineItems.map(function (li) {
+              var row = Object.assign({}, li, { requisition_id: req.id })
+              delete row._allocations
+              if (isAdminRole) { row.item_status = 'po_queued'; row.fulfillment_type = 'purchase' }
+              return row
+            })
+            var { data: insertedItems, error: itemsErr } = await supabase.from('requisition_items').insert(itemsWithId).select('id')
+            if (itemsErr) throw new Error(itemsErr.message)
+            var allAllocs = []
+            ;(insertedItems || []).forEach(function (ins, idx) {
+              var la = lineItems[idx]._allocations || []
+              la.forEach(function (a) { allAllocs.push({ req_item_id: ins.id, venue_id: Number(a.venue_id), qty: Number(a.qty) }) })
+            })
+            if (allAllocs.length > 0) {
+              var { error: allocErr } = await supabase.from('requisition_item_allocations').insert(allAllocs)
+              if (allocErr) throw new Error('Allocation save failed: ' + allocErr.message)
+            }
+          } catch (itemsCatchErr) {
+            // The requisition header above is already committed -- without this, a
+            // failure here left a ghost requisition with zero items sitting in
+            // everyone's approval queue, with nothing to actually approve or fulfill.
+            // requisitions has no real DELETE (deleteReq() elsewhere in this file
+            // soft-deletes the same way) -- best-effort mark it 'deleted' so the
+            // failed submission doesn't leave a live, empty requisition behind.
+            try { await supabase.from('requisitions').update({ status: 'deleted', rejection_reason: 'Auto-cancelled: item save failed during creation' }).eq('id', req.id) } catch (_) {}
+            throw itemsCatchErr
           }
         }
 
@@ -1859,7 +1885,6 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
   useBackButtonClose(confirmAction === 'expense', function () { setConfirmAction(null) })
   var [deleteMode, setDeleteMode] = useState(false)
   var [deleteReason, setDeleteReason] = useState('')
-  var refData = useReferenceData()
 
   useEffect(function () {
     // Fetch PO status for items that have po_item_id
@@ -1960,6 +1985,11 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
 
     for (var i = 0; i < items.length; i++) {
       var li = items[i]
+      // Already resolved by a prior attempt at this same approve() (e.g. the
+      // browser closed partway through the loop) -- skip it, so a retry can't
+      // call issue_from_stock a second time for an item that already had real
+      // stock decremented, or re-queue one that's already po_queued.
+      if (['po_queued', 'dispatched', 'fulfilled', 'cancelled'].indexOf(li.item_status) !== -1) continue
       var choice = fulfillChoices[li.id] || 'po'
 
       if (choice === 'stock' && li.item_id && li._source !== 'new') {
@@ -2014,89 +2044,33 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
     var { error: reqErr } = await supabase.from('requisitions').update({ status: 'cancelled' }).eq('id', req.id)
     if (reqErr) { alert('Cancel failed: ' + reqErr.message); setSaving(false); return }
     var itemIds = items.map(function (li) { return li.id })
+    var itemCancelWarning = ''
     if (itemIds.length > 0) {
-      await supabase.from('requisition_items').update({ item_status: 'cancelled' }).in('id', itemIds)
+      var { error: itemErr } = await supabase.from('requisition_items').update({ item_status: 'cancelled' }).in('id', itemIds)
+      // The requisition itself is already cancelled above regardless -- an item left
+      // behind (still po_queued, say) would otherwise keep sitting in the procurement
+      // queue for a requisition that looks fully cancelled, with nothing to say so.
+      if (itemErr) itemCancelWarning = '\n\nSome items could not be marked cancelled: ' + itemErr.message + ' — they may still show up in the procurement queue. An admin should check them.'
     }
     try { await logActivity('REQUISITION_CANCEL', req.purpose || 'Req #' + req.id) } catch (_) {}
     setSaving(false)
+    if (itemCancelWarning) alert('Requisition cancelled.' + itemCancelWarning)
     onUpdated()
   }
   async function convertToExpense() {
     if (saving || req.req_type !== 'expense' || req.status !== 'approved' || req.requested_by !== profile?.id) return
     setSaving(true)
     try {
-      var batchId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null
-      var { data: newExp, error: insErr } = await supabase.from('expenses').insert({
-        user_id: profile.id,
-        batch_id: batchId,
-        expense_type_id: req.expense_type_id || null,
-        expense_sub_type_id: req.expense_sub_type_id || null,
-        amount_paise: req.expense_amount_paise,
-        description: req.purpose || 'From requisition #' + req.id,
-        expense_date: req.expense_date || new Date().toISOString().split('T')[0],
-        status: 'recorded',
-        receipt_path: req.receipt_path || null,
-        event_id: req.event_id || null,
-      }).select('id').single()
-      if (insErr) throw new Error(insErr.message)
-
-      // Copy allocations from requisition to expense
-      var allocRows = req.expense_alloc_json || []
-      var expAllocs = []
-      if (allocRows.length > 0) {
-        expAllocs = allocRows.map(function (a) {
-          return {
-            expense_id: newExp.id,
-            department: req.department || null,
-            department_id: a.department_id || null,
-            venue_id: a.venue_id || null,
-            amount_paise: a.amount_paise || 0,
-            expense_type_id: a.expense_type_id || req.expense_type_id || null,
-            expense_sub_type_id: a.expense_sub_type_id || req.expense_sub_type_id || null,
-          }
-        })
-      }
-      // Auto-default from req top-level type for whatever portion of the total wasn't
-      // explicitly allocated, so the whole amount appears in the ledgers (previously only
-      // ran when allocations were empty, silently dropping the remainder whenever a partial
-      // allocation was entered).
-      var reqAllocSum = expAllocs.reduce(function (s, a) { return s + (a.amount_paise || 0) }, 0)
-      var reqRemainderPaise = (req.expense_amount_paise || 0) - reqAllocSum
-      if (reqRemainderPaise > 0 && req.expense_type_id) {
-        var defaultDeptId = null
-        var expTypeRow = refData.expenseTypes.find(function (t) { return t.id === req.expense_type_id })
-        if (expTypeRow) {
-          if (expTypeRow.department_id) defaultDeptId = expTypeRow.department_id
-          else if (expTypeRow.sub_department_id) {
-            var { data: sdRow } = await supabase.from('sub_departments')
-              .select('department_id').eq('id', expTypeRow.sub_department_id).single()
-            if (sdRow) defaultDeptId = sdRow.department_id
-          }
-        }
-        expAllocs.push({
-          expense_id: newExp.id,
-          department: req.department || null,
-          department_id: defaultDeptId,
-          venue_id: null,
-          amount_paise: reqRemainderPaise,
-          expense_type_id: req.expense_type_id || null,
-          expense_sub_type_id: req.expense_sub_type_id || null,
-          source: 'auto_default',
-        })
-      }
-      if (expAllocs.length > 0) await supabase.from('expense_allocations').insert(expAllocs)
-
-      try {
-        await supabase.rpc('wallet_self_debit', {
-          p_amount_paise: req.expense_amount_paise,
-          p_description: 'Expense: ' + (req.purpose || '').slice(0, 50),
-          p_ref_type: 'expense',
-          p_ref_id: String(newExp.id),
-        })
-      } catch (_) {}
-
-      var { error: updErr } = await supabase.rpc('fulfill_expense_requisition', { p_req_id: req.id, p_expense_id: newExp.id })
-      if (updErr) console.warn('Requisition status update failed:', updErr.message)
+      // One atomic DB function now does everything that used to be four separate
+      // client calls (expense insert, allocations insert, wallet debit, status
+      // update) with most of the errors unchecked -- a failure partway through
+      // used to leave an orphaned expense behind an unchanged 'approved' status,
+      // which let a retry (or just clicking the button again) create a genuine
+      // second expense and a second wallet debit. A failure anywhere in the DB
+      // function now rolls back the whole thing instead, and it's idempotent if
+      // called again for an already-converted requisition.
+      var { error } = await supabase.rpc('fn_convert_expense_requisition_to_expense', { p_req_id: req.id })
+      if (error) throw new Error(error.message)
 
       try { await logActivity('EXPENSE_FROM_REQ', (req.purpose || 'Req #' + req.id) + ' | ' + formatPoints(req.expense_amount_paise)) } catch (_) {}
       setSaving(false)

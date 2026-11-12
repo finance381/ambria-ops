@@ -61,7 +61,12 @@ function PendingReview({ profile }) {
     setPendingItems(csItems.sort(function (a, b) {
       return new Date(b.created_at || 0) - new Date(a.created_at || 0)
     }))
-    setDepartments(deptRes.data || [])
+    // departments.category_ids is an ad-hoc bigint[] column -- PostgREST
+    // hands its elements back as JSON strings, which would otherwise never
+    // match categories'/items' own (integer) category_id below.
+    setDepartments((deptRes.data || []).map(function (d) {
+      return Object.assign({}, d, { category_ids: (d.category_ids || []).map(Number) })
+    }))
     setSubDepartments(subDeptRes.data || [])
     setCategories(catRes.data || [])
     setLoading(false)

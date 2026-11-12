@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, isJwtExpiredError } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
 import ExpenseFormMulti from './ExpenseForm'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
@@ -28,7 +28,7 @@ var PAGE_SIZE = 20
 // these drifted out of sync once already (a past edit added expense_type_id/
 // expense_sub_type_id to some but not all of the embeds below, silently wiping
 // per-allocation types back to the entry-level one on re-edit).
-var ALLOC_COLS = 'department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id'
+var ALLOC_COLS = 'department, department_id, venue_id, amount_paise, expense_type_id, expense_sub_type_id, event_id'
 
 // One label and one field, written once, so the filter panel cannot drift out
 // of alignment with itself the way it had.
@@ -373,6 +373,13 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     if (amountMax) query = query.lte('amount_paise', Math.round(Number(amountMax) * 100))
 
     var { data, error } = await query
+    if (error && isJwtExpiredError(error)) {
+      // A stale token after the tab sat backgrounded -- force a refresh and
+      // retry once rather than showing the user a raw "JWT expired" alert.
+      await supabase.auth.getSession()
+      var retry = await query
+      data = retry.data; error = retry.error
+    }
     if (error) { alert('Failed to load approvals: ' + error.message); setLoadingMore(false); return }
 
     var rows = data || []

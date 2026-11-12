@@ -874,8 +874,11 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
     var dimStr = findCol(r, ['dimensions'])
     var parsedDims = null
     if (dimStr) { parsedDims = dimStr.split(';').map(function (s) { var parts = s.trim().split(':'); if (parts.length < 2) return null; var nv = parts[1].trim().split(' '); return { name: parts[0].trim(), qty: nv[0] || '', unit: nv.slice(1).join(' ') || 'Pieces' } }).filter(Boolean); if (parsedDims.length === 0) parsedDims = null }
-    var minOrd = findCol(r, ['min order qty', 'min_order_qty', 'season reorder qty'])
-    var reord = findCol(r, ['reorder qty', 'reorder_qty', 'off season reorder qty'])
+    // exportItems() (the round-trip export, as opposed to downloadTemplate()'s blank
+    // template) writes these as combined "X / Y" headers -- without matching that
+    // exact text here, an exported-edited-reimported CSV silently dropped both columns.
+    var minOrd = findCol(r, ['min order qty', 'min_order_qty', 'season reorder qty', 'min order / season reorder'])
+    var reord = findCol(r, ['reorder qty', 'reorder_qty', 'off season reorder qty', 'reorder / off season reorder'])
 
     if (importMode === 'update') {
       if (!existing) return 'No matching item found (ID: ' + (rowId || 'none') + ')'

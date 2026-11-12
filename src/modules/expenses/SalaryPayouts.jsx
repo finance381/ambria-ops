@@ -124,6 +124,12 @@ function SalaryPayouts(props) {
         bank_paise: Math.round((Number(r.bank) || 0) * 100)
       }
     })
+    // fn_record_salary_payout now debits the wallet itself (one atomic
+    // transaction) -- a failed debit used to leave a committed payout batch
+    // with no matching debit, and since the form stayed filled on that error,
+    // clicking Save again recorded a genuine second payout for the same
+    // employees. A failure anywhere in the DB function now rolls back the
+    // whole thing, so there's nothing left to retry into a duplicate.
     var res = await supabase.rpc('fn_record_salary_payout', { p_date: date, p_entries: payload })
     if (res.error) {
       setError(res.error.message || 'Could not save payout')
@@ -131,24 +137,8 @@ function SalaryPayouts(props) {
       return
     }
 
-    var batchId = res.data
     var totalCashPaise = payload.reduce(function (s, p) { return s + p.cash_paise }, 0)
     var totalBankPaise = payload.reduce(function (s, p) { return s + p.bank_paise }, 0)
-
-    if (totalCashPaise > 0) {
-      var wRes = await supabase.rpc('wallet_self_debit', {
-        p_amount_paise: totalCashPaise,
-        p_description: 'Salary payout — ' + validRows.length + ' employee(s)',
-        p_ref_type: 'salary_payout',
-        p_ref_id: String(batchId)
-      })
-      if (wRes.error) {
-        setError('Payout was recorded, but your wallet debit failed: ' + wRes.error.message + '. Let an admin know.')
-        setSaving(false)
-        loadRecent()
-        return
-      }
-    }
 
     try {
       logActivity('SALARY_PAYOUT_RECORD',

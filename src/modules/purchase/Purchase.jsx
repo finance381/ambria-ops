@@ -297,8 +297,15 @@ function Purchase({ profile, mode }) {
       received_at: new Date().toISOString(),
       status: 'received',
     }).eq('id', poItem.id)
-    if (error) { alert('Receive link failed: ' + error.message) }
-    try { await logActivity('PO_ITEM_RECEIVED', titleCase(poItem.item_name) + ' | new item → ' + tableName + ' #' + savedItem.id) } catch (_) {}
+    if (error) {
+      // InventoryForm already created savedItem (with its own stock) before this ran --
+      // a generic alert here used to look recoverable, inviting a retry of "receive as
+      // new item" for the same PO item, which would create a genuine second stock item.
+      alert('The item was created in inventory (' + tableName + ' #' + savedItem.id + '), but linking it to this PO item failed: ' + error.message +
+        '. Do NOT receive this PO item as a new item again -- it already exists now. Either receive it as an EXISTING item (search for it by name), or have an admin link PO item #' + poItem.id + ' to ' + tableName + ' #' + savedItem.id + ' manually.')
+    } else {
+      try { await logActivity('PO_ITEM_RECEIVED', titleCase(poItem.item_name) + ' | new item → ' + tableName + ' #' + savedItem.id) } catch (_) {}
+    }
     setShowInvForm(null)
     await loadReceiving()
   }
@@ -372,13 +379,21 @@ function Purchase({ profile, mode }) {
         .select('id, requisition_item_id')
       if (itemErr) throw new Error(itemErr.message)
 
-      // Link back: set po_item_id on requisition_items
+      // Link back: set po_item_id on requisition_items, so the procurement queue
+      // knows this requisition item is already on a PO and stops offering it. The
+      // results here used to be completely ignored -- a failed link left that
+      // requisition item looking unlinked/available, so it could get selected onto
+      // a SECOND PO even though a purchase_order_items row for it already existed.
       var updates = (insertedItems || []).map(function (pi) {
         return supabase.from('requisition_items')
           .update({ po_item_id: pi.id })
           .eq('id', pi.requisition_item_id)
+          .then(function (res) { return { reqItemId: pi.requisition_item_id, error: res.error } })
       })
-      await Promise.allSettled(updates)
+      var linkResults = await Promise.allSettled(updates)
+      var linkFailures = linkResults
+        .map(function (r, idx) { return (r.status === 'rejected' || (r.value && r.value.error)) ? insertedItems[idx].requisition_item_id : null })
+        .filter(Boolean)
 
       try { await logActivity('PO_CREATE', 'PO created | ' + poItems.length + ' items') } catch (_) {}
 
@@ -386,6 +401,11 @@ function Purchase({ profile, mode }) {
       setSaving(false)
       loadQueue()
       loadPos()
+
+      if (linkFailures.length > 0) {
+        alert('PO created, but ' + linkFailures.length + ' requisition item(s) could not be marked as linked (ids: ' + linkFailures.join(', ') + '). ' +
+          'They may still show as available in the procurement queue -- do not select them for another PO until an admin links them to this one manually.')
+      }
 
       openPoDetail(Object.assign({}, po, { status: 'draft', created_at: new Date().toISOString(), profiles: { name: profile.name } }))
     } catch (err) {
@@ -424,18 +444,27 @@ function Purchase({ profile, mode }) {
       if (it.status === 'pending') pendingIds.push(it.id)
       if (it.status === 'purchased') purchasedIds.push(it.id)
     })
+    // Every write below used to be unchecked. The unlink step matters most: if it
+    // fails, the requisition item stays linked to a po_item_id whose PO was just
+    // cancelled, so it never reappears as available in the procurement queue --
+    // stuck until someone notices and clears the link manually.
+    var cancelWarnings = []
     // Cancel pending items + unlink from requisitions so they return to queue
     if (pendingIds.length > 0) {
-      await supabase.from('purchase_order_items').update({ status: 'cancelled' }).in('id', pendingIds)
-      await supabase.from('requisition_items').update({ po_item_id: null }).in('po_item_id', pendingIds)
+      var { error: poiErr } = await supabase.from('purchase_order_items').update({ status: 'cancelled' }).in('id', pendingIds)
+      if (poiErr) cancelWarnings.push('Some PO items could not be marked cancelled: ' + poiErr.message)
+      var { error: unlinkErr } = await supabase.from('requisition_items').update({ po_item_id: null }).in('po_item_id', pendingIds)
+      if (unlinkErr) cancelWarnings.push('Some requisition items could not be unlinked (they won\'t reappear in the procurement queue until an admin fixes this): ' + unlinkErr.message)
     }
     // Move purchased → pending_return
     if (purchasedIds.length > 0) {
-      await supabase.from('purchase_order_items').update({ status: 'pending_return' }).in('id', purchasedIds)
+      var { error: prErr } = await supabase.from('purchase_order_items').update({ status: 'pending_return' }).in('id', purchasedIds)
+      if (prErr) cancelWarnings.push('Some purchased items could not be moved to pending-return: ' + prErr.message)
     }
     // PO status
     var newPoStatus = purchasedIds.length > 0 ? 'cancelling' : 'cancelled'
-    await supabase.from('purchase_orders').update({ status: newPoStatus }).eq('id', poId)
+    var { error: poStatusErr } = await supabase.from('purchase_orders').update({ status: newPoStatus }).eq('id', poId)
+    if (poStatusErr) cancelWarnings.push('The PO\'s own status could not be updated: ' + poStatusErr.message)
     // Update local state
     setActivePoItems(activePoItems.map(function (it) {
       if (it.status === 'pending') return Object.assign({}, it, { status: 'cancelled' })
@@ -445,6 +474,7 @@ function Purchase({ profile, mode }) {
     setActivePo(function (prev) { return prev ? Object.assign({}, prev, { status: newPoStatus }) : prev })
     try { await logActivity('PO_CANCEL', 'PO ' + poId.slice(0, 8) + ' → ' + newPoStatus + ' | ' + purchasedIds.length + ' items pending return') } catch (_) {}
     setSaving(false)
+    if (cancelWarnings.length > 0) alert('PO cancel had problems:\n' + cancelWarnings.join('\n'))
     loadPos()
   }
 
@@ -456,19 +486,20 @@ function Purchase({ profile, mode }) {
     if (!(await appConfirm('Confirm this item has been returned? Wallet will be credited ' + formatPaise(item.actual_cost_paise) + '.'))) return
     setSaving(true)
     // Update item status
-    var { error } = await supabase.from('purchase_order_items').update({ status: 'returned' }).eq('id', poItemId)
+    var { data: statusRows, error } = await supabase.from('purchase_order_items').update({ status: 'returned' }).eq('id', poItemId).select('id')
     if (error) { alert('Failed: ' + error.message); setSaving(false); return }
+    if (!statusRows || statusRows.length === 0) { alert('Return blocked — no row updated. You may not be permitted to confirm this return.'); setSaving(false); return }
     // Credit purchaser wallet
+    var returnWarnings = []
     if (item.actual_cost_paise > 0 && item.purchased_by) {
-      try {
-        await supabase.rpc('wallet_admin_credit', {
-          p_user_id: item.purchased_by,
-          p_amount_paise: item.actual_cost_paise,
-          p_description: 'PO Return: ' + titleCase(item.item_name),
-          p_ref_type: 'po_return',
-          p_ref_id: String(poItemId),
-        })
-      } catch (_) {}
+      var { error: wErr } = await supabase.rpc('wallet_admin_credit', {
+        p_user_id: item.purchased_by,
+        p_amount_paise: item.actual_cost_paise,
+        p_description: 'PO Return: ' + titleCase(item.item_name),
+        p_ref_type: 'po_return',
+        p_ref_id: String(poItemId),
+      })
+      if (wErr) returnWarnings.push('Wallet credit failed: ' + wErr.message + ' — balance may be out of sync.')
     }
 
     // ─── Reversal expense (negative amount + deduction_type='return') ───
@@ -479,9 +510,14 @@ function Purchase({ profile, mode }) {
           .eq('id', item.expense_id)
           .single()
         if (origExp) {
-          var { data: origAllocs } = await supabase.from('expense_allocations')
-            .select('department, sub_department_id, venue_id, amount_paise')
+          // department_id, not sub_department_id -- expense_allocations has no such
+          // column. That select used to fail silently (its error was never checked),
+          // which read as "no allocations" and left the reversal expense with none at
+          // all, breaking ledger traceability for every return.
+          var { data: origAllocs, error: origAllocsErr } = await supabase.from('expense_allocations')
+            .select('department, department_id, venue_id, amount_paise')
             .eq('expense_id', origExp.id)
+          if (origAllocsErr) returnWarnings.push('Could not read original allocations: ' + origAllocsErr.message + ' — reversal expense has none.')
 
           var { data: revExp, error: revErr } = await supabase.from('expenses').insert({
             user_id: item.purchased_by,
@@ -497,23 +533,24 @@ function Purchase({ profile, mode }) {
             batch_id: origExp.batch_id,
           }).select('id').single()
 
-          if (!revErr && revExp && (origAllocs || []).length > 0) {
+          if (revErr) {
+            returnWarnings.push('Reversal expense insert failed: ' + revErr.message)
+          } else if (revExp && (origAllocs || []).length > 0) {
             var revAllocs = origAllocs.map(function (a) {
               return {
                 expense_id: revExp.id,
                 department: a.department,
-                sub_department_id: a.sub_department_id,
+                department_id: a.department_id,
                 venue_id: a.venue_id,
                 amount_paise: -a.amount_paise,
               }
             })
-            await supabase.from('expense_allocations').insert(revAllocs)
-          } else if (revErr) {
-            console.warn('Reversal insert failed:', revErr.message)
+            var { error: revAllocErr } = await supabase.from('expense_allocations').insert(revAllocs)
+            if (revAllocErr) returnWarnings.push('Reversal allocations failed: ' + revAllocErr.message)
           }
         }
       } catch (err) {
-        console.warn('Return reversal error:', err.message || err)
+        returnWarnings.push('Return reversal error: ' + (err.message || err))
       }
     }
 
@@ -533,6 +570,7 @@ function Purchase({ profile, mode }) {
     }
     try { await logActivity('PO_ITEM_RETURNED', titleCase(item.item_name) + ' returned | ' + formatPaise(item.actual_cost_paise) + ' credited') } catch (_) {}
     setSaving(false)
+    if (returnWarnings.length > 0) alert('Return confirmed, but: \n' + returnWarnings.join('\n') + '\nFlag for admin correction.')
     loadPos()
   }
 
@@ -565,14 +603,19 @@ function Purchase({ profile, mode }) {
   async function deletePo(poId) {
     if (saving) return
     setSaving(true)
-    // Unlink requisition items first
+    // Unlink requisition items first -- if this fails, the PO items it points at are
+    // about to be hard-deleted below, which would leave those requisition_items
+    // referencing po_item_ids that no longer exist. Stop here rather than proceed
+    // into that dangling-reference state.
     var { data: poItems } = await supabase.from('purchase_order_items').select('id').eq('po_id', poId)
     var poItemIds = (poItems || []).map(function (p) { return p.id })
     if (poItemIds.length > 0) {
-      await supabase.from('requisition_items').update({ po_item_id: null }).in('po_item_id', poItemIds)
+      var { error: unlinkErr } = await supabase.from('requisition_items').update({ po_item_id: null }).in('po_item_id', poItemIds)
+      if (unlinkErr) { alert('Delete aborted — could not unlink requisition items: ' + unlinkErr.message + '. Nothing was deleted.'); setSaving(false); return }
     }
     // Delete PO items then PO
-    await supabase.from('purchase_order_items').delete().eq('po_id', poId)
+    var { error: poiDelErr } = await supabase.from('purchase_order_items').delete().eq('po_id', poId)
+    if (poiDelErr) { alert('Delete failed: ' + poiDelErr.message + '. The requisition items were already unlinked -- they should now show as available again.'); setSaving(false); return }
     var { error } = await supabase.from('purchase_orders').delete().eq('id', poId)
     if (error) { alert('Delete failed: ' + error.message); setSaving(false); return }
     try { await logActivity('PO_DELETE', 'Draft PO ' + poId.slice(0, 8) + ' deleted | ' + poItemIds.length + ' items returned to queue') } catch (_) {}
@@ -1410,7 +1453,9 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     var ratePaise = bulkVendorRate ? Math.round(Number(bulkVendorRate) * 100) : null
     // allVendorsRaw, not the scoped vendorList -- a vendor outside the viewer's own
     // category tags would otherwise read as "no contact on file" and null out a real one.
-    var vendorRow = (allVendorsRaw || []).find(function (v) { return v.name === vendorName })
+    // Case-insensitive -- vendorName here can be free-typed, and "sharma traders" missing
+    // the stored "Sharma Traders" the same way nulled out a real contact.
+    var vendorRow = (allVendorsRaw || []).find(function (v) { return v.name.toLowerCase() === vendorName.toLowerCase() })
     var vendorContact = vendorRow ? (vendorRow.phone || vendorRow.contact || null) : null
     for (var i = 0; i < targetItems.length; i++) {
       var it = targetItems[i]
@@ -1571,7 +1616,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
     var sharedVendor = uniq.length === 1 ? uniq[0] : ''
     var sharedContact = ''
     if (sharedVendor) {
-      var vRow = (allVendorsRaw || []).find(function (v) { return v.name === sharedVendor })
+      var vRow = (allVendorsRaw || []).find(function (v) { return v.name.toLowerCase() === sharedVendor.toLowerCase() })
       sharedContact = vRow ? (vRow.phone || vRow.contact || '') : (selectedItems[0].vendor_contact || '')
     }
     var itemForms = {}
@@ -2245,7 +2290,7 @@ function PoDetail({ po, items, setItems, profile, isAdmin, staffList, saving, ve
                     <input type="text" list="multi-vendor-list" value={multiForm.vendor}
                       onChange={function (e) {
                         var name = e.target.value
-                        var vRow = (allVendorsRaw || []).find(function (v) { return v.name === name })
+                        var vRow = (allVendorsRaw || []).find(function (v) { return v.name.toLowerCase() === name.toLowerCase() })
                         setMultiForm(function (p) { return Object.assign({}, p, { vendor: name, vendorContact: vRow ? (vRow.phone || vRow.contact || '') : p.vendorContact }) })
                       }}
                       placeholder="Type or pick vendor..."

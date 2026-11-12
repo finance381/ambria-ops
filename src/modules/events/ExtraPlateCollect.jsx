@@ -152,7 +152,7 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
     var now = new Date()
     var iso = function (x) { return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0') }
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, client_name, session, extra_plates_charge, manual_plate_rate_paise, total_plates, complementary_plates, created_user_name, department, contract_no')
+      .select('id, event_name, function_date, venue_name, client_name, billing_name, session, extra_plates_charge, manual_plate_rate_paise, total_plates, complementary_plates, created_user_name, department, contract_no')
       .gte('function_date', iso(now))
       .lte('function_date', iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)))
       .in('department', ['Venue', 'Catering'])
@@ -181,7 +181,7 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
     if (!d) { setEvents([]); return }
     setEventsLoading(true)
     var { data } = await supabase.from('events')
-      .select('id, event_name, function_date, venue_name, client_name, session, extra_plates_charge, manual_plate_rate_paise, total_plates, complementary_plates, created_user_name, department, contract_no')
+      .select('id, event_name, function_date, venue_name, client_name, billing_name, session, extra_plates_charge, manual_plate_rate_paise, total_plates, complementary_plates, created_user_name, department, contract_no')
       .eq('function_date', d)
       .in('department', ['Venue', 'Catering'])
       .is('lms_cancelled_at', null)
@@ -280,12 +280,12 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
     var toISO = filterTo ? filterTo + 'T23:59:59' : null
 
     var iQ = supabase.from('extra_plate_issues')
-      .select('id, event_id, plates_count, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, issued_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge, contract_no, created_user_name)')
+      .select('id, event_id, plates_count, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, issued_by, events(event_name, venue_name, client_name, billing_name, function_date, total_plates, complementary_plates, extra_plates_charge, contract_no, created_user_name)')
       .gte('created_at', fromISO)
       .order('created_at', { ascending: false })
       .limit(1000)
     var cQ = supabase.from('extra_plate_collections')
-      .select('id, event_id, extras_charged, plates_returned, rate_paise, total_paise, discount_paise, payment_mode, payment_sub_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by, events(event_name, venue_name, client_name, function_date, total_plates, complementary_plates, extra_plates_charge, contract_no, created_user_name)')
+      .select('id, event_id, extras_charged, plates_returned, rate_paise, total_paise, discount_paise, payment_mode, payment_sub_mode, receipt_path, notes, status, cancelled_reason, cancelled_at, created_at, collected_by, events(event_name, venue_name, client_name, billing_name, function_date, total_plates, complementary_plates, extra_plates_charge, contract_no, created_user_name)')
       .gte('created_at', fromISO)
       .order('created_at', { ascending: false })
       .limit(1000)
@@ -477,7 +477,9 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
         description: r.extras_charged + ' extra plates × ' + formatPoints(r.rate_paise) + (r.notes ? ' — ' + r.notes : ''),
         createdAt: r.created_at,
         contractNo: ev.contract_no || null,
-        clientName: ev.client_name || '',
+        // Receipt-only: the contract's billing name (who gets invoiced), not
+        // the guest, when LMS has one on file.
+        clientName: ev.billing_name || ev.client_name || '',
         eventDate: ev.function_date || '',
         dealBy: ev.created_user_name || '',
         receivedByName: receivedByName,

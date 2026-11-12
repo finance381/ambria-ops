@@ -587,6 +587,14 @@ function CostTransfers({ profile, inAdmin }) {
       } catch (err) {
         setError((okCount > 0 ? okCount + ' of ' + form.to_rows.length + ' transfers were created before this failed — ' : '') +
           'Row ' + (j + 1) + ': ' + (err.message || 'Save failed'))
+        // Each row is its own already-atomic fn_create_cost_transfer call, but the
+        // loop itself isn't retry-safe -- hitting Submit again on the still-open
+        // form used to re-run every row from scratch, duplicating whatever already
+        // succeeded. Drop the successful rows so a resubmit only processes what's
+        // actually still left.
+        if (okCount > 0) {
+          setForm(function (prev) { return Object.assign({}, prev, { to_rows: prev.to_rows.slice(okCount) }) })
+        }
         setSaving(false)
         loadTransfers()
         return

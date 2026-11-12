@@ -6,6 +6,7 @@ import { logActivity } from '../../lib/logger'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
+import { venueLabel } from '../../components/ui/FunctionPickerGrid'
 import VoiceInput from '../../components/ui/VoiceInput'
 import Icon from '../../components/ui/Icon'
 import CheckedStamp from '../../components/ui/CheckedStamp'
@@ -28,6 +29,18 @@ function Row({ label, value, money }) {
       <span className={"min-w-0 text-right text-[13px] font-semibold text-slate-900" + (money ? " tabular-nums" : "")}>{value}</span>
     </div>
   )
+}
+
+// What actually left the wallet for this expense -- the cash portion only
+// when there's a credit split (the credit portion is owed to a vendor
+// separately, never debited from the wallet at all), the full amount
+// otherwise. Same formula ExpenseForm.jsx's edit path already uses for its
+// own wallet diff -- acknowledge/flag/deduct/resubmit used to refund or
+// re-debit the full amount_paise regardless, which handed a credit-split
+// expense's owner a refund larger than anything that was ever actually
+// taken from their wallet.
+function walletExposure(expRow) {
+  return (expRow.payment_credit_paise || 0) > 0 ? (expRow.payment_cash_paise || 0) : (expRow.amount_paise || 0)
 }
 
 function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack, backLabel, onUpdated, onEdit, onRaiseGV }) {
@@ -225,7 +238,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
 
   useEffect(function () {
     supabase.from('expense_allocations')
-      .select('id, department, venue_id, sub_venue_id, amount_paise, department_id, expense_type_id, expense_sub_type_id, remarks, source')
+      .select('id, department, venue_id, sub_venue_id, amount_paise, department_id, expense_type_id, expense_sub_type_id, remarks, source, event_id')
       .eq('expense_id', exp.id)
       .then(function (res) {
         var rows = res.data || []
@@ -233,9 +246,15 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
         if (rows.length > 0) {
           var svIds = rows.map(function (r) { return r.sub_venue_id }).filter(Boolean)
           var dIds = rows.map(function (r) { return r.department_id }).filter(Boolean)
+          // Period-mode allocations (ExpenseForm.jsx) each carry their own
+          // event_id instead of the whole expense anchoring to one -- fetch
+          // whichever functions those rows actually hit, same columns the
+          // function pickers elsewhere already use.
+          var evIds = Array.from(new Set(rows.map(function (r) { return r.event_id }).filter(Boolean)))
           Promise.all([
             svIds.length > 0 ? supabase.from('sub_venues').select('id, name').in('id', svIds) : { data: [] },
             dIds.length > 0 ? supabase.from('departments').select('id, name').in('id', dIds) : { data: [] },
+            evIds.length > 0 ? supabase.from('events').select('id, event_name, client_name, venue_name, location, session, function_date').in('id', evIds) : { data: [] },
           ]).then(function (results) {
             var map = {}
             refData.venues.forEach(function (v) { map['v_' + v.id] = v.code + ' — ' + v.name })
@@ -243,6 +262,15 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
             refData.expenseSubTypes.forEach(function (est) { map['est_' + est.id] = est.name })
             ;(results[0].data || []).forEach(function (sv) { map['sv_' + sv.id] = sv.name })
             ;(results[1].data || []).forEach(function (d) { map['d_' + d.id] = d.name })
+            ;(results[2].data || []).forEach(function (ev) {
+              var subline = [
+                venueLabel(ev.venue_name, refData.venues),
+                (ev.location && ev.location !== ev.venue_name) ? ev.location : null,
+                ev.session
+              ].filter(Boolean).join(' · ')
+              map['ev_' + ev.id] = (ev.event_name ? ev.event_name + ' — ' : '') +
+                (ev.client_name || 'Unnamed') + (subline ? ' · ' + subline : '') + ' · ' + formatDate(ev.function_date)
+            })
             setAllocVenues(map)
           })
         }
@@ -352,23 +380,28 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
   async function acknowledge() {
     if (saving) return
     setSaving(true)
-    var { error } = await supabase.from('expenses').update({
+    var { data: rows, error } = await supabase.from('expenses').update({
       status: 'acknowledged',
       acknowledged_by: profile.id,
       acknowledged_at: new Date().toISOString(),
-    }).eq('id', exp.id)
+    }).eq('id', exp.id).select('id')
     if (error) { alert('Acknowledge failed: ' + error.message); setSaving(false); return }
-    // If acknowledging a flagged expense, re-debit wallet (was refunded on flag)
+    if (!rows || rows.length === 0) { alert('Acknowledge blocked — no row updated. You may not be permitted to acknowledge this expense right now.'); setSaving(false); return }
+    // If acknowledging a flagged expense, re-debit wallet (was refunded on flag) --
+    // only the amount that was actually refunded, not the full gross amount, so a
+    // credit-split expense doesn't get double what was ever really debited.
     if (exp.status === 'flagged') {
-      try {
-        await supabase.rpc('wallet_admin_debit', {
-          p_user_id: exp.user_id,
-          p_amount_paise: exp.amount_paise,
-          p_description: 'Accepted: expense #' + exp.id + ' after flag',
-          p_ref_type: 'expense',
-          p_ref_id: String(exp.id),
-        })
-      } catch (_) {}
+      var { error: wErr } = await supabase.rpc('wallet_admin_debit', {
+        p_user_id: exp.user_id,
+        p_amount_paise: walletExposure(exp),
+        p_description: 'Accepted: expense #' + exp.id + ' after flag',
+        p_ref_type: 'expense',
+        p_ref_id: String(exp.id),
+      })
+      if (wErr) {
+        alert('Expense acknowledged, but the wallet re-debit failed: ' + wErr.message + ' — balance may be out of sync. Flag for admin correction.')
+        setSaving(false); onUpdated(); return
+      }
     }
     try { await logActivity('EXPENSE_ACKNOWLEDGE', (exp.description || 'Expense') + ' | ' + formatPoints(exp.amount_paise)) } catch (_) {}
     setSaving(false)
@@ -379,25 +412,30 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
     if (!rejectReason.trim()) return
     if (saving) return
     setSaving(true)
-    var { error } = await supabase.from('expenses').update({
+    var { data: rows, error } = await supabase.from('expenses').update({
       status: 'flagged',
       flag_reason: rejectReason.trim(),
       reviewed_by: profile.id,
       reviewed_at: new Date().toISOString(),
-    }).eq('id', exp.id)
-    if (error) { alert('Resubmit failed: ' + error.message); setSaving(false); return }
+    }).eq('id', exp.id).select('id')
+    if (error) { alert('Flag failed: ' + error.message); setSaving(false); return }
+    if (!rows || rows.length === 0) { alert('Flag blocked — no row updated. You may not be permitted to flag this expense right now.'); setSaving(false); return }
     if (exp.status === 'recorded') {
-      try {
-        await supabase.rpc('wallet_admin_credit', {
-          p_user_id: exp.user_id,
-          p_amount_paise: exp.amount_paise,
-          p_description: 'Refund: flagged expense #' + exp.id,
-          p_ref_type: 'expense_refund',
-          p_ref_id: String(exp.id),
-        })
-      } catch (_) {}
+      // walletExposure(exp), not the full amount_paise -- for a credit-split
+      // expense only the cash portion was ever actually debited.
+      var { error: wErr } = await supabase.rpc('wallet_admin_credit', {
+        p_user_id: exp.user_id,
+        p_amount_paise: walletExposure(exp),
+        p_description: 'Refund: flagged expense #' + exp.id,
+        p_ref_type: 'expense_refund',
+        p_ref_id: String(exp.id),
+      })
+      if (wErr) {
+        alert('Expense flagged, but the wallet refund failed: ' + wErr.message + ' — balance may be out of sync. Flag for admin correction.')
+        setSaving(false); onUpdated(); return
+      }
     }
-    try { await logActivity('EXPENSE_FLAG', (exp.description || 'Expense') + ' | Refund ' + formatPoints(exp.amount_paise) + ' | ' + rejectReason.trim()) } catch (_) {}
+    try { await logActivity('EXPENSE_FLAG', (exp.description || 'Expense') + ' | Refund ' + formatPoints(walletExposure(exp)) + ' | ' + rejectReason.trim()) } catch (_) {}
     setSaving(false)
     onUpdated()
   }
@@ -407,29 +445,34 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
     if (saving) return
     setSaving(true)
     var deductionPaise = Math.round(Number(deductionAmount) * 100)
-    var { error } = await supabase.from('expenses').update({
+    var { data: rows, error } = await supabase.from('expenses').update({
       status: 'deducted',
       flag_reason: rejectReason.trim(),
       deduction_type: deductionType.trim() || null,
       penalty_paise: deductionPaise,
       penalized_by: profile.id,
       penalized_at: new Date().toISOString(),
-    }).eq('id', exp.id)
+    }).eq('id', exp.id).select('id')
     if (error) { alert('Deduction failed: ' + error.message); setSaving(false); return }
+    if (!rows || rows.length === 0) { alert('Deduction blocked — no row updated. You may not be permitted to deduct this expense right now.'); setSaving(false); return }
     // Used to also post a salary ledger debit via trg_expense_deduction_to_
     // salary_ledger (dropped in migration 00123) — the deduction now only
     // ever moves money in the wallet, the same way a full "flag" already
     // refunds the whole amount in flag() above. Only part of what they
-    // spent is being disallowed, so only that part comes back.
-    try {
-      await supabase.rpc('wallet_admin_credit', {
-        p_user_id: exp.user_id,
-        p_amount_paise: deductionPaise,
-        p_description: 'Deduction credited back: expense #' + exp.id + ' — ' + rejectReason.trim(),
-        p_ref_type: 'expense_refund',
-        p_ref_id: String(exp.id),
-      })
-    } catch (_) {}
+    // spent is being disallowed, so only that part comes back. deductionPaise
+    // is a distinct admin-entered amount (not amount_paise), so it's already
+    // correct for a credit-split expense the same way flag()/acknowledge() now are.
+    var { error: wErr } = await supabase.rpc('wallet_admin_credit', {
+      p_user_id: exp.user_id,
+      p_amount_paise: deductionPaise,
+      p_description: 'Deduction credited back: expense #' + exp.id + ' — ' + rejectReason.trim(),
+      p_ref_type: 'expense_refund',
+      p_ref_id: String(exp.id),
+    })
+    if (wErr) {
+      alert('Deduction recorded, but the wallet credit failed: ' + wErr.message + ' — balance may be out of sync. Flag for admin correction.')
+      setSaving(false); onUpdated(); return
+    }
     try { await logActivity('EXPENSE_DEDUCT', (exp.description || 'Expense') + ' | Deduction ' + formatPoints(deductionPaise) + ' | ' + rejectReason.trim()) } catch (_) {}
     setSaving(false)
     onUpdated()
@@ -437,24 +480,28 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
 
   async function resubmit() {
     if (saving) return
-    if (!(await appConfirm('Resubmit this expense for review? ' + formatPoints(exp.amount_paise) + ' will be deducted from your wallet again.'))) return
+    if (!(await appConfirm('Resubmit this expense for review? ' + formatPoints(walletExposure(exp)) + ' will be deducted from your wallet again.'))) return
     setSaving(true)
-    var { error } = await supabase.from('expenses').update({
+    var { data: rows, error } = await supabase.from('expenses').update({
       status: 'recorded',
       flag_reason: null,
       reviewed_by: null,
       reviewed_at: null,
-    }).eq('id', exp.id)
+    }).eq('id', exp.id).select('id')
     if (error) { alert('Resubmit failed: ' + error.message); setSaving(false); return }
-    try {
-      await supabase.rpc('wallet_self_debit', {
-        p_amount_paise: exp.amount_paise,
-        p_description: 'Resubmit: expense #' + exp.id,
-        p_ref_type: 'expense',
-        p_ref_id: String(exp.id),
-      })
-    } catch (_) {}
-    try { await logActivity('EXPENSE_RESUBMIT', (exp.description || 'Expense') + ' | ' + formatPoints(exp.amount_paise)) } catch (_) {}
+    if (!rows || rows.length === 0) { alert('Resubmit blocked — no row updated. You may not be permitted to resubmit this expense right now.'); setSaving(false); return }
+    // walletExposure(exp), not the full amount_paise -- same reasoning as flag()/acknowledge().
+    var { error: wErr } = await supabase.rpc('wallet_self_debit', {
+      p_amount_paise: walletExposure(exp),
+      p_description: 'Resubmit: expense #' + exp.id,
+      p_ref_type: 'expense',
+      p_ref_id: String(exp.id),
+    })
+    if (wErr) {
+      alert('Expense resubmitted, but the wallet debit failed: ' + wErr.message + ' — balance may be out of sync. Flag for admin correction.')
+      setSaving(false); onUpdated(); return
+    }
+    try { await logActivity('EXPENSE_RESUBMIT', (exp.description || 'Expense') + ' | ' + formatPoints(walletExposure(exp))) } catch (_) {}
     setSaving(false)
     onUpdated()
   }
@@ -879,6 +926,10 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
               var subTypeLabel = a.expense_sub_type_id && allocVenues['est_' + a.expense_sub_type_id] ? allocVenues['est_' + a.expense_sub_type_id] : null
               var venueLabel = a.venue_id && allocVenues['v_' + a.venue_id] ? allocVenues['v_' + a.venue_id] : null
               var subVenueLabel = a.sub_venue_id && allocVenues['sv_' + a.sub_venue_id] ? allocVenues['sv_' + a.sub_venue_id] : null
+              // Period-mode row (ExpenseForm.jsx) -- this allocation hit its
+              // own function's ledger instead of (or regardless of) whatever
+              // the whole expense's own event_id is.
+              var functionLabel = a.event_id && allocVenues['ev_' + a.event_id] ? allocVenues['ev_' + a.event_id] : null
               // Four lines of the same size and nearly the same grey, stacked
               // flush left, read as one paragraph — you have to parse each one
               // to learn what it is. They are four different kinds of thing, so
@@ -903,6 +954,12 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                         <p className="flex items-center gap-1.5 text-[12.5px] font-medium text-slate-500">
                           <Icon name="mapPin" size={12} className="shrink-0 text-slate-400" />
                           <span className="min-w-0 truncate">{venueLabel}{subVenueLabel ? ' › ' + subVenueLabel : ''}</span>
+                        </p>
+                      )}
+                      {functionLabel && (
+                        <p className="flex items-center gap-1.5 text-[12.5px] font-medium text-indigo-500">
+                          <Icon name="calendar" size={12} className="shrink-0 text-indigo-400" />
+                          <span className="min-w-0 truncate">{functionLabel}</span>
                         </p>
                       )}
                     </div>

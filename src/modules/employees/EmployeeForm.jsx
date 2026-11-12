@@ -120,7 +120,11 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
     setProbationEnd(e.probation_end_date || '')
     setConfirmationDate(e.confirmation_date || '')
     setDesignation(e.designation || '')
-    setJobDeptIds(e.job_department_ids || [])
+    // employees.job_department_ids is an ad-hoc bigint[] column -- PostgREST
+    // hands its elements back as JSON strings, so normalize to numbers here
+    // or the checkboxes below (toggling/checking against job_departments'
+    // own integer ids) would never show a previously-saved dept as checked.
+    setJobDeptIds((e.job_department_ids || []).map(Number))
     setReportingManagerId(e.reporting_manager_id || '')
     setWorkLocation(e.work_location || '')
     setHiringPerson(e.hiring_person || '')

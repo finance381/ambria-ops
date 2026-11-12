@@ -1074,22 +1074,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       if (upErr) { alert('Image upload failed: ' + upErr.message); setIssueSaving(false); return }
       imagePath = path
     }
-    var { error } = await supabase.rpc(rpcName, {
+    var { data: newTxnId, error } = await supabase.rpc(rpcName, {
       p_user_id: issueModal.user_id,
       p_amount_paise: amountRupees,
       p_description: issueDesc.trim() || defaultDesc,
     })
     if (error) { alert((issueType === 'debit' ? 'Deduct' : 'Issue') + ' failed: ' + error.message); setIssueSaving(false); return }
-    if (imagePath) {
-      var { data: latestTxn } = await supabase.from('wallet_transactions')
-        .select('id')
-        .eq('wallet_id', issueModal.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-      if (latestTxn) {
-        await supabase.from('wallet_transactions').update({ issued_image_path: imagePath }).eq('id', latestTxn.id)
-      }
+    if (imagePath && newTxnId) {
+      await supabase.from('wallet_transactions').update({ issued_image_path: imagePath }).eq('id', newTxnId)
     }
     var logAction = issueType === 'debit' ? 'WALLET_DEDUCT' : 'WALLET_ISSUE'
     try { await logActivity(logAction, (walletProfiles[issueModal.user_id]?.name || '—') + ' | ' + formatPoints(amountRupees) + ' | ' + (issueDesc.trim() || '—')) } catch (_) {}
@@ -1588,11 +1580,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var dealBy = ''
     if (txn.reference_id) {
       var { data: ev } = await supabase.from('events')
-        .select('contract_no, client_name, function_date, created_user_name')
+        .select('contract_no, client_name, billing_name, function_date, created_user_name')
         .eq('id', Number(txn.reference_id)).maybeSingle()
       if (ev) {
         contractNo = ev.contract_no || null
-        clientName = ev.client_name || ''
+        // Receipt-only: the contract's billing name (who gets invoiced), not
+        // the guest, when LMS has one on file.
+        clientName = ev.billing_name || ev.client_name || ''
         eventDate = ev.function_date || ''
         dealBy = ev.created_user_name || ''
       }
@@ -2297,20 +2291,36 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var amountRupees = Math.round(Number(bulkAmount) * 100)
     var desc = bulkDesc.trim() || 'Bulk points issued by admin'
     var succeeded = 0
-    var failed = 0
+    var failedUserIds = []
     var CHUNK = 10
     for (var c = 0; c < userIds.length; c += CHUNK) {
       var chunk = userIds.slice(c, c + CHUNK)
       var results = await Promise.allSettled(chunk.map(function (uid) {
         return supabase.rpc('issue_money', { p_user_id: uid, p_amount_paise: amountRupees, p_description: desc })
       }))
-      results.forEach(function (res) {
+      results.forEach(function (res, idx) {
         if (res.status === 'fulfilled' && !res.value.error) succeeded++
-        else failed++
+        else failedUserIds.push(chunk[idx])
       })
     }
     try { await logActivity('WALLET_BULK_ISSUE', succeeded + ' users | ' + formatPoints(amountRupees) + ' each | ' + desc) } catch (_) {}
-    alert('Done: ' + succeeded + ' issued' + (failed > 0 ? ', ' + failed + ' failed' : ''))
+    if (failedUserIds.length > 0) {
+      // The old message only gave a failure COUNT, with no way to tell which users
+      // actually failed -- an admin trying to "finish the job" would either have to
+      // guess, or re-select everyone again and re-issue to the ones that already
+      // succeeded. Pre-select just the failed ones instead, so retrying is the safe
+      // default rather than something that has to be worked out by hand.
+      var failedNames = failedUserIds.map(function (uid) { return walletProfiles[uid]?.name || uid }).join(', ')
+      alert('Done: ' + succeeded + ' issued, ' + failedUserIds.length + ' failed (' + failedNames + '). ' +
+        'They\'re still selected below -- check the amount/description and run again to retry just them.')
+      var retrySelected = {}
+      failedUserIds.forEach(function (uid) { retrySelected[uid] = true })
+      setBulkSelected(retrySelected)
+      setBulkSaving(false)
+      loadAllWallets()
+      return
+    }
+    alert('Done: ' + succeeded + ' issued')
     setBulkSaving(false)
     setBulkMode(false)
     setBulkSelected({})
@@ -2344,7 +2354,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!walletTxns.length || !selectedWallet) return
     var userName = walletProfiles[selectedWallet.user_id]?.name || 'user'
     var headers = ['Date', 'Type', 'Amount (pts)', 'Balance After (pts)', 'Description', 'Performed By', 'Deleted']
-    var rows = getExportRows().map(function (t) {
+    // getExportRows merges each expense's rows into one, but the merge
+    // appends those merged rows by reference_id order (an implementation
+    // detail of how it groups them), not by time -- same as the on-screen
+    // list and the PDF, this needs its own sort by _sortAt afterward, newest
+    // first to match the raw query order these rows would otherwise be in.
+    var rows = getExportRows().sort(function (a, b) {
+      return new Date(b._sortAt || b.created_at) - new Date(a._sortAt || a.created_at)
+    }).map(function (t) {
       var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
       var isDeletedExp = isExpRow && !!expenseRefs[t.reference_id] && !!expenseRefs[t.reference_id].deleted_at
       return [
@@ -2547,11 +2564,29 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         // moved it in between. Called out instead of left for someone to
         // notice the numbers don't add up and go digging.
         var prevRow = chrono[idx - 1]
-        if (prevRow) {
+        // A merged (edited) row's own amount/balance pair was never one atomic
+        // step -- it can legitimately span other unrelated rows in between --
+        // so neither it nor a merged neighbor can be checked this way (mirrors
+        // the on-screen gap check in renderTxnRow).
+        if (prevRow && !t._isMerged && !prevRow._isMerged) {
           var expectedBal = (prevRow.balance_after_paise || 0) + (t.type === 'credit' ? (t.amount_paise || 0) : -(t.amount_paise || 0))
           var balGap = (t.balance_after_paise || 0) - expectedBal
           if (Math.abs(balGap) >= 100) {
-            pLines.push({ kind: 'warn', text: (balGap > 0 ? '+' : '−') + fmtN(Math.abs(balGap)) + ' moved the balance from activity not in this statement' })
+            // Net out any trailing edit (an amendment to some OTHER expense)
+            // whose own real timestamp falls strictly between these two rows --
+            // a known, accounted-for amount, not a missing one.
+            var _tTime = new Date(t._sortAt || t.created_at).getTime()
+            var _pTime = new Date(prevRow._sortAt || prevRow.created_at).getTime()
+            var _lo = Math.min(_tTime, _pTime), _hi = Math.max(_tTime, _pTime)
+            var _explained = (chrono._trailingEdits || []).reduce(function (s, e) {
+              var et = new Date(e.created_at).getTime()
+              if (et <= _lo || et >= _hi) return s
+              return s + (e.type === 'credit' ? (e.amount_paise || 0) : -(e.amount_paise || 0))
+            }, 0)
+            var _residual = balGap - _explained
+            if (Math.abs(_residual) >= 100) {
+              pLines.push({ kind: 'warn', text: (_residual > 0 ? '+' : '−') + fmtN(Math.abs(_residual)) + ' moved the balance from activity not in this statement' })
+            }
           }
         }
         particularsMeta.push(pLines)

@@ -31,7 +31,10 @@ function ExpenseTypeFields({ value, onChange, expTypes, expSubTypes, stacked, qu
       var allowed = allowedDeptIds || []
       return (employees || []).filter(function (emp) {
         if (allowed.length === 0) return true
-        var jd = emp.job_department_ids || []
+        // employees.job_department_ids is an ad-hoc bigint[] column, so its
+        // elements come back as JSON strings -- normalize before comparing
+        // against allowedDeptIds' plain-number ids.
+        var jd = (emp.job_department_ids || []).map(Number)
         for (var i = 0; i < jd.length; i++) { if (allowed.indexOf(jd[i]) !== -1) return true }
         return false
       }).map(function (emp) {

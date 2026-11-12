@@ -54,7 +54,7 @@ var TABS = [
   { key: 'documents',    label: 'Documents',    short: 'Docs',     icon: 'paperclip' },
 ]
 
-var EVT_COLS = 'id, event_name, function_date, contract_date, venue_name, location, client_name, contact_person, session, catering, department, created_user_name, contract_no, is_tentative, pax, total_plates, complementary_plates, synced_at, pdf_link, ppt_link, agreed_cash_paise, agreed_bank_paise'
+var EVT_COLS = 'id, event_name, function_date, contract_date, venue_name, location, client_name, billing_name, contact_person, session, catering, department, created_user_name, contract_no, is_tentative, pax, total_plates, complementary_plates, synced_at, pdf_link, ppt_link, agreed_cash_paise, agreed_bank_paise'
 
 var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
   'August', 'September', 'October', 'November', 'December']
@@ -932,7 +932,9 @@ function EventLedger(props) {
       }
       await generateCollectionReceiptPdf(Object.assign({}, d.pdf, {
         contractNo: c.contract_no || null,
-        clientName: c.client_name || '',
+        // Receipt-only: the contract's billing name (who gets invoiced), not
+        // the guest, when LMS has one on file.
+        clientName: c.billing_name || c.client_name || '',
         eventDate: c.function_date || '',
         dealBy: c.created_user_name || '',
         receivedByName: receivedByName,
