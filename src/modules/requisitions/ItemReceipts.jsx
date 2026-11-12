@@ -727,7 +727,7 @@ function ReceiveModal({ receipt, profile, onClose, onDone, onOpenExpense, matchI
               <textarea value={cancelReason}
                 onChange={function (e) { setCancelReason(e.target.value) }}
                 rows={3} maxLength={500} placeholder="e.g. Damaged on arrival, wrong item delivered, expense not really for inventory..."
-                className="w-full px-3 py-2 border border-red-200 rounded-lg text-sm focus:ring-2 focus:ring-red-300 bg-white resize-none" style={{ fontSize: '16px' }} />
+                className="w-full px-3 py-2 border border-red-200 rounded-lg text-sm focus:outline-none focus:border-red-400 focus:ring-4 focus:ring-red-100 bg-white resize-none" style={{ fontSize: '16px' }} />
               <p className="text-[10px] text-gray-400 mt-0.5">Cancelling only marks the receipt cancelled — the expense itself is untouched.</p>
             </div>
 
