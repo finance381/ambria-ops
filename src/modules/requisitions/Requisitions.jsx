@@ -412,37 +412,35 @@ function Requisitions({ profile, onBack }) {
       </div>
 
       {/* Tabs: My Requests | Pending Approval | Item Receipts | All */}
+      {/* One line on every screen: labels never wrap, and the counts sit
+          inside the tab as a small chip rather than hanging off its corner. */}
       {(showApproveTab || isItemReceiver) && (
-        <div className="flex bg-gray-100 rounded-lg p-0.5">
+        <div className="flex gap-0.5 bg-slate-100 border border-slate-200 rounded-xl p-1">
           <button onClick={function () { setView('list'); setStatusFilter('') }}
-            className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (view === 'list' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
-            My Requests
+            className={"flex-auto sm:flex-1 inline-flex items-center justify-center gap-1 sm:gap-1.5 h-9 px-1.5 sm:px-3 text-[12px] sm:text-sm font-semibold whitespace-nowrap rounded-lg transition-colors " + (view === 'list' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}>
+            <span>My Requests</span>
           </button>
           {showApproveTab && (
             <button onClick={function () { setView('approve'); setStatusFilter('') }}
-              className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors relative " + (view === 'approve' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
-              Approvals
+              className={"flex-auto sm:flex-1 inline-flex items-center justify-center gap-1 sm:gap-1.5 h-9 px-1.5 sm:px-3 text-[12px] sm:text-sm font-semibold whitespace-nowrap rounded-lg transition-colors " + (view === 'approve' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}>
+              <span>Approvals</span>
               {approvalReqs.length > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                  {approvalReqs.length}
-                </span>
+                <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none inline-flex items-center justify-center tabular-nums">{approvalReqs.length > 99 ? '99+' : approvalReqs.length}</span>
               )}
             </button>
           )}
           {isItemReceiver && (
             <button onClick={function () { setView('receipts'); setStatusFilter('') }}
-              className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors relative " + (view === 'receipts' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
-              Item Receipts
+              className={"flex-auto sm:flex-1 inline-flex items-center justify-center gap-1 sm:gap-1.5 h-9 px-1.5 sm:px-3 text-[12px] sm:text-sm font-semibold whitespace-nowrap rounded-lg transition-colors " + (view === 'receipts' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}>
+              <span><span className="hidden sm:inline">Item </span>Receipts</span>
               {pendingReceiptsCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                  {pendingReceiptsCount > 99 ? '99+' : pendingReceiptsCount}
-                </span>
+                <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none inline-flex items-center justify-center tabular-nums">{pendingReceiptsCount > 99 ? '99+' : pendingReceiptsCount}</span>
               )}
             </button>
           )}
           {(isAdmin || isAuditor) && (
             <button onClick={function () { setView('all'); setStatusFilter('') }}
-              className={"flex-1 py-2 text-sm font-semibold rounded-md transition-colors " + (view === 'all' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500")}>
+              className={"flex-auto sm:flex-1 inline-flex items-center justify-center gap-1 sm:gap-1.5 h-9 px-1.5 sm:px-3 text-[12px] sm:text-sm font-semibold whitespace-nowrap rounded-lg transition-colors " + (view === 'all' ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}>
               All
             </button>
           )}
@@ -1208,29 +1206,39 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-gray-900">{isEditing ? 'Edit Requisition' : 'New Requisition'}</h2>
-        <button onClick={onCancel} className="text-sm text-gray-500 hover:text-gray-700 font-medium">Cancel</button>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="font-display text-[19px] font-bold text-slate-900 tracking-[-0.01em]">{isEditing ? 'Edit Requisition' : 'New Requisition'}</h2>
+          <p className="mt-0.5 text-[12.5px] text-slate-500">Tell us what is needed, by when, and why.</p>
+        </div>
+        <button type="button" onClick={onCancel} className="shrink-0 h-9 px-3.5 rounded-lg border border-slate-200 bg-white text-[13px] font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
       </div>
 
-      {/* Department + Urgency */}
-      <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 space-y-3">
+      {/* Request details: two columns on a wide screen, stacked on a phone */}
+      <div className="@container rounded-2xl border border-slate-200 bg-white p-4 @lg:p-5 shadow-sm">
+      <div className="grid gap-4 @2xl:grid-cols-2">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Department <span className="text-red-500">*</span></label>
+          <label className="block text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-500 mb-1.5">Department <span className="text-red-500">*</span></label>
           <select value={department} onChange={function (e) { changeDepartment(e.target.value) }}
-            className={"w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white " + (errors.dept ? "border-red-300" : "border-gray-300")}
-            style={{ fontSize: '16px' }}>
+            className={"w-full h-11 px-3.5 rounded-xl border bg-white text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 " + (errors.dept ? "border-red-300" : "border-slate-300")}
+            style={{ fontSize: '15px' }}>
             <option value="">Select department...</option>
             {departments.map(function (d) { return <option key={d.id} value={d.name}>{d.name}</option> })}
           </select>
           {errors.dept && <p className="text-xs text-red-500 mt-1">{errors.dept}</p>}
         </div>
+        <div>
+          <label className="block text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-500 mb-1.5">Needed By</label>
+          <input type="date" value={neededBy} onChange={function (e) { setNeededBy(e.target.value) }}
+            className="w-full h-11 px-3.5 rounded-xl border bg-white text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 border-slate-300"
+            style={{ fontSize: '15px' }} />
+        </div>
         {deptSubDepts.length > 0 && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Sub-Department</label>
+            <label className="block text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-500 mb-1.5">Sub-Department</label>
             <select value={subDeptId} onChange={function (e) { changeSubDept(e.target.value) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-              style={{ fontSize: '16px' }}>
+              className="w-full h-11 px-3.5 rounded-xl border bg-white text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 border-slate-300"
+              style={{ fontSize: '15px' }}>
               <option value="">Select sub-department...</option>
               {deptSubDepts.map(function (sd) { return <option key={sd.id} value={String(sd.id)}>{sd.name}</option> })}
             </select>
@@ -1238,14 +1246,14 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         )}
         {deptSubDepts.length > 0 && subDeptId && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Request Type</label>
-            <div className="flex gap-0 bg-white border border-gray-300 rounded-md overflow-hidden">
+            <label className="block text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-500 mb-1.5">Request Type</label>
+            <div className="grid grid-cols-2 gap-1 p-1 h-11 rounded-xl bg-slate-100">
               <button type="button" onClick={function () { setReqType('inventory') }}
-                className={"flex-1 py-2 text-sm font-medium transition-colors " + (reqType === 'inventory' ? "bg-indigo-600 text-white" : "text-gray-500 hover:bg-gray-50")}>
+                className={"rounded-lg text-[13px] font-semibold transition-colors " + (reqType === 'inventory' ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-700")}>
                 📦 Inventory
               </button>
               <button type="button" onClick={function () { setReqType('expense') }}
-                className={"flex-1 py-2 text-sm font-medium transition-colors " + (reqType === 'expense' ? "bg-amber-500 text-white" : "text-gray-500 hover:bg-gray-50")}>
+                className={"rounded-lg text-[13px] font-semibold transition-colors " + (reqType === 'expense' ? "bg-white text-amber-700 shadow-sm" : "text-slate-500 hover:text-slate-700")}>
                 💰 Expense
               </button>
             </div>
@@ -1253,70 +1261,67 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         )}
         {subDeptCats.length > 0 && reqType === 'inventory' && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+            <label className="block text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-500 mb-1.5">Category</label>
             <select value={categoryId} onChange={function (e) { changeCategory(e.target.value) }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-              style={{ fontSize: '16px' }}>
+              className="w-full h-11 px-3.5 rounded-xl border bg-white text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 border-slate-300"
+              style={{ fontSize: '15px' }}>
               <option value="">Select category...</option>
               {subDeptCats.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
             </select>
           </div>
         )}
+        <div className="@2xl:col-span-2">
+          <label className="block text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-500 mb-1.5">Purpose / Reason <span className="text-red-500">*</span></label>
+          <div className="relative">
+            <textarea value={purpose} onChange={function (e) { setPurpose(e.target.value) }}
+              rows="2" maxLength="500" placeholder="e.g. Monthly stationery restock, new workstation setup..."
+              className={"w-full px-3.5 py-2.5 pr-12 rounded-xl border bg-white text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 resize-none " + (errors.purpose ? "border-red-300" : "border-slate-300")}
+              style={{ fontSize: '15px' }} />
+            {speechSupported && (
+              <button type="button" onClick={toggleDictation}
+                title={voice.listening ? 'Stop' : 'Dictate'}
+                className={"absolute right-2 bottom-2.5 w-8 h-8 rounded-full flex items-center justify-center text-sm transition-colors " + (voice.listening ? "bg-red-500 text-white animate-pulse" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>
+                {voice.listening ? '■' : '🎤'}
+              </button>
+            )}
+          </div>
+          <div className="flex items-center justify-between mt-1">
+            {errors.purpose ? <p className="text-xs text-red-500">{errors.purpose}</p> : <span />}
+            <span className="text-[11px] text-slate-400 tabular-nums">{purpose.length}/500</span>
+          </div>
+        </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Urgency</label>
-          <div className="flex gap-0 bg-white border border-gray-300 rounded-md overflow-hidden">
+          <label className="block text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-500 mb-1.5">Urgency</label>
+          <div className="grid grid-cols-3 gap-1 p-1 h-11 rounded-xl bg-slate-100">
             {['low', 'normal', 'urgent'].map(function (u) {
               var active = urgency === u
-              var colors = {
-                low: active ? 'bg-gray-600 text-white' : 'text-gray-500 hover:bg-gray-50',
-                normal: active ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50',
-                urgent: active ? 'bg-red-600 text-white' : 'text-gray-500 hover:bg-gray-50',
-              }
+              var tone = {
+                low: { dot: 'bg-slate-400', on: 'text-slate-800' },
+                normal: { dot: 'bg-blue-500', on: 'text-blue-700' },
+                urgent: { dot: 'bg-red-500', on: 'text-red-700' },
+              }[u]
               return (
                 <button key={u} type="button" onClick={function () { setUrgency(u) }}
-                  className={"flex-1 py-2 text-sm font-medium capitalize transition-colors " + colors[u]}>
+                  className={"inline-flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-semibold capitalize transition-colors " + (active ? "bg-white shadow-sm " + tone.on : "text-slate-500 hover:text-slate-700")}>
+                  <span className={"w-1.5 h-1.5 rounded-full " + tone.dot} />
                   {u}
                 </button>
               )
             })}
           </div>
         </div>
-          <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Needed By</label>
-          <input type="date" value={neededBy} onChange={function (e) { setNeededBy(e.target.value) }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            style={{ fontSize: '16px' }} />
-        </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Purpose / Reason <span className="text-red-500">*</span></label>
-          <div className="relative">
-            <textarea value={purpose} onChange={function (e) { setPurpose(e.target.value) }}
-              rows="2" maxLength="500" placeholder="e.g. Monthly stationery restock, new workstation setup..."
-              className={"w-full px-3 py-2 pr-11 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none " + (errors.purpose ? "border-red-300" : "border-gray-300")}
-              style={{ fontSize: '16px' }} />
-            {speechSupported && (
-              <button type="button" onClick={toggleDictation}
-                title={voice.listening ? 'Stop' : 'Dictate'}
-                className={"absolute right-2 bottom-2 w-8 h-8 rounded-full flex items-center justify-center text-sm transition-colors " + (voice.listening ? "bg-red-500 text-white animate-pulse" : "bg-gray-100 text-gray-500 hover:bg-gray-200")}>
-                {voice.listening ? '■' : '🎤'}
-              </button>
-            )}
-          </div>
-          {errors.purpose && <p className="text-xs text-red-500 mt-1">{errors.purpose}</p>}
-        </div>
-        <div>
-          <div className="flex items-center justify-between">
-            <label className="block text-sm font-medium text-gray-700">For a Function?</label>
-            <button type="button" onClick={function () { toggleFunction(!isFunction) }}
-              className="flex items-center gap-2">
-              <div className={"relative w-9 h-5 rounded-full transition-colors " + (isFunction ? "bg-indigo-500" : "bg-gray-300")}>
-                <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (isFunction ? "translate-x-4" : "translate-x-0.5")} />
-              </div>
-            </button>
-          </div>
+          <label className="block text-[11.5px] font-bold uppercase tracking-[0.06em] text-slate-500 mb-1.5">Function</label>
+          <button type="button" onClick={function () { toggleFunction(!isFunction) }}
+            className={"w-full h-11 px-3.5 rounded-xl border flex items-center justify-between gap-3 text-left transition-colors " + (isFunction ? "border-indigo-300 bg-indigo-50/60" : "border-slate-300 bg-white hover:bg-slate-50")}>
+            <span className={"text-[13.5px] font-semibold " + (isFunction ? "text-indigo-700" : "text-slate-600")}>For a function / event?</span>
+            <span className={"relative shrink-0 w-9 h-5 rounded-full transition-colors " + (isFunction ? "bg-indigo-500" : "bg-slate-300")}>
+              <span className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (isFunction ? "translate-x-4" : "translate-x-0.5")} />
+            </span>
+          </button>
         </div>
         {isFunction && (
-          <div className="space-y-2">
+          <div className="space-y-2 @2xl:col-span-2">
             <EventDatePicker label="Function Date" value={eventDate}
               onChange={function (dateStr) { setEventDate(dateStr); loadEventsByDate(dateStr) }} />
             {eventsLoading && <p className="text-xs text-gray-400">Loading events...</p>}
@@ -1352,6 +1357,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
             })()}
           </div>
         )}
+      </div>
       </div>
 
       {/* Cart items — inventory mode */}
@@ -1846,11 +1852,11 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
       {errors.submit && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{errors.submit}</div>
       )}
-      <div className="flex gap-3">
+      <div className="flex gap-3 sm:justify-end">
         <button type="button" onClick={onCancel}
-          className="flex-1 py-3 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">Cancel</button>
+          className="flex-1 sm:flex-none sm:w-36 h-11 text-sm text-slate-600 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 transition-colors font-semibold">Cancel</button>
         <button type="button" onClick={handleSubmit} disabled={saving}
-          className="flex-1 py-3 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
+          className="flex-1 sm:flex-none sm:w-52 h-11 text-sm text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors font-semibold shadow-sm">
           {saving ? (isEditing ? 'Updating...' : 'Submitting...') : (isEditing ? 'Update Request' : 'Submit Request')}
         </button>
       </div>

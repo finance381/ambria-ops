@@ -703,18 +703,11 @@ function AdminShell({ profile, onSignOut, initialNotifLink }) {
           behind it, and BroadcastHub's full-height layout subtracts it rather
           than overflowing by exactly the bar's height. */}
       <div className="relative isolate flex-1 min-w-0 flex flex-col" style={{ '--app-header-h': '3.5rem' }}>
-        {/* The two sections that carry artwork, drawn here rather than inside
-            each module.
-
-            API Marketing used to draw its own, from inside <main> — which is
-            below this bar, so the bar stayed a white strip across a tinted
-            page no matter how transparent it was made. Nothing inside main can
-            reach above it; the column can.
-
-            On the other sections it would be decoration nobody asked for,
-            sitting behind dense tables where a calm ground matters more. */}
-        {/* Events (Events, Contracts, Extra Plates) carries it too. */}
-        {(active === 'expenses' || active === 'broadcast' || active === 'events') && <PageWave offset="var(--app-header-h, 0px)" />}
+        {/* The wave behind every section, drawn here rather than inside each
+            module: something inside <main> sits below this bar, so the bar
+            would stay a white strip across a tinted page. Inventory draws its
+            photograph instead (below). */}
+        {active !== 'inventory' && <PageWave offset="var(--app-header-h, 0px)" />}
 
         {/* Inventory's ground: the photograph behind the whole section — a
             pale wall, leaf shadows, vases on a ledge at the top right — drawn

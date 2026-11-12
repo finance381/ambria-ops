@@ -120,6 +120,20 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
   var [description, setDescription] = useState(seed?.description || '')
   var [nameHindi, setNameHindi] = useState(seed?.name_hindi || '')
   var [hiEdited, setHiEdited] = useState(false)
+  // The Hindi name follows the name until someone types their own: on a name
+  // already filled in (a receipt's "Create new"), one added with "+ Add", or
+  // one picked from the list. autoHindi marks a Hindi name this filled, so a
+  // later change of name replaces it rather than leaving the old one.
+  var autoHindi = useRef(false)
+  useEffect(function () {
+    var n = (name || '').trim()
+    if (!n || hiEdited) return
+    if (nameHindi && !autoHindi.current) return
+    translateToHindi(n, function (translated) {
+      if (translated) { autoHindi.current = true; setNameHindi(translated) }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, hiEdited])
   var nameManual = useRef(!!(seed?.name && String(seed.name).trim()))
   var [qty, setQty] = useState(seed?.qty ?? '')
   var [unit, setUnit] = useState(seed?.unit || 'Pieces')
@@ -1116,10 +1130,12 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
                   var svs = r.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === String(r.venue_id) }) : []
                   var rq = Number(r.qty) || 0
                   return (
-                    <div key={i} className="grid gap-2.5 items-end rounded-xl border border-slate-200 bg-white p-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_130px_44px]">
-                      <SearchDropdown label="Venue" items={venues.map(function (v) { return { label: v.code + ' \u2014 ' + v.name, value: String(v.id) } })} value={r.venue_id} onChange={function (val) { setRow(i, { venue_id: val }) }} placeholder="Select venue..." />
+                    <div key={i} className="grid gap-2.5 items-end rounded-xl border border-slate-200 bg-white p-3 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_44px] @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_130px_44px]">
+                      <div className="col-span-3 @2xl:col-span-1">
+                        <SearchDropdown label="Venue" items={venues.map(function (v) { return { label: v.code + ' \u2014 ' + v.name, value: String(v.id) } })} value={r.venue_id} onChange={function (val) { setRow(i, { venue_id: val }) }} placeholder="Select venue..." />
+                      </div>
                       {svs.length > 0
-                        ? <SearchDropdown label="Sub-venue" items={svs.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={r.sub_venue_id} onChange={function (val) { setRow(i, { sub_venue_id: val }) }} placeholder="Select sub-venue..." />
+                        ? <div className="col-span-3 @2xl:col-span-1"><SearchDropdown label="Sub-venue" items={svs.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={r.sub_venue_id} onChange={function (val) { setRow(i, { sub_venue_id: val }) }} placeholder="Select sub-venue..." /></div>
                         : <div className="hidden @2xl:block" />}
                       <div>
                         <label className={F_LBL}>Qty</label>
@@ -1144,7 +1160,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
                         var label = (v ? v.code + ' ' : '') + (sv ? sv.name : (v ? v.name : ''))
                         var had = same ? (Number(same.qty) || 0) : 0
                         return (
-                          <p className={"@2xl:col-span-5 inline-flex items-center gap-1.5 text-[12px] font-medium " + (same ? "text-[#333D5E]" : "text-emerald-700")}>
+                          <p className={"col-span-3 @2xl:col-span-5 inline-flex items-center gap-1.5 text-[12px] font-medium " + (same ? "text-[#333D5E]" : "text-emerald-700")}>
                             <Icon name={same ? 'arrowRight' : 'plus'} size={12} />
                             {same
                               ? 'Adds to ' + label + ' · ' + had + ' → ' + (Math.round((had + rq) * 1000) / 1000) + ' ' + unit
@@ -1268,11 +1284,11 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
                 {allocations.map(function (r, i) {
                   var svs = r.venue_id ? subVenues.filter(function (sv) { return String(sv.venue_id) === String(r.venue_id) }) : []
                   return (
-                    <div key={i} className="grid gap-2.5 items-end rounded-xl border border-slate-200 bg-slate-50/70 p-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_130px_44px]">
-                      <div className={svs.length > 0 ? "" : "@2xl:col-span-2"}>
+                    <div key={i} className="grid gap-2.5 items-end rounded-xl border border-slate-200 bg-slate-50/70 p-3 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_44px] @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_130px_44px]">
+                      <div className={"col-span-3 " + (svs.length > 0 ? "@2xl:col-span-1" : "@2xl:col-span-2")}>
                         <SearchDropdown label="Venue" items={venues.map(function (v) { return { label: v.code + ' — ' + v.name, value: String(v.id) } })} value={r.venue_id} onChange={function (val) { updateAllocation(i, 'venue_id', val) }} placeholder="Select venue..." />
                       </div>
-                      {svs.length > 0 && <SearchDropdown label="Sub-venue" items={svs.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={r.sub_venue_id} onChange={function (val) { updateAllocation(i, 'sub_venue_id', val) }} placeholder="Select sub-venue..." />}
+                      {svs.length > 0 && <div className="col-span-3 @2xl:col-span-1"><SearchDropdown label="Sub-venue" items={svs.map(function (sv) { return { label: sv.name, value: String(sv.id) } })} value={r.sub_venue_id} onChange={function (val) { updateAllocation(i, 'sub_venue_id', val) }} placeholder="Select sub-venue..." /></div>}
                       <div>
                         <label className={F_LBL}>Qty</label>
                         <input type="number" min="0" step="any" inputMode="decimal" value={r.qty} onChange={function (e) { updateAllocation(i, 'qty', e.target.value) }} placeholder="0" className={F_INP} />
@@ -1489,7 +1505,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
                       <Icon name="gallery" size={14} />{t('Gallery')}<input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
                     </label>
                   </div>
-                  <p className="text-[11.5px] text-slate-500">{t('Photo Hint')}</p>
+                  <p className="text-[11.5px] text-slate-500">{t('Take a clear photo of the item')}</p>
                 </div>
               ) : (
                 <div>
@@ -1704,7 +1720,7 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
                 <Icon name="gallery" size={15} />{t('Gallery')}<input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
               </label>
             </div>
-            <p className="text-[12px] text-slate-500">{t('Photo Hint')}</p>
+            <p className="text-[12px] text-slate-500">{t('Take a clear photo of the item')}</p>
           </div>
         ) : (
           <div>

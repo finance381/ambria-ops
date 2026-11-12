@@ -612,7 +612,9 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
       )}
 
       <div className="space-y-4 @3xl:grid @3xl:grid-cols-12 @3xl:gap-5 @3xl:space-y-0 @3xl:items-start">
-        <div className="@3xl:col-span-6">
+        {/* Side by side, the receipt stays in view while a long item list
+            scrolls past it, so the photo and the lines can be read together. */}
+        <div className="@3xl:col-span-6 @3xl:sticky @3xl:top-0">
 
       {receipts.length > 0 ? (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
@@ -683,7 +685,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                          one and did not on a laptop. Tapping it opens the
                          full-screen viewer, which is where a receipt is actually
                          read. */
-                      className="w-full max-h-64 @3xl:max-h-[52vh] object-contain rounded-lg border border-slate-100 bg-slate-50 cursor-pointer active:opacity-80"
+                      className="w-full max-h-72 @3xl:max-h-[72vh] object-contain rounded-lg border border-slate-100 bg-slate-50 cursor-zoom-in active:opacity-80"
                     />
                     <div className="absolute top-2 right-2 flex items-center gap-1.5">
                       <button type="button" onClick={function (e) { e.stopPropagation(); printReceipts([{ url: r.url, rotation: imgRotations[r.path] || 0 }]) }}
@@ -696,7 +698,11 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                         <Icon name="refresh" size={15} />
                       </button>
                     </div>
-                    {receipts.length === 1 && <p className="text-[10px] text-slate-500 text-center mt-1">Tap to enlarge</p>}
+                    {receipts.length === 1 && (
+                      <p className="mt-1.5 flex items-center justify-center gap-1 text-[11px] font-medium text-slate-400">
+                        <Icon name="search" size={11} />Tap the receipt to enlarge
+                      </p>
+                    )}
                   </div>
                 )
               }
@@ -881,16 +887,19 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-slate-800 truncate">{it.query || '—'}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          <span className="text-[11px] text-slate-500">{qty} {it.unit || ''}</span>
-                          {rate > 0 && <span className="text-[11px] text-slate-500">× {formatPoints(rate)}</span>}
+                        {/* Quantity × rate read together, in one fixed-width
+                            slot, so the match tags after it line up row under row. */}
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-nowrap min-w-0 whitespace-nowrap">
+                          <span className="shrink-0 w-[8.5rem] truncate text-[11px] text-slate-500">
+                            {qty} {it.unit || ''}{rate > 0 ? ' × ' + formatPoints(rate) : ''}
+                          </span>
                           {it.matched_item_id && it.matched_source && (
-                            <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                            <span className="shrink-0 text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
                               {it.matched_source === 'catering_store' ? 'Catering match' : 'Inventory match'}
                             </span>
                           )}
                           {!it.matched_item_id && (
-                            <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">New item</span>
+                            <span className="shrink-0 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">New item</span>
                           )}
                         </div>
                         <DescriptionNote text={it.notes} label="Notes" className="mt-1" />
