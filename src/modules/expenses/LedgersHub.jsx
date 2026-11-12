@@ -54,8 +54,21 @@ function LedgersHub(props) {
     return hasPerm(permsNew, l.perm)
   })
   var defaultKey = visible.length > 0 ? visible[0].key : 'expense'
-  var [active, setActive] = useState(props.activeSubTab && visible.some(function (l) { return l.key === props.activeSubTab }) ? props.activeSubTab : defaultKey)
+  var hasInventoryTab = visible.some(function (l) { return l.key === 'inventory' })
+  // A card's "open this item's ledger" button lands here with a specific
+  // item to show — land straight on the Inventory tab for it rather than
+  // the first ledger (picked here, at mount, so Inventory's own chunk/query
+  // is the only one that ever fires — the effect below is only a fallback
+  // for a deep link that arrives after this hub is already mounted).
+  var [active, setActive] = useState(
+    props.deepLinkInventoryItem && hasInventoryTab ? 'inventory'
+      : (props.activeSubTab && visible.some(function (l) { return l.key === props.activeSubTab }) ? props.activeSubTab : defaultKey))
   var [counts, setCounts] = useState(countCache)
+
+  useEffect(function () {
+    if (props.deepLinkInventoryItem && hasInventoryTab) setActive('inventory')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.deepLinkInventoryItem])
 
   useEffect(function () {
     var alive = true
@@ -137,7 +150,9 @@ function LedgersHub(props) {
         {/* Everything under this hub is the desktop shell. A tab that has
             a phone layout as well as a desktop one tells them apart by
             this, the way WalletManager already does. */}
-        <Cmp inAdmin profile={props.profile} onNavigate={props.onNavigate} onNavigateToExpenses={props.onNavigateToExpenses} />
+        <Cmp inAdmin profile={props.profile} onNavigate={props.onNavigate} onNavigateToExpenses={props.onNavigateToExpenses}
+          deepLinkInventoryItem={activeLedger.key === 'inventory' ? props.deepLinkInventoryItem : null}
+          onDeepLinkInventoryItemHandled={props.onDeepLinkInventoryItemHandled} />
       </Suspense>
     </div>
   )
