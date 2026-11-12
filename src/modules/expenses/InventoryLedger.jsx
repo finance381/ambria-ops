@@ -772,7 +772,7 @@ function InventoryLedger({ profile }) {
             value={search}
             onChange={function (v) { setSearch(v) }}
             placeholder="Search items, code, category..."
-            className="flex-1 min-w-[220px]"
+            className="basis-full @lg:basis-auto flex-1 min-w-0 @lg:min-w-[220px]"
           />
           <button type="button" onClick={function () { setShowFilters(!showFilters) }} aria-pressed={showFilters}
             className={'h-10 px-3 inline-flex items-center gap-1.5 rounded-xl border text-[12.5px] font-bold transition-colors ' +
@@ -877,7 +877,7 @@ function InventoryLedger({ profile }) {
           Dividers between them because they are three separate measurements of
           the same set, not a sentence; and on a phone they stack, where three
           abreast would each be too narrow to read. */}
-      <div className={CARD + ' overflow-hidden grid grid-cols-1 @2xl:grid-cols-3 divide-y @2xl:divide-y-0 @2xl:divide-x divide-slate-200'}>
+      <div className={CARD + ' overflow-hidden grid grid-cols-3 divide-x divide-slate-200'}>
         {/* All three describe the items on screen, not the whole master, so
             none of them can be called "total": with the no-history toggle off
             that word sat over 17 while the store holds 2,785. Each says what
@@ -892,13 +892,13 @@ function InventoryLedger({ profile }) {
             value: formatPaise(totalSpendFiltered),
             hint: 'Every purchase ever recorded against these items' }].map(function (st) {
           return (
-            <div key={st.label} title={st.hint} className="flex items-center gap-3 px-4 py-3.5">
-              <span className={'shrink-0 w-10 h-10 rounded-xl inline-flex items-center justify-center ' + st.tint}>
+            <div key={st.label} title={st.hint} className="min-w-0 flex items-center gap-3 px-3 @2xl:px-4 py-3 @2xl:py-3.5">
+              <span className={'shrink-0 w-10 h-10 rounded-xl hidden @2xl:inline-flex items-center justify-center ' + st.tint}>
                 <Icon name={st.icon} size={18} />
               </span>
               <span className="min-w-0">
-                <span className="block text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{st.label}</span>
-                <span data-notranslate className="block mt-1 font-display text-[19px] font-bold text-slate-900 tabular-nums leading-none tracking-[-0.015em] truncate">
+                <span className="block text-[9.5px] @2xl:text-[11px] font-bold uppercase tracking-[0.06em] @2xl:tracking-[0.08em] text-slate-500 leading-tight">{st.label}</span>
+                <span data-notranslate className="block mt-1 font-display text-[14px] @2xl:text-[19px] font-bold text-slate-900 tabular-nums leading-none tracking-[-0.015em] truncate">
                   {st.value}
                 </span>
               </span>
@@ -907,35 +907,30 @@ function InventoryLedger({ profile }) {
         })}
       </div>
 
-      {/* One pill carries the count and the checkbox that changes it, rather
-          than a floating sentence next to a separately-styled control. */}
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="flex items-center gap-3 h-10 pl-4 pr-3 rounded-full border border-slate-200 bg-white">
-          <p className="text-[12.5px] font-semibold text-slate-600 whitespace-nowrap">
-            Showing <span data-notranslate className="font-bold text-slate-900">{filteredItems.length.toLocaleString('en-IN')}</span>
-            {' '}item{filteredItems.length === 1 ? '' : 's'}
-          </p>
+      {/* One line: how many items are shown, the no-history toggle as a chip
+          beside it, and the sort pushed to the right end. */}
+      <div className="flex flex-nowrap items-center gap-2 min-w-0">
+        <p className="shrink-0 text-[12.5px] font-semibold text-slate-600 whitespace-nowrap">
+          <span data-notranslate className="font-bold text-slate-900">{filteredItems.length.toLocaleString('en-IN')}</span>
+          {' '}item{filteredItems.length === 1 ? '' : 's'}
+        </p>
 
-          {(showNoHistory || hiddenNoHistory > 0) && (
-            <>
-              <span aria-hidden="true" className="w-px h-5 bg-slate-200" />
+        {(showNoHistory || hiddenNoHistory > 0) && (
+          <label className={'shrink-0 inline-flex items-center gap-1.5 h-8 px-2.5 @lg:px-3 rounded-full border text-[12px] font-semibold whitespace-nowrap cursor-pointer transition-colors ' +
+            (showNoHistory ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50')}>
+            <input type="checkbox" checked={showNoHistory}
+              onChange={function () { setShowNoHistory(function (v) { return !v }) }}
+              className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30" />
+            <span className="@lg:hidden">No history</span>
+            <span className="hidden @lg:inline">Show items with no purchase history</span>
+          </label>
+        )}
 
-              <label className="inline-flex items-center gap-2 text-[12.5px] font-semibold text-slate-600 whitespace-nowrap cursor-pointer">
-                <input type="checkbox" checked={showNoHistory}
-                  onChange={function () { setShowNoHistory(function (v) { return !v }) }}
-                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30" />
-                Show items with no purchase history
-              </label>
-
-            </>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Sort by</span>
-          <select value={sortBy} onChange={function (e) { setSortBy(e.target.value) }}
+        <div className="ml-auto min-w-0 flex items-center gap-2">
+          <span className="hidden @lg:inline text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Sort by</span>
+          <select value={sortBy} onChange={function (e) { setSortBy(e.target.value) }} aria-label="Sort by"
             style={{ fontSize: '13px' }}
-            className="h-9 pl-2.5 pr-8 rounded-xl border border-slate-300 bg-white text-[12.5px] font-bold text-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
+            className="w-[8.5rem] @lg:w-auto min-w-0 h-8 pl-2.5 pr-7 rounded-full border border-slate-300 bg-white text-[12.5px] font-bold text-slate-700 truncate focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20">
             <option value="name">Name A–Z</option>
             <option value="value_desc">Value: high → low</option>
             <option value="value_asc">Value: low → high</option>
@@ -951,7 +946,72 @@ function InventoryLedger({ profile }) {
           sentence on each row to find it. Below the table's own width the
           panel scrolls sideways — squeezing nine columns into a phone would
           make all nine unreadable. */}
-      <div ref={listRef} className={CARD + ' overflow-hidden scroll-mt-4'}>
+      <div ref={listRef} className="scroll-mt-4">
+      {/* Narrow screens: one card per item — picture, name, recent vendor,
+          the three figures and the last three rates — rather than the
+          1,050px table scrolled sideways. */}
+      <div className="@3xl:hidden space-y-2">
+        {pagedItems.map(function (item) {
+          var a = aggregateItem(item)
+          var value = (item.live_qty || 0) * (item.rate_paise || 0)
+          return (
+            <button key={item._key} type="button" onClick={function () { setSelectedItem(item) }}
+              className={CARD + ' w-full text-left p-3 hover:border-indigo-300 active:bg-indigo-50/40 transition-colors'}>
+              <div className="flex items-start gap-3">
+                <span className="shrink-0 w-11 h-11 rounded-lg border border-slate-200 bg-slate-50 overflow-hidden inline-flex items-center justify-center">
+                  {item.img
+                    ? <img src={item.img} alt="" loading="lazy" className="w-full h-full object-cover" />
+                    : <Icon name={itemIcon(item.name, item.cat, item.subcat)} size={18} className="text-slate-400" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-display text-[13.5px] font-bold text-slate-900 leading-snug line-clamp-2">{item.name}</span>
+                  <span className="mt-0.5 block text-[11.5px] text-slate-500 truncate">
+                    {a.vendors.length === 0 ? 'No vendor yet' : a.vendors[0] + (a.vendors.length > 1 ? ' +' + (a.vendors.length - 1) : '')}
+                  </span>
+                </span>
+              </div>
+              <span className="mt-2.5 grid grid-cols-3 gap-px rounded-lg overflow-hidden bg-slate-200 text-center">
+                {[['Qty', fmtQty(item.live_qty)], ['Rate', item.rate_paise > 0 ? formatPaise(item.rate_paise) : '—'], ['Value', value > 0 ? formatPaise(value) : '—']].map(function (f) {
+                  return (
+                    <span key={f[0]} className="bg-slate-50 px-1.5 py-1.5 min-w-0">
+                      <span className="block text-[9.5px] font-bold uppercase tracking-[0.06em] text-slate-400">{f[0]}</span>
+                      <span data-notranslate className="block text-[12.5px] font-bold text-slate-900 tabular-nums truncate">{f[1]}</span>
+                    </span>
+                  )
+                })}
+              </span>
+              <span className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-slate-400 mr-0.5">Last 3</span>
+                {a.last3.length === 0 ? (
+                  <span className="text-[11.5px] font-semibold text-slate-400">No purchase history</span>
+                ) : (
+                  a.last3.slice().reverse().map(function (h, idx, arr) {
+                    var isNewest = idx === arr.length - 1
+                    return (
+                      <span key={idx} className="inline-flex items-center gap-1">
+                        {idx > 0 && <span aria-hidden="true" className="text-slate-300">→</span>}
+                        <span data-notranslate className={'text-[12px] tabular-nums ' + (isNewest ? 'font-bold text-slate-900' : 'font-semibold text-slate-500')}>
+                          {formatPaise(h.rate_paise || 0)}
+                        </span>
+                        <TrendIcon trend={h._trend} prev={h._prev_rate} />
+                      </span>
+                    )
+                  })
+                )}
+              </span>
+            </button>
+          )
+        })}
+        {pagedItems.length === 0 && (
+          <div className={CARD + ' px-4 py-12 text-center'}>
+            <Icon name="box" size={26} className="mx-auto text-slate-300" />
+            <p className="mt-2 text-[13px] font-bold text-slate-600">No items match your filters</p>
+            <p className="mt-0.5 text-[12px] font-medium text-slate-400">Clear a filter, or search for something else.</p>
+          </div>
+        )}
+      </div>
+
+      <div className={CARD + ' overflow-hidden hidden @3xl:block'}>
         <div className="overflow-x-auto ambria-thin-scroll">
           <div className="min-w-[1050px]">
             <div className={GRID + ' px-4 py-2.5 bg-slate-50 border-b border-slate-200 ' + COL_HEAD}>
@@ -1056,6 +1116,7 @@ function InventoryLedger({ profile }) {
             )}
           </div>
         </div>
+      </div>
       </div>
 
       {sortedItems.length > 0 && (

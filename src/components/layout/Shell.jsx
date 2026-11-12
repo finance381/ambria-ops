@@ -27,6 +27,7 @@ var Ledgers = lazy(function () { return import('../../modules/expenses/Ledgers')
 var VendorLedger = lazy(function () { return import('../../modules/expenses/VendorLedger') })
 var PayVendor = lazy(function () { return import('../../modules/expenses/PayVendor') })
 var EventLedger = lazy(function () { return import('../../modules/expenses/EventLedger') })
+var InventoryLedger = lazy(function () { return import('../../modules/expenses/InventoryLedger') })
 var Payments = lazy(function () { return import('../../modules/expenses/Payments') })
 var PaymentsLedger = lazy(function () { return import('../../modules/expenses/PaymentsLedger') })
 var DecorVarCost = lazy(function () { return import('../../modules/expenses/DecorVarCost') })
@@ -137,6 +138,8 @@ var GROUPS = [
       { key: 'finance.cost_transfers', label: 'Cost Transfers', icon: 'transfer', tab: 'cost_transfers' },
       { key: 'finance.ledgers.expense', label: 'Expense Ledger', icon: 'fileText', tab: 'ledgers' },
       { key: 'finance.ledgers.event', label: 'Event Ledger', icon: 'calendar', tab: 'event_ledger' },
+      // The desktop Ledgers hub's Inventory tab, as its own tile here.
+      { key: 'finance.ledgers.inventory', label: 'Inventory Ledger', icon: 'box', tab: 'inventory_ledger', noBadge: true },
       { key: 'finance.payments', label: 'Payments', icon: 'creditCard', tab: 'payments' },
       // Same permission as Payments (as on the desktop), its own tile: id
       // keeps the two apart, and the Payments badge stays on Payments.
@@ -942,6 +945,9 @@ function Shell({ profile, onSignOut, initialNotifLink }) {
         )}
         {tab === 'event_ledger' && (
           <EventLedger profile={profile} onNavigateToExpenses={navigateToExpenses} />
+        )}
+        {tab === 'inventory_ledger' && (
+          <InventoryLedger profile={profile} />
         )}
         {tab === 'vendor_ledger' && (
           <VendorLedger profile={profile} onNavigateToExpenses={navigateToExpenses} />
