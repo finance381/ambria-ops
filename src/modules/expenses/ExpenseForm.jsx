@@ -86,7 +86,8 @@ function makeEntry() {
     // before it could be filled in. The tabs open their own panel on arrival,
     // which is where turning it on belongs.
     isItemPurchase: false,
-    items: [makeItem()],
+    items: [],
+    _itemAddQuery: '',
     paymentCreditRupees: '',  // vendor-credit total (rupees). Cash = amount - credit.
     payWithCash: false,       // cash leg toggle (only when credit > 0)
     payWithBank: false,       // bank leg toggle (only when credit > 0)
@@ -262,7 +263,8 @@ function hydrateEntry(exp) {
     recording: false,
     isItemPurchase: isItemP,
     itemsLocked: itemsLocked,
-    items: isItemP && itemsFromMeta.length > 0 ? itemsFromMeta : [makeItem()],
+    items: isItemP ? itemsFromMeta : [],
+    _itemAddQuery: '',
     showAllocations: allocs.length > 1 || allocs.some(function (a) { return !!a.venueId || !!a.eventId }),
     paymentCreditRupees: exp.payment_credit_paise ? String(exp.payment_credit_paise / 100) : '',
     payWithCash: (exp.payment_credit_cash_paise || 0) > 0,
@@ -327,15 +329,21 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   var [tentativeFunctionType, setTentativeFunctionType] = useState('')
   var [tentativeSaving, setTentativeSaving] = useState(false)
   var [eventTypeOptions, setEventTypeOptions] = useState([])
-  var [itemSearchKey, setItemSearchKey] = useState('')
-  var [itemMatches, setItemMatches] = useState([])
+  // Keyed by entryIdx (string) -- one persistent "add an item" search bar per
+  // entry's Items panel (not per-item: picking a result always APPENDS a new
+  // row, it never edits an existing one). itemAddMatches carries real catalog
+  // rows plus one synthetic { _addNew: true } entry when the typed term has
+  // no exact-name match, so "add it as a brand-new item" is always reachable
+  // from the same dropdown instead of a separate control.
+  var [itemAddSearchKey, setItemAddSearchKey] = useState('')
+  var [itemAddMatches, setItemAddMatches] = useState([])
   // Keyboard-navigable, like SearchDropdown elsewhere in the app -- -1 means
   // nothing highlighted yet. Reset whenever the match list itself changes
   // (a new search, a cleared search, a pick) rather than at every call site
   // that can change it, so there's one place this can't drift out of sync.
-  var [itemHlIdx, setItemHlIdx] = useState(-1)
-  useEffect(function () { setItemHlIdx(-1) }, [itemMatches])
-  var itemSearchTimer = useRef(null)
+  var [itemAddHlIdx, setItemAddHlIdx] = useState(-1)
+  useEffect(function () { setItemAddHlIdx(-1) }, [itemAddMatches])
+  var itemAddSearchTimer = useRef(null)
   var [existingReceipts, setExistingReceipts] = useState(function () {
     if (!editExp) return []
     if (editExp.receipt_paths && editExp.receipt_paths.length > 0) return editExp.receipt_paths.slice()
@@ -998,7 +1006,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         var on = !e.isItemPurchase
         var updated = Object.assign({}, e, {
           isItemPurchase: on,
-          items: on ? (e.items && e.items.length > 0 ? e.items : [makeItem()]) : [makeItem()]
+          items: on ? (e.items || []) : e.items
         })
         // Switching into item mode starts amount fresh at the items floor,
         // same as before -- whatever was typed in plain-amount mode doesn't
@@ -1007,8 +1015,6 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         return updated
       })
     })
-    setItemMatches([])
-    setItemSearchKey('')
   }
 
   function toggleShowAllocations(idx) {
@@ -1049,30 +1055,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     return newEntry
   }
 
-  function addItem(entryIdx) {
-    setEntries(function (prev) {
-      return prev.map(function (e, i) {
-        if (i !== entryIdx) return e
-        var newItems = e.items.concat([makeItem()])
-        var updated = Object.assign({}, e, { items: newItems, _editingItemIdx: newItems.length - 1 })
-        return syncAmountToItemsFloor(e, updated)
-      })
-    })
-  }
-
   function removeItem(entryIdx, itemIdx) {
     setEntries(function (prev) {
       return prev.map(function (e, i) {
         if (i !== entryIdx) return e
-        // Item Select needs at least one row, so deleting the last one wipes it
-        // back to blank rather than refusing. Refusing left the button hidden
-        // and no way to clear a wrongly-filled item.
-        if (e.items.length <= 1) {
-          return syncAmountToItemsFloor(e, Object.assign({}, e, { items: [makeItem()], _editingItemIdx: 0 }))
-        }
-        // Same default as the render path, so deleting a row does not silently
-        // collapse an item that was visibly open.
-        var cur = e._editingItemIdx == null ? 0 : e._editingItemIdx
+        var cur = e._editingItemIdx == null ? -1 : e._editingItemIdx
         var next = cur === itemIdx ? -1 : (cur > itemIdx ? cur - 1 : cur)
         var updated = Object.assign({}, e, {
           items: e.items.filter(function (_, j) { return j !== itemIdx }),
@@ -1081,26 +1068,17 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         return syncAmountToItemsFloor(e, updated)
       })
     })
-    var key = entryIdx + '_' + itemIdx
-    if (itemSearchKey === key) { setItemMatches([]); setItemSearchKey('') }
   }
 
-  function setItemEditing(entryIdx, itemIdx) {
+  // Toggles the collapsible detail panel (mode switch, category, unit for a
+  // new item, notes, last-purchase reference) for one row. Qty/Rate live
+  // inline on the row itself and never need this open.
+  function toggleItemDetail(entryIdx, itemIdx) {
     setEntries(function (prev) {
       return prev.map(function (e, i) {
         if (i !== entryIdx) return e
-        return Object.assign({}, e, { _editingItemIdx: itemIdx })
-      })
-    })
-  }
-
-  // Closing an item is now an explicit act. Auto-folding it the moment the last
-  // field validated used to snatch the card away mid-typing.
-  function setItemDone(entryIdx) {
-    setEntries(function (prev) {
-      return prev.map(function (e, i) {
-        if (i !== entryIdx) return e
-        return Object.assign({}, e, { _editingItemIdx: -1 })
+        var cur = e._editingItemIdx == null ? -1 : e._editingItemIdx
+        return Object.assign({}, e, { _editingItemIdx: cur === itemIdx ? -1 : itemIdx })
       })
     })
   }
@@ -1121,11 +1099,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
             itemLastPurchaseLoading: false,
           })
         })
-        return Object.assign({}, e, { items: newItems, _editingItemIdx: itemIdx })
+        return Object.assign({}, e, { items: newItems })
       })
     })
-    var key = entryIdx + '_' + itemIdx
-    if (itemSearchKey === key) { setItemMatches([]); setItemSearchKey('') }
   }
 
   function updateItem(entryIdx, itemIdx, field, val) {
@@ -1133,18 +1109,10 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       return prev.map(function (e, i) {
         if (i !== entryIdx) return e
         var copy = Object.assign({}, e)
-        copy._editingItemIdx = itemIdx
         copy.items = e.items.map(function (it, j) {
           if (j !== itemIdx) return it
           var ic = Object.assign({}, it)
           ic[field] = val
-          if (field === 'itemQuery' && it.itemMode !== 'new') {
-            ic.itemMatchedId = null
-            ic.itemMatchedSource = null
-            ic.itemMatchedCategoryId = null
-            ic.itemLastPurchase = null
-            ic.itemLastPurchaseLoading = false
-          }
           return ic
         })
         return syncAmountToItemsFloor(e, copy)
@@ -1152,11 +1120,16 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     })
   }
 
-  function searchInventoryItems(entryIdx, itemIdx, term) {
-    setItemSearchKey(entryIdx + '_' + itemIdx)
-    if (itemSearchTimer.current) clearTimeout(itemSearchTimer.current)
-    if (!term || term.trim().length < 2) { setItemMatches([]); return }
-    itemSearchTimer.current = setTimeout(function () {
+  // One persistent search bar per entry's Items panel, keyed by entryIdx --
+  // every pick APPENDS a new row (see addExistingItemRow/addNewItemRow)
+  // rather than editing one in place, so adding several items never needs
+  // the dropdown to close in between.
+  function onItemAddSearchChange(entryIdx, term) {
+    updateEntry(entryIdx, '_itemAddQuery', term)
+    setItemAddSearchKey(String(entryIdx))
+    if (itemAddSearchTimer.current) clearTimeout(itemAddSearchTimer.current)
+    if (!term || term.trim().length < 2) { setItemAddMatches([]); return }
+    itemAddSearchTimer.current = setTimeout(function () {
       var q = term.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')
       var termLower = term.trim().toLowerCase()
       Promise.all([
@@ -1175,21 +1148,29 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           if (ra !== rb) return ra - rb
           return a.name.length - b.name.length
         }).slice(0, 12)
-        setItemMatches(combined)
+        // No row is an exact name match for what was typed -- offer creating
+        // it as a brand-new item right from the same dropdown, same escape
+        // hatch the old per-item "New" toggle gave, just reachable without
+        // leaving the search bar.
+        var exact = combined.some(function (m) { return m.name.trim().toLowerCase() === termLower })
+        if (!exact) combined = combined.concat([{ _addNew: true, name: term.trim() }])
+        setItemAddMatches(combined)
       })
     }, 300)
   }
 
-  // Patches the one item at [entryIdx][itemIdx], but only if it's still
-  // matched to the same item id — guards against a slow lookup landing
-  // after the user has already picked (or cleared) a different match.
-  function patchItemIfStillMatched(entryIdx, itemIdx, itemId, patch) {
+  // Patches whichever item in this entry is still matched to this item id --
+  // matched by id, not position, so a row added/removed/reordered elsewhere
+  // in the list while a lookup is in flight doesn't leave it patching the
+  // wrong row (or patching nothing and leaving that row stuck on "Checking
+  // last purchase…" forever).
+  function patchItemIfStillMatched(entryIdx, itemId, patch) {
     setEntries(function (prev) {
       return prev.map(function (e, i) {
         if (i !== entryIdx) return e
         var copy = Object.assign({}, e)
-        copy.items = e.items.map(function (it, j) {
-          if (j !== itemIdx || it.itemMatchedId !== itemId) return it
+        copy.items = e.items.map(function (it) {
+          if (it.itemMatchedId !== itemId) return it
           return Object.assign({}, it, patch)
         })
         return copy
@@ -1197,8 +1178,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     })
   }
 
-  function loadLastPurchase(entryIdx, itemIdx, item) {
-    patchItemIfStillMatched(entryIdx, itemIdx, item.id, { itemLastPurchaseLoading: true })
+  function loadLastPurchase(entryIdx, item) {
+    patchItemIfStillMatched(entryIdx, item.id, { itemLastPurchaseLoading: true })
     supabase.from('v_item_purchase_history')
       .select('rate_paise, vendor_name, txn_date')
       .eq('item_id', item.id)
@@ -1207,37 +1188,52 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       .limit(1)
       .then(function (res) {
         var row = (res.data || [])[0] || null
-        patchItemIfStillMatched(entryIdx, itemIdx, item.id, {
+        patchItemIfStillMatched(entryIdx, item.id, {
           itemLastPurchase: row,
           itemLastPurchaseLoading: false
         })
       })
   }
 
-  function pickItemMatch(entryIdx, itemIdx, item) {
+  // Appends a new row matched to an existing catalog item -- picking from the
+  // add-search dropdown never edits an item already in the list, it only
+  // ever adds one more, so several items can be searched back-to-back.
+  function addExistingItemRow(entryIdx, item) {
     setEntries(function (prev) {
       return prev.map(function (e, i) {
         if (i !== entryIdx) return e
-        var copy = Object.assign({}, e)
-        copy._editingItemIdx = itemIdx
-        copy.items = e.items.map(function (it, j) {
-          if (j !== itemIdx) return it
-          return Object.assign({}, it, {
-            itemQuery: item.name,
-            itemMatchedId: item.id,
-            itemMatchedSource: item._source,
-            itemMatchedCategoryId: item.category_id || null,
-            itemUnit: item.unit || it.itemUnit,
-            itemLastPurchase: null,
-            itemLastPurchaseLoading: true
-          })
+        var newItem = Object.assign(makeItem(), {
+          itemMode: 'existing',
+          itemQuery: item.name,
+          itemMatchedId: item.id,
+          itemMatchedSource: item._source,
+          itemMatchedCategoryId: item.category_id || null,
+          itemUnit: item.unit || 'Pieces',
+          itemLastPurchaseLoading: true,
         })
-        return copy
+        var updated = Object.assign({}, e, { items: e.items.concat([newItem]), _itemAddQuery: '' })
+        return syncAmountToItemsFloor(e, updated)
       })
     })
-    setItemMatches([])
-    setItemSearchKey('')
-    loadLastPurchase(entryIdx, itemIdx, item)
+    setItemAddMatches([])
+    setItemAddSearchKey('')
+    loadLastPurchase(entryIdx, item)
+  }
+
+  // Appends a brand-new (not-yet-in-catalog) row and opens its detail panel
+  // right away, since unlike a matched item it still needs a unit (and
+  // optionally a category) set before it's complete.
+  function addNewItemRow(entryIdx, name) {
+    setEntries(function (prev) {
+      return prev.map(function (e, i) {
+        if (i !== entryIdx) return e
+        var newItem = Object.assign(makeItem(), { itemMode: 'new', itemQuery: name })
+        var updated = Object.assign({}, e, { items: e.items.concat([newItem]), _itemAddQuery: '', _editingItemIdx: e.items.length })
+        return syncAmountToItemsFloor(e, updated)
+      })
+    })
+    setItemAddMatches([])
+    setItemAddSearchKey('')
   }
 
   function duplicateEntry(idx) {
@@ -2959,240 +2955,186 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                               </div>
                             )}
                             {entry.isItemPurchase && (
-                              <div className={"mt-3 space-y-3 " + (entry.itemsLocked ? "pointer-events-none opacity-70" : "")}>
-                                {entry.items.map(function (im, iIdx) {
-                                  var key = idx + '_' + iIdx
-                                  var lineTotal = (Number(im.itemQty) || 0) * (Number(im.itemRate) || 0)
-                                  // Default 0, not -1: a fresh form should show item 1
-                                  // open rather than a collapsed, empty chip.
-                                  var editingIdx = entry._editingItemIdx == null ? 0 : entry._editingItemIdx
-                                  var complete = isItemComplete(im)
-                                  // Only the item being edited stays open, so adding a new one
-                                  // folds the previous away even when it is half-filled. With
-                                  // nothing being edited (a fresh form, or after a failed
-                                  // submit) incomplete items open up so the gaps are visible.
-                                  // Force-expanding incomplete items made an unfinished
-                                  // item impossible to fold. They now collapse like any
-                                  // other and carry an "Incomplete" badge on the chip.
-                                  var expanded = editingIdx === iIdx
-                                  if (!expanded) {
-                                    return (
-                                      <div key={im._key} className={"border rounded-xl px-3 py-2.5 flex items-center gap-2 transition-colors " + (complete ? "bg-white border-slate-200" : "bg-amber-50/40 border-amber-200")}>
-                                        <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">{iIdx + 1}</span>
-                                        <button type="button" onClick={function () { if (!entry.itemsLocked) setItemEditing(idx, iIdx) }}
-                                          className={"flex-1 min-w-0 flex items-center gap-2 text-left " + (entry.itemsLocked ? "cursor-default" : "hover:opacity-70")}>
-                                          <div className="min-w-0 flex-1">
-                                            <p className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-900 truncate">
-                                              {im.itemQuery ? im.itemQuery : <span className="font-normal text-slate-400">Unnamed item</span>}
+                              <div className={"mt-3 space-y-2 " + (entry.itemsLocked ? "pointer-events-none opacity-70" : "")}>
+                                {entry.items.length > 0 && (
+                                  <div className="space-y-2">
+                                    {entry.items.map(function (im, iIdx) {
+                                      var lineTotal = (Number(im.itemQty) || 0) * (Number(im.itemRate) || 0)
+                                      var complete = isItemComplete(im)
+                                      var detailOpen = entry._editingItemIdx === iIdx
+                                      return (
+                                        <div key={im._key} className={"border rounded-xl px-2.5 py-2 transition-colors " + (complete ? "bg-white border-slate-200" : "bg-amber-50/40 border-amber-200")}>
+                                          <div className="flex items-center gap-2">
+                                            <button type="button" onClick={function () { if (!entry.itemsLocked) toggleItemDetail(idx, iIdx) }}
+                                              className="flex-1 min-w-0 flex items-center gap-1.5 text-left">
                                               {im.itemMode === 'new'
-                                                ? <Icon name="sparkle" className="w-3 h-3 shrink-0 text-slate-400" />
-                                                : (im.itemMatchedId && <Icon name="check" className="w-3 h-3 shrink-0 text-indigo-600" />)}
-                                            </p>
-                                            <p className="text-[11px] text-slate-500 truncate tabular-nums">
-                                              {(Number(im.itemQty) || 0)} {im.itemUnit} × {(Number(im.itemRate) || 0).toLocaleString('en-IN')} pts{im.itemNotes ? ' · ' + im.itemNotes : ''}
-                                            </p>
-                                          </div>
-                                          {/* A folded item must still admit it is unfinished, or the
-                                              gap only surfaces on submit. */}
-                                          {complete ? (
-                                            <span className="shrink-0 text-[13px] font-bold text-slate-900 tabular-nums">{lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
-                                          ) : (
-                                            <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">Incomplete</span>
-                                          )}
-                                        </button>
-                                        {!entry.itemsLocked && (
-                                          <button type="button" onClick={function () { removeItem(idx, iIdx) }}
-                                            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors" title="Delete item" aria-label="Delete item"><Icon name="trash" className="w-4 h-4" /></button>
-                                        )}
-                                      </div>
-                                    )
-                                  }
-                                  return (
-                                    // Focusing a field claims this item as the one being edited,
-                                    // so filling in the last value does not fold the card away
-                                    // from under the caret.
-                                    <div key={im._key} className="ambria-rise border border-slate-200 rounded-xl bg-white p-3 space-y-2.5"
-                                      onFocusCapture={function () { if (editingIdx !== iIdx && !entry.itemsLocked) setItemEditing(idx, iIdx) }}>
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{'Item ' + (iIdx + 1)}</span>
-                                        <div className="flex items-center gap-2">
-                                          <button type="button" onClick={function () { toggleItemMode(idx, iIdx) }}
-                                            className="flex items-center gap-1.5" title={im.itemMode === 'new' ? 'Switch to inventory search' : 'Create as new item'}>
-                                            <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
-                                              <Icon name={im.itemMode === 'new' ? 'sparkle' : 'box'} className="w-3.5 h-3.5" />
-                                              {im.itemMode === 'new' ? 'New' : 'Inventory'}
-                                            </span>
-                                            <div className={"relative w-9 h-5 rounded-full transition-colors " + (im.itemMode === 'new' ? "bg-slate-400" : "bg-indigo-600")}>
-                                              <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (im.itemMode === 'new' ? "translate-x-4" : "translate-x-0.5")} />
-                                            </div>
-                                          </button>
-                                          <button type="button" onClick={function () { removeItem(idx, iIdx) }}
-                                            className="w-6 h-6 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors" title="Delete item" aria-label="Delete item"><Icon name="trash" className="w-4 h-4" /></button>
-                                        </div>
-                                      </div>
-
-                                      {im.itemMode === 'new' ? (
-                                        <div className="space-y-2">
-                                          <div>
-                                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Item Name <span className="text-red-500">*</span></label>
-                                            <input type="text" value={im.itemQuery}
-                                              onChange={function (e) { updateItem(idx, iIdx, 'itemQuery', e.target.value) }}
-                                              placeholder="Item name (e.g. A4 Sheets, Broom, Chair)" maxLength="200"
-                                              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
-                                          </div>
-                                          <div>
-                                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Category <span className="text-slate-500">(optional)</span></label>
-                                            <select value={im.itemMatchedCategoryId || ''}
-                                              onChange={function (e) { updateItem(idx, iIdx, 'itemMatchedCategoryId', e.target.value ? Number(e.target.value) : null) }}
-                                              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }}>
-                                              <option value="">Category (optional)</option>
-                                              {itemCategories.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
-                                            </select>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div className="relative">
-                                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Item Name <span className="text-red-500">*</span>{im.itemMatchedId && <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600"><Icon name="check" size={11} />Matched existing</span>}</label>
-                                          <input type="text" value={im.itemQuery}
-                                            onChange={function (e) { updateItem(idx, iIdx, 'itemQuery', e.target.value); searchInventoryItems(idx, iIdx, e.target.value) }}
-                                            onFocus={function () { if (im.itemQuery && im.itemQuery.length >= 2) searchInventoryItems(idx, iIdx, im.itemQuery) }}
-                                            onKeyDown={function (e) {
-                                              if (itemSearchKey !== key || itemMatches.length === 0) return
-                                              if (e.key === 'ArrowDown') {
-                                                e.preventDefault()
-                                                setItemHlIdx(function (prev) { return Math.min(prev + 1, itemMatches.length - 1) })
-                                              } else if (e.key === 'ArrowUp') {
-                                                e.preventDefault()
-                                                setItemHlIdx(function (prev) { return Math.max(prev - 1, 0) })
-                                              } else if (e.key === 'Enter') {
-                                                if (itemHlIdx >= 0 && itemHlIdx < itemMatches.length) {
-                                                  e.preventDefault()
-                                                  pickItemMatch(idx, iIdx, itemMatches[itemHlIdx])
-                                                }
-                                              } else if (e.key === 'Escape') {
-                                                setItemMatches([]); setItemSearchKey('')
-                                              }
-                                            }}
-                                            placeholder="Search or type new item name..."
-                                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
-                                          {itemSearchKey === key && itemMatches.length > 0 && (
-                                            <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                                              {itemMatches.map(function (m, mIdx) {
-                                                return (
-                                                  <button key={m._source + '_' + m.id} type="button"
-                                                    onMouseEnter={function () { setItemHlIdx(mIdx) }}
-                                                    onMouseDown={function (evt) { evt.preventDefault(); pickItemMatch(idx, iIdx, m) }}
-                                                    className={'w-full text-left px-3 py-2 border-b border-slate-50 last:border-0 ' + (mIdx === itemHlIdx ? 'bg-indigo-50' : 'hover:bg-indigo-50')}>
-                                                    <div className="text-[13px] text-slate-800 font-medium truncate">{m.name}</div>
-                                                    <div className="text-[10px] text-slate-500">{m._source === 'catering_store' ? 'Catering Store' : 'Inventory'}{m.unit ? ' · ' + m.unit : ''}</div>
-                                                  </button>
-                                                )
-                                              })}
-                                            </div>
-                                          )}
-                                          {im.itemQuery && !im.itemMatchedId && itemMatches.length === 0 && itemSearchKey === key && im.itemQuery.length >= 2 && (
-                                            <p className="text-[10px] text-amber-600 mt-1">No match — receiver will create as new inventory item</p>
-                                          )}
-                                        </div>
-                                      )}
-
-                                      {/* Qty, Unit and Rate are all short values, so they share
-                                          one row; Notes is free text and gets the full width
-                                          underneath rather than being squeezed beside Rate. */}
-                                      <div className="grid grid-cols-3 gap-2">
-                                        <div>
-                                          <label htmlFor={'item-qty-' + idx + '-' + iIdx} className="block text-[11px] font-semibold text-slate-600 mb-1">Qty <span className="text-red-500">*</span></label>
-                                          <input id={'item-qty-' + idx + '-' + iIdx} type="number" inputMode="numeric" value={im.itemQty}
-                                            onChange={function (e) { updateItem(idx, iIdx, 'itemQty', e.target.value) }}
-                                            placeholder="0" min="0" step="any"
-                                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
-                                        </div>
-                                        <div>
-                                          <label htmlFor={'item-unit-' + idx + '-' + iIdx} className="block text-[11px] font-semibold text-slate-600 mb-1">Unit</label>
-                                          {/* Locked once matched to an existing inventory item — its unit is
-                                              already established from past purchases, and letting this form
-                                              override it per-expense is what let the same item get logged in
-                                              Pieces one time and Kg the next, scrambling its rate/qty history
-                                              in the Inventory Ledger. A "new" item (not yet in the catalog)
-                                              still picks its own unit freely here, since there's nothing to
-                                              conflict with yet. */}
-                                          <select id={'item-unit-' + idx + '-' + iIdx} value={im.itemUnit} disabled={!!im.itemMatchedId}
-                                            onChange={function (e) { updateItem(idx, iIdx, 'itemUnit', e.target.value) }}
-                                            title={im.itemMatchedId ? 'Locked to this item\'s established unit' : undefined}
-                                            className={"w-full px-3 py-2.5 border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-[border-color,box-shadow] duration-150 " +
-                                              (im.itemMatchedId ? "bg-slate-50 text-slate-500 cursor-not-allowed" : "bg-white hover:border-slate-300")} style={{ fontSize: '16px' }}>
-                                            {['Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens', 'Kg', 'Grams', 'Liters', 'ML', 'Meters', 'Feet', 'Rolls', 'Packets', 'Bags', 'Boxes', 'Cartons', 'Bottles', 'Sheets', 'Reams'].map(function (u) {
-                                              return <option key={u} value={u}>{u}</option>
-                                            })}
-                                          </select>
-                                        </div>
-                                        <div>
-                                          <label htmlFor={'item-rate-' + idx + '-' + iIdx} className="block text-[11px] font-semibold text-slate-600 mb-1">Rate <span className="text-red-500">*</span></label>
-                                          <input id={'item-rate-' + idx + '-' + iIdx} type="number" inputMode="decimal" value={im.itemRate}
-                                            onChange={function (e) { updateItem(idx, iIdx, 'itemRate', e.target.value) }}
-                                            placeholder="0" min="0" step="any"
-                                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
-                                        </div>
-                                      </div>
-
-                                      {/* Last purchase rate/vendor, from the same purchase
-                                          history the Inventory Ledger reads (v_item_purchase_history)
-                                          — a reference point so the rate just typed above isn't
-                                          picked blind against what this item has actually sold for. */}
-                                      {im.itemMatchedId && (
-                                        <p className="text-[11px] text-slate-500 -mt-1">
-                                          {im.itemLastPurchaseLoading ? 'Checking last purchase…' : (
-                                            im.itemLastPurchase ? (
-                                              <>Last purchased at <b className="text-slate-700 tabular-nums">{formatPoints(im.itemLastPurchase.rate_paise)}</b>
-                                                {im.itemLastPurchase.vendor_name ? ' from ' + im.itemLastPurchase.vendor_name : ''}
-                                                {im.itemLastPurchase.txn_date ? ' · ' + formatDate(im.itemLastPurchase.txn_date) : ''}
-                                              </>
-                                            ) : 'No prior purchase on record'
-                                          )}
-                                        </p>
-                                      )}
-
-                                      <div>
-                                        <label htmlFor={'item-notes-' + idx + '-' + iIdx} className="block text-[11px] font-semibold text-slate-600 mb-1">Notes <span className="font-normal text-slate-500">(brand, size, spec)</span></label>
-                                        {/* Collapse rides the Notes row as a bare arrow. A
-                                            labelled button needed a line of its own, and Notes
-                                            is the last field anyway -- you are already here
-                                            when you finish. The word lives in the tooltip and
-                                            the aria-label. */}
-                                        <div className="flex items-center gap-2">
-                                          <input id={'item-notes-' + idx + '-' + iIdx} type="text" value={im.itemNotes}
-                                            onChange={function (e) { updateItem(idx, iIdx, 'itemNotes', e.target.value) }}
-                                            placeholder="e.g. White ceramic, 10-inch round"
-                                            className="flex-1 min-w-0 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
-                                          {!entry.itemsLocked && (
-                                            <button type="button" onClick={function () { setItemDone(idx) }}
-                                              title={complete ? 'Done — collapse this item' : 'Collapse this item'}
-                                              aria-label={complete ? 'Done, collapse this item' : 'Collapse this item'}
-                                              className={"shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border active:scale-95 transition-all " +
-                                                (complete
-                                                  ? "text-indigo-700 bg-indigo-50 border-indigo-300 hover:bg-indigo-100"
-                                                  : "text-slate-500 bg-white border-slate-200 hover:bg-slate-50 hover:text-slate-900")}>
-                                              <Icon name="chevronUp" className="w-4 h-4" />
+                                                ? <Icon name="sparkle" className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                                                : (im.itemMatchedId && <Icon name="check" className="w-3.5 h-3.5 shrink-0 text-indigo-600" />)}
+                                              <span className="min-w-0 flex-1">
+                                                <span className="block text-[13px] font-semibold text-slate-900 truncate">
+                                                  {im.itemQuery ? im.itemQuery : <span className="font-normal text-slate-400">Unnamed item</span>}
+                                                </span>
+                                                <span className="block text-[10px] text-slate-500 truncate">{im.itemUnit}{im.itemNotes ? ' · ' + im.itemNotes : ''}</span>
+                                              </span>
+                                              <Icon name={detailOpen ? 'chevronUp' : 'chevronDown'} className="w-3.5 h-3.5 shrink-0 text-slate-400" />
                                             </button>
+                                            {!entry.itemsLocked && (
+                                              <button type="button" onClick={function () { removeItem(idx, iIdx) }}
+                                                className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors" title="Delete item" aria-label="Delete item"><Icon name="trash" className="w-3.5 h-3.5" /></button>
+                                            )}
+                                          </div>
+
+                                          <div className="grid grid-cols-3 gap-2 mt-2">
+                                            <input id={'item-qty-' + idx + '-' + iIdx} type="number" inputMode="numeric" value={im.itemQty} disabled={entry.itemsLocked}
+                                              onChange={function (e) { updateItem(idx, iIdx, 'itemQty', e.target.value) }}
+                                              placeholder="Qty" min="0" step="any"
+                                              className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[13px] text-right text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-50 disabled:text-slate-400" style={{ fontSize: '16px' }} />
+                                            <input id={'item-rate-' + idx + '-' + iIdx} type="number" inputMode="decimal" value={im.itemRate} disabled={entry.itemsLocked}
+                                              onChange={function (e) { updateItem(idx, iIdx, 'itemRate', e.target.value) }}
+                                              placeholder="Rate" min="0" step="any"
+                                              className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[13px] text-right text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-50 disabled:text-slate-400" style={{ fontSize: '16px' }} />
+                                            <p className="flex items-center justify-end text-[13px] font-bold text-slate-900 tabular-nums px-1">
+                                              {lineTotal > 0 ? lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 }) + ' pts' : '—'}
+                                            </p>
+                                          </div>
+
+                                          {detailOpen && (
+                                            <div className="mt-2 pt-2 border-t border-slate-100 space-y-2">
+                                              {!entry.itemsLocked && (
+                                                <button type="button" onClick={function () { toggleItemMode(idx, iIdx) }}
+                                                  className="flex items-center gap-1.5" title={im.itemMode === 'new' ? 'Switch to inventory search' : 'Create as new item'}>
+                                                  <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                                                    <Icon name={im.itemMode === 'new' ? 'sparkle' : 'box'} className="w-3.5 h-3.5" />
+                                                    {im.itemMode === 'new' ? 'New item' : 'Matched from inventory'}
+                                                  </span>
+                                                  <div className={"relative w-9 h-5 rounded-full transition-colors " + (im.itemMode === 'new' ? "bg-slate-400" : "bg-indigo-600")}>
+                                                    <div className={"absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform " + (im.itemMode === 'new' ? "translate-x-4" : "translate-x-0.5")} />
+                                                  </div>
+                                                </button>
+                                              )}
+
+                                              {im.itemMode === 'new' ? (
+                                                <div className="space-y-2">
+                                                  <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Item Name <span className="text-red-500">*</span></label>
+                                                    <input type="text" value={im.itemQuery} disabled={entry.itemsLocked}
+                                                      onChange={function (e) { updateItem(idx, iIdx, 'itemQuery', e.target.value) }}
+                                                      placeholder="Item name (e.g. A4 Sheets, Broom, Chair)" maxLength="200"
+                                                      className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150 disabled:bg-slate-50 disabled:text-slate-400" style={{ fontSize: '16px' }} />
+                                                  </div>
+                                                  <div className="grid grid-cols-2 gap-2">
+                                                    <div>
+                                                      <label htmlFor={'item-unit-' + idx + '-' + iIdx} className="block text-[11px] font-semibold text-slate-600 mb-1">Unit</label>
+                                                      <select id={'item-unit-' + idx + '-' + iIdx} value={im.itemUnit} disabled={entry.itemsLocked}
+                                                        onChange={function (e) { updateItem(idx, iIdx, 'itemUnit', e.target.value) }}
+                                                        className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 disabled:bg-slate-50 disabled:text-slate-400" style={{ fontSize: '16px' }}>
+                                                        {['Pieces', 'Nos', 'Sets', 'Pairs', 'Dozens', 'Kg', 'Grams', 'Liters', 'ML', 'Meters', 'Feet', 'Rolls', 'Packets', 'Bags', 'Boxes', 'Cartons', 'Bottles', 'Sheets', 'Reams'].map(function (u) {
+                                                          return <option key={u} value={u}>{u}</option>
+                                                        })}
+                                                      </select>
+                                                    </div>
+                                                    <div>
+                                                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Category <span className="text-slate-500">(optional)</span></label>
+                                                      <select value={im.itemMatchedCategoryId || ''} disabled={entry.itemsLocked}
+                                                        onChange={function (e) { updateItem(idx, iIdx, 'itemMatchedCategoryId', e.target.value ? Number(e.target.value) : null) }}
+                                                        className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 disabled:bg-slate-50 disabled:text-slate-400" style={{ fontSize: '16px' }}>
+                                                        <option value="">Category (optional)</option>
+                                                        {itemCategories.map(function (c) { return <option key={c.id} value={String(c.id)}>{c.name}</option> })}
+                                                      </select>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              ) : (
+                                                // Unit isn't editable here -- it's already established from
+                                                // past purchases (see Unit's disabled state in the old per-item
+                                                // card, same reasoning) and the match itself fixes it.
+                                                im.itemMatchedId && (
+                                                  <p className="text-[11px] text-slate-500">
+                                                    {im.itemLastPurchaseLoading ? 'Checking last purchase…' : (
+                                                      im.itemLastPurchase ? (
+                                                        <>Last purchased at <b className="text-slate-700 tabular-nums">{formatPoints(im.itemLastPurchase.rate_paise)}</b>
+                                                          {im.itemLastPurchase.vendor_name ? ' from ' + im.itemLastPurchase.vendor_name : ''}
+                                                          {im.itemLastPurchase.txn_date ? ' · ' + formatDate(im.itemLastPurchase.txn_date) : ''}
+                                                        </>
+                                                      ) : 'No prior purchase on record'
+                                                    )}
+                                                  </p>
+                                                )
+                                              )}
+
+                                              <div>
+                                                <label htmlFor={'item-notes-' + idx + '-' + iIdx} className="block text-[11px] font-semibold text-slate-600 mb-1">Notes <span className="font-normal text-slate-500">(brand, size, spec)</span></label>
+                                                <input id={'item-notes-' + idx + '-' + iIdx} type="text" value={im.itemNotes} disabled={entry.itemsLocked}
+                                                  onChange={function (e) { updateItem(idx, iIdx, 'itemNotes', e.target.value) }}
+                                                  placeholder="e.g. White ceramic, 10-inch round"
+                                                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150 disabled:bg-slate-50 disabled:text-slate-400" style={{ fontSize: '16px' }} />
+                                              </div>
+                                            </div>
                                           )}
                                         </div>
+                                      )
+                                    })}
+                                  </div>
+                                )}
+
+                                {/* Persistent search bar, not a toggle-able "+ Add item" button --
+                                    picking a result (or an unmatched typed name) appends a row and
+                                    clears back to empty so the next item can be added immediately,
+                                    same pattern as Store Requisition's inventory-line search. */}
+                                {!entry.itemsLocked && (
+                                  <div className="relative">
+                                    <input type="text" value={entry._itemAddQuery || ''}
+                                      onChange={function (e) { onItemAddSearchChange(idx, e.target.value) }}
+                                      onFocus={function () { if (entry._itemAddQuery && entry._itemAddQuery.length >= 2) onItemAddSearchChange(idx, entry._itemAddQuery) }}
+                                      onKeyDown={function (e) {
+                                        if (itemAddSearchKey !== String(idx) || itemAddMatches.length === 0) return
+                                        if (e.key === 'ArrowDown') {
+                                          e.preventDefault()
+                                          setItemAddHlIdx(function (prev) { return Math.min(prev + 1, itemAddMatches.length - 1) })
+                                        } else if (e.key === 'ArrowUp') {
+                                          e.preventDefault()
+                                          setItemAddHlIdx(function (prev) { return Math.max(prev - 1, 0) })
+                                        } else if (e.key === 'Enter') {
+                                          if (itemAddHlIdx >= 0 && itemAddHlIdx < itemAddMatches.length) {
+                                            e.preventDefault()
+                                            var pick = itemAddMatches[itemAddHlIdx]
+                                            if (pick._addNew) addNewItemRow(idx, pick.name); else addExistingItemRow(idx, pick)
+                                          }
+                                        } else if (e.key === 'Escape') {
+                                          setItemAddMatches([]); setItemAddSearchKey('')
+                                        }
+                                      }}
+                                      placeholder="Search or type new item name..."
+                                      className="w-full pl-8 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
+                                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><Icon name="search" size={14} /></span>
+                                    {itemAddSearchKey === String(idx) && itemAddMatches.length > 0 && (
+                                      <div className="absolute z-20 left-0 right-0 bottom-full mb-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                                        {itemAddMatches.map(function (m, mIdx) {
+                                          if (m._addNew) {
+                                            return (
+                                              <button key="_addNew" type="button"
+                                                onMouseEnter={function () { setItemAddHlIdx(mIdx) }}
+                                                onMouseDown={function (evt) { evt.preventDefault(); addNewItemRow(idx, m.name) }}
+                                                className={'w-full text-left px-3 py-2 flex items-center gap-1.5 ' + (mIdx === itemAddHlIdx ? 'bg-indigo-50' : 'hover:bg-indigo-50')}>
+                                                <Icon name="sparkle" className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                                                <span className="text-[13px] text-slate-800">Add "<span className="font-semibold">{m.name}</span>" as new item</span>
+                                              </button>
+                                            )
+                                          }
+                                          return (
+                                            <button key={m._source + '_' + m.id} type="button"
+                                              onMouseEnter={function () { setItemAddHlIdx(mIdx) }}
+                                              onMouseDown={function (evt) { evt.preventDefault(); addExistingItemRow(idx, m) }}
+                                              className={'w-full text-left px-3 py-2 border-b border-slate-50 last:border-0 ' + (mIdx === itemAddHlIdx ? 'bg-indigo-50' : 'hover:bg-indigo-50')}>
+                                              <div className="text-[13px] text-slate-800 font-medium truncate">{m.name}</div>
+                                              <div className="text-[10px] text-slate-500">{m._source === 'catering_store' ? 'Catering Store' : 'Inventory'}{m.unit ? ' · ' + m.unit : ''}</div>
+                                            </button>
+                                          )
+                                        })}
                                       </div>
-
-                                      {lineTotal > 0 && (
-                                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                                          <span className="min-w-0 text-[11px] font-medium text-slate-500">
-                                            Line total <span className="text-[13px] font-bold text-slate-900 tabular-nums">{lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} pts</span>
-                                          </span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )
-                                })}
-
-                                <button type="button" onClick={function () { addItem(idx) }}
-                                  className="w-full py-2.5 rounded-xl border border-slate-200 text-[12px] font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
-                                  + Add item
-                                </button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>

@@ -410,6 +410,12 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
+# Ambria IMS vendor catalog (decor studio app) — same shared secret as
+# ambria-ims-expenses, same reasoning.
+[functions.ambria-ims-vendors]
+enabled = true
+verify_jwt = false
+
 # Fnbapp "Sync to Ops" (store-issuing -> Store Requisition) — shared-secret
 # auth (FNB_TO_OPS_REQ_SECRET), not JWT. Same reasoning as
 # catering-inventory-decrement; deliberately its own secret, not reused,
