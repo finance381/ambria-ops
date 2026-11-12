@@ -354,6 +354,33 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       if (el) el.scrollIntoView({ block: 'nearest' })
     }
   }, [itemAddHlIdx])
+  // The Items/Split tab strip above this search bar is `position: sticky`
+  // with its own z-index, and the slide-in wrapper around this whole panel
+  // (ambria-slide-left/right) applies a CSS transform for its animation --
+  // a transform creates a new stacking context for everything inside it, so
+  // no z-index on the dropdown itself can ever out-rank a sibling OUTSIDE
+  // that transform, no matter how high. Portaling straight to document.body
+  // sidesteps the whole ancestor chain instead of fighting it.
+  var itemAddAnchorRefs = useRef({})
+  var [itemAddPos, setItemAddPos] = useState(null)
+  function updateItemAddPos(key) {
+    var anchor = itemAddAnchorRefs.current[key]
+    if (!anchor) return
+    var r = anchor.getBoundingClientRect()
+    setItemAddPos({ left: r.left, width: r.width, bottom: window.innerHeight - r.top + 4 })
+  }
+  useEffect(function () {
+    if (!itemAddSearchKey || itemAddMatches.length === 0) { setItemAddPos(null); return }
+    updateItemAddPos(itemAddSearchKey)
+    function onReflow() { updateItemAddPos(itemAddSearchKey) }
+    window.addEventListener('scroll', onReflow, true)
+    window.addEventListener('resize', onReflow)
+    return function () {
+      window.removeEventListener('scroll', onReflow, true)
+      window.removeEventListener('resize', onReflow)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemAddSearchKey, itemAddMatches.length > 0])
   var [existingReceipts, setExistingReceipts] = useState(function () {
     if (!editExp) return []
     if (editExp.receipt_paths && editExp.receipt_paths.length > 0) return editExp.receipt_paths.slice()
@@ -3092,7 +3119,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                     clears back to empty so the next item can be added immediately,
                                     same pattern as Store Requisition's inventory-line search. */}
                                 {!entry.itemsLocked && (
-                                  <div className="relative">
+                                  <div className="relative" ref={function (el) { itemAddAnchorRefs.current[String(idx)] = el }}>
                                     <input type="text" value={entry._itemAddQuery || ''}
                                       onChange={function (e) { onItemAddSearchChange(idx, e.target.value) }}
                                       onFocus={function () { if (entry._itemAddQuery && entry._itemAddQuery.length >= 2) onItemAddSearchChange(idx, entry._itemAddQuery) }}
@@ -3117,34 +3144,36 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                       placeholder="Search or type new item name..."
                                       className="w-full pl-8 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
                                     <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><Icon name="search" size={14} /></span>
-                                    {itemAddSearchKey === String(idx) && itemAddMatches.length > 0 && (
-                                      <div ref={itemAddListRef} className="absolute z-40 left-0 right-0 bottom-full mb-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                                        {itemAddMatches.map(function (m, mIdx) {
-                                          if (m._addNew) {
-                                            return (
-                                              <button key="_addNew" type="button"
-                                                onMouseEnter={function () { setItemAddHlIdx(mIdx) }}
-                                                onMouseDown={function (evt) { evt.preventDefault(); addNewItemRow(idx, m.name) }}
-                                                className={'w-full text-left px-3 py-2 flex items-center gap-1.5 ' + (mIdx === itemAddHlIdx ? 'bg-indigo-50' : 'hover:bg-indigo-50')}>
-                                                <Icon name="sparkle" className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-                                                <span className="text-[13px] text-slate-800">Add "<span className="font-semibold">{m.name}</span>" as new item</span>
-                                              </button>
-                                            )
-                                          }
-                                          return (
-                                            <button key={m._source + '_' + m.id} type="button"
-                                              onMouseEnter={function () { setItemAddHlIdx(mIdx) }}
-                                              onMouseDown={function (evt) { evt.preventDefault(); addExistingItemRow(idx, m) }}
-                                              className={'w-full text-left px-3 py-2 border-b border-slate-50 last:border-0 ' + (mIdx === itemAddHlIdx ? 'bg-indigo-50' : 'hover:bg-indigo-50')}>
-                                              <div className="text-[13px] text-slate-800 font-medium truncate">{m.name}</div>
-                                              <div className="text-[10px] text-slate-500">{m._source === 'catering_store' ? 'Catering Store' : 'Inventory'}{m.unit ? ' · ' + m.unit : ''}</div>
-                                            </button>
-                                          )
-                                        })}
-                                      </div>
-                                    )}
                                   </div>
                                 )}
+                                {itemAddSearchKey === String(idx) && itemAddMatches.length > 0 && itemAddPos && createPortal((
+                                  <div ref={itemAddListRef}
+                                    className="fixed z-[9999] bg-white border border-slate-200 rounded-lg shadow-lg max-h-56 overflow-y-auto"
+                                    style={{ left: itemAddPos.left, width: itemAddPos.width, bottom: itemAddPos.bottom }}>
+                                    {itemAddMatches.map(function (m, mIdx) {
+                                      if (m._addNew) {
+                                        return (
+                                          <button key="_addNew" type="button"
+                                            onMouseEnter={function () { setItemAddHlIdx(mIdx) }}
+                                            onMouseDown={function (evt) { evt.preventDefault(); addNewItemRow(idx, m.name) }}
+                                            className={'w-full text-left px-3 py-2 flex items-center gap-1.5 ' + (mIdx === itemAddHlIdx ? 'bg-indigo-50' : 'hover:bg-indigo-50')}>
+                                            <Icon name="sparkle" className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                                            <span className="text-[13px] text-slate-800">Add "<span className="font-semibold">{m.name}</span>" as new item</span>
+                                          </button>
+                                        )
+                                      }
+                                      return (
+                                        <button key={m._source + '_' + m.id} type="button"
+                                          onMouseEnter={function () { setItemAddHlIdx(mIdx) }}
+                                          onMouseDown={function (evt) { evt.preventDefault(); addExistingItemRow(idx, m) }}
+                                          className={'w-full text-left px-3 py-2 border-b border-slate-50 last:border-0 ' + (mIdx === itemAddHlIdx ? 'bg-indigo-50' : 'hover:bg-indigo-50')}>
+                                          <div className="text-[13px] text-slate-800 font-medium truncate">{m.name}</div>
+                                          <div className="text-[10px] text-slate-500">{m._source === 'catering_store' ? 'Catering Store' : 'Inventory'}{m.unit ? ' · ' + m.unit : ''}</div>
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                ), document.body)}
                               </div>
                             )}
                           </div>
