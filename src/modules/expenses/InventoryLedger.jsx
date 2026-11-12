@@ -62,7 +62,7 @@ var GRID = 'grid items-center gap-x-3 grid-cols-[2.5rem_minmax(11rem,22rem)_10re
 
 var COL_HEAD = 'text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500'
 
-function InventoryLedger({ profile }) {
+function InventoryLedger({ profile, deepLinkInventoryItem, onDeepLinkInventoryItemHandled }) {
   var permsNew = (profile && profile.permsNew) || []
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.inventory')
   var canView = isAdmin || hasPerm(permsNew, 'finance.ledgers.inventory')
@@ -116,6 +116,27 @@ function InventoryLedger({ profile }) {
   useRealtime(['inventory_items', 'catering_store_items', 'purchase_order_items', 'expenses'], function () {
     if (canView) loadAll()
   })
+
+  // "Open this item's ledger" (AdminItems.jsx) lands here as 'source:id' via
+  // AdminShell's deep-link plumbing. Opens that item's detail drawer the
+  // instant its row is in `items` — waits rather than firing once, since the
+  // deep link can arrive before loadAll()'s fetch has resolved. Reports back
+  // as soon as it's consumed so AdminShell clears it — loadAll() reruns on
+  // every realtime refresh and hands this effect a brand-new `items` array
+  // each time, so leaving deepLinkInventoryItem set would reopen the drawer
+  // out of nowhere every time the ledger refreshes, even after the user
+  // closed it, and would also force Ledgers back onto this item's tab on
+  // every later visit.
+  useEffect(function () {
+    if (!deepLinkInventoryItem || items.length === 0) return
+    var sep = deepLinkInventoryItem.indexOf(':')
+    if (sep === -1) return
+    var source = deepLinkInventoryItem.slice(0, sep)
+    var id = deepLinkInventoryItem.slice(sep + 1)
+    var match = items.find(function (it) { return it._source === source && String(it.id) === id })
+    if (match) setSelectedItem(match)
+    if (onDeepLinkInventoryItemHandled) onDeepLinkInventoryItemHandled()
+  }, [deepLinkInventoryItem, items])
 
   useEffect(function () { setPage(0) }, [search, catFilters, subCatFilters, sourceFilters, vendorFilters, trendFilters, sortBy, showNoHistory, pageSize])
 

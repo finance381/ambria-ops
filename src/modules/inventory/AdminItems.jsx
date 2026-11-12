@@ -154,6 +154,7 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
   var canViewCosts = hasPerm(profile?.permsNew, 'finance.view_costs')
   // + Add Item beside Tools: the phone's Add Item form, in a popup.
   var canAdd = hasPerm(profile?.permsNew, 'inventory.add')
+  var canViewLedger = hasPerm(profile?.permsNew, 'finance.ledgers.inventory')
   var [items, setItems] = useState([])
   var [loading, setLoading] = useState(true)
   var [search, setSearch] = useState('')
@@ -1266,6 +1267,19 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
       </button>
     )
   }
+  // Finance > Ledgers > Inventory, filtered to this one item, in a fresh
+  // tab — reuses the same `?notif=` deep-link format a push notification
+  // opens a tab with (see AdminShell.jsx navigateFromNotification), just
+  // fired by hand instead of by a service worker.
+  function openItemLedger(item) {
+    var source = item._source === 'catering_store' ? 'catering_store' : 'inventory'
+    var link = 'inventory_item:' + source + ':' + item.id
+    var url = new URL(window.location.href)
+    url.search = ''
+    url.searchParams.set('view', 'admin')
+    url.searchParams.set('notif', link)
+    window.open(url.toString(), '_blank', 'noopener')
+  }
   function actionsOf(item) {
     return (
       <div className="shrink-0 ml-auto flex items-center gap-1">
@@ -1274,6 +1288,12 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
           className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-[#3B4668] text-white text-[13px] font-semibold shadow-[0_2px_8px_-2px_rgba(59,70,104,0.45)] hover:bg-[#2F3854] transition-colors">
           <Icon name="edit" size={14} />Edit
         </button>
+        {canViewLedger && (
+          <button type="button" onClick={function () { openItemLedger(item) }} aria-label="Open ledger" title="Open this item's ledger in a new tab"
+            className="w-9 h-9 inline-flex items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:border-slate-400 hover:text-slate-900 hover:bg-slate-50 transition-colors">
+            <Icon name="list" size={15} />
+          </button>
+        )}
         {item._source !== 'catering_store' && (
           <button type="button" onClick={function () { openHolds(item) }} aria-label="Holds" title="Holds"
             className="w-9 h-9 inline-flex items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:border-slate-400 hover:text-slate-900 hover:bg-slate-50 transition-colors">
