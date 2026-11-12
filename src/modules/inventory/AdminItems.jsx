@@ -1226,10 +1226,10 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
   function submitterOf(item) {
     var name = item.profiles?.name || ''
     return (
-      <div className="flex-1 min-w-0 flex items-center">
-        <span className="min-w-0" title={name}>
-          <span className="block text-[14px] font-bold text-gray-900 truncate">{name || '—'}</span>
-          <span className="block text-[12.5px] font-medium text-gray-600 truncate">{formatDate(item.entry_date || item.created_at)}</span>
+      <div className="flex-1 min-w-fit flex items-center">
+        <span title={name}>
+          <span className="block text-[14px] font-bold text-gray-900 whitespace-nowrap">{name || '—'}</span>
+          <span className="block text-[12.5px] font-medium text-gray-600 whitespace-nowrap">{formatDate(item.entry_date || item.created_at)}</span>
         </span>
       </div>
     )
@@ -1692,10 +1692,10 @@ function AdminItems({ profile, invSubDept, navNonce, onInvSubDeptChange }) {
                   )}
                 </div>
 
-                {/* One line: name and date take what the buttons leave and
-                    the name truncates, rather than the buttons dropping to a
-                    second line. */}
-                <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-slate-100 bg-slate-50/40">
+                {/* Name and date always shown in full; when the card is too
+                    narrow for them and the buttons together (zoomed in, a
+                    small screen), the buttons drop to a second line. */}
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2.5 px-4 py-3 border-t border-slate-100 bg-slate-50/40">
                   {submitterOf(item)}
                   {actionsOf(item)}
                 </div>
