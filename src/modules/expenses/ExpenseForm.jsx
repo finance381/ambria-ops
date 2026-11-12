@@ -344,6 +344,16 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   var [itemAddHlIdx, setItemAddHlIdx] = useState(-1)
   useEffect(function () { setItemAddHlIdx(-1) }, [itemAddMatches])
   var itemAddSearchTimer = useRef(null)
+  // Same scroll-into-view as SearchDropdown.jsx -- without it, arrowing past
+  // the visible ~4 rows in the max-h-56 list moves the highlight out of
+  // view with nothing visibly changing, which reads as the keys not working.
+  var itemAddListRef = useRef(null)
+  useEffect(function () {
+    if (itemAddListRef.current && itemAddHlIdx >= 0) {
+      var el = itemAddListRef.current.children[itemAddHlIdx]
+      if (el) el.scrollIntoView({ block: 'nearest' })
+    }
+  }, [itemAddHlIdx])
   var [existingReceipts, setExistingReceipts] = useState(function () {
     if (!editExp) return []
     if (editExp.receipt_paths && editExp.receipt_paths.length > 0) return editExp.receipt_paths.slice()
@@ -3108,7 +3118,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
                                       className="w-full pl-8 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-300 transition-[border-color,box-shadow] duration-150" style={{ fontSize: '16px' }} />
                                     <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><Icon name="search" size={14} /></span>
                                     {itemAddSearchKey === String(idx) && itemAddMatches.length > 0 && (
-                                      <div className="absolute z-20 left-0 right-0 bottom-full mb-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                                      <div ref={itemAddListRef} className="absolute z-40 left-0 right-0 bottom-full mb-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
                                         {itemAddMatches.map(function (m, mIdx) {
                                           if (m._addNew) {
                                             return (
