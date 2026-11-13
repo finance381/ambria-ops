@@ -400,6 +400,8 @@ var MODULES = {
   broadcast: BroadcastHub,
 }
 
+var ADMIN_NAV_KEY = 'ambria.admin.nav'
+
 function AdminShell({ profile, onSignOut, initialNotifLink }) {
   var permsNew = profile.permsNew || []
   var visibleTabs = ADMIN_TABS.filter(function (t) { return tabAllowed(t, permsNew) })
@@ -416,9 +418,22 @@ function AdminShell({ profile, onSignOut, initialNotifLink }) {
   }
 
   var _defaultTab = visibleTabs.length > 0 ? visibleTabs[0].key : null
-  var [active, setActive] = useState(_defaultTab)
-  var [subTab, setSubTab] = useState(null)
+  // A refresh comes back to the section (and sub-tab) you were on, not
+  // Overview. Kept in sessionStorage: per browser tab, survives a reload,
+  // a brand-new tab still opens on the first section. Ignored if that
+  // section is no longer allowed for this user.
+  var _savedNav = (function () {
+    try {
+      var v = JSON.parse(window.sessionStorage.getItem(ADMIN_NAV_KEY) || 'null')
+      return v && visibleTabs.some(function (t) { return t.key === v.tab }) ? v : null
+    } catch (_) { return null }
+  })()
+  var [active, setActive] = useState(_savedNav ? _savedNav.tab : _defaultTab)
+  var [subTab, setSubTab] = useState(_savedNav ? (_savedNav.sub || null) : null)
   var [subTabMeta, setSubTabMeta] = useState(null)
+  useEffect(function () {
+    try { window.sessionStorage.setItem(ADMIN_NAV_KEY, JSON.stringify({ tab: active, sub: subTabMeta ? subTabMeta.key : null })) } catch (_) {}
+  }, [active, subTabMeta])
   var [navOpen, setNavOpen] = useState(false)
   useBackButtonClose(navOpen, function () { setNavOpen(false) })
   // Set by onNavigate's 3rd arg when a ledger screen sends the user to a
