@@ -643,6 +643,23 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
         r.casualRows.every(function (l) { return Number(l.qty) > 0 }) &&
         (r.expenseRows || []).every(function (l) { return l.expense_type_id && Number(l.amountRupees) > 0 })
     })
+  // Why Submit is greyed out — the first thing still missing, said plainly
+  // under the button instead of leaving a dead button to guess at.
+  var submitBlocker = (function () {
+    if (!entryDate) return 'Pick the entry date.'
+    if (deptRows.length === 0) return 'Add a dept row.'
+    for (var i = 0; i < deptRows.length; i++) {
+      var r = deptRows[i]
+      var tag = 'Dept Row ' + (i + 1) + ': '
+      if (!r.departmentId) return tag + 'pick a department.'
+      if (!r.subDepartmentId) return tag + 'pick a sub-department.'
+      if (r.inventoryRows.length === 0 && r.casualRows.length === 0 && (r.expenseRows || []).length === 0) return tag + 'add an item, a casual or a credit.'
+      if (!r.inventoryRows.every(function (l) { return Number(l.qty) > 0 })) return tag + 'every item needs a quantity.'
+      if (!r.casualRows.every(function (l) { return Number(l.qty) > 0 })) return tag + 'every casual needs a quantity.'
+      if (!(r.expenseRows || []).every(function (l) { return l.expense_type_id && Number(l.amountRupees) > 0 })) return tag + 'each credit needs a type and an amount.'
+    }
+    return ''
+  })()
 
   async function handleSubmit() {
     if (!canSubmit || saving) return
@@ -714,18 +731,58 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
   }
 
   var CARD = 'bg-white border border-gray-200 rounded-2xl p-3.5 space-y-2.5'
-  var CTRL = 'w-full h-9 px-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
-  var LABEL = 'block text-[11px] font-semibold text-gray-500 mb-0.5'
+  var CTRL = 'w-full h-10 px-3 border border-slate-300 rounded-xl text-sm bg-white text-slate-800 focus:outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 disabled:bg-slate-50 disabled:text-slate-400'
+  var LABEL = 'block text-[12px] font-semibold text-slate-700 mb-1'
+  var REQ = <span className="text-red-500"> *</span>
+  // Item / casual line tables: tight columns on a phone, roomier ones once
+  // the rows column is wide.
+  var LINE_GRID = 'grid grid-cols-[minmax(0,1fr)_56px_68px_72px_30px] @3xl:grid-cols-[minmax(0,1fr)_110px_130px_120px_40px]'
+  // The open sections of a dept row read as one slip: a single box, each
+  // section marked by a thin colour bar (violet stock, sky casuals, green
+  // credits), every amount in one Total column so the eye runs straight down.
+  var TH = 'text-[12px] font-medium text-slate-500'
+  var NUM_IN = 'w-full h-9 px-2 text-right border border-slate-200 rounded-lg bg-slate-50/70 text-slate-900 tabular-nums hover:border-slate-300 focus:outline-none focus:bg-white focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20'
+  var DEL_BTN = 'justify-self-end w-8 h-8 rounded-lg text-red-500 flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors'
+  var ADD_LINE = 'w-full h-10 inline-flex items-center gap-2 px-3 rounded-lg border border-dashed text-[13px] font-semibold transition-colors '
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many) }
+  // Each section its own box with a colour of its own — a thick left edge
+  // and a tinted heading band — so stock, casuals and credits never blur
+  // into one another.
+  var TONES = {
+    violet: { box: 'rounded-xl border border-slate-200 border-l-4 border-l-violet-500 bg-white', head: 'bg-violet-50 border-violet-100', icon: 'text-violet-600', name: 'box' },
+    sky: { box: 'rounded-xl border border-slate-200 border-l-4 border-l-sky-500 bg-white', head: 'bg-sky-50 border-sky-100', icon: 'text-sky-600', name: 'users' },
+    emerald: { box: 'rounded-xl border border-slate-200 border-l-4 border-l-emerald-500 bg-white', head: 'bg-emerald-50 border-emerald-100', icon: 'text-emerald-600', name: 'filter' },
+  }
+  function sectionHead(tone, title, countText, note) {
+    var t = TONES[tone]
+    return (
+      <div className={'px-4 py-2.5 border-b rounded-tr-[11px] ' + t.head}>
+        <p className="flex items-center gap-2">
+          <Icon name={t.name} size={16} className={'shrink-0 ' + t.icon} />
+          <span className="text-[14px] font-bold text-slate-900">{title}</span>
+          {countText && <span className="text-[12px] font-medium text-slate-500">{countText}</span>}
+        </p>
+        {note && <p className="mt-0.5 pl-6 text-[12px] text-slate-500">{note}</p>}
+      </div>
+    )
+  }
+  function subtotalLine(label, value, tone) {
+    return (
+      <div className={LINE_GRID + ' gap-2.5 items-baseline px-4 py-2.5 border-t border-dashed border-slate-200'}>
+        <span className="text-[12.5px] font-medium text-slate-500">{label}</span>
+        <span /><span />
+        <span className={'text-right text-[14.5px] font-bold tabular-nums ' + (tone || 'text-slate-900')}>{value}</span>
+        <span />
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-gray-900">{editId ? 'Edit Store Requisition' : 'New Store Requisition'}</h2>
-          <p className="text-xs text-gray-400">Record inventory and casual labour consumed on a date.</p>
-        </div>
-        <button onClick={onCancel} className="px-3 py-2 text-sm font-semibold text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-      </div>
+    // Full width. Wide screen: the dept rows in a card on the left; entry
+    // details, the summary and the submit buttons in a column on the right.
+    <div className="@container space-y-4 w-full">
+      {/* phone: the title above everything (on a wide screen it heads the rows card) */}
+      <h2 className="@5xl:hidden text-[19px] font-bold text-slate-900">{editId ? 'Edit Store Requisition' : 'New Store Requisition'}</h2>
 
       {!editId && draftRestorable && (
         <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-between gap-3 flex-wrap">
@@ -750,20 +807,20 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
 
       {!editId && !draftRestorable && draftSavedAt && (
         <div className="flex justify-end">
-          <div className="inline-flex items-center h-7 rounded-full overflow-hidden text-[11px] bg-gray-100 border border-gray-200">
-            <span className="inline-flex items-center gap-1.5 pl-2.5 pr-2 font-semibold text-gray-700 whitespace-nowrap">
-              <span className="relative flex w-1.5 h-1.5">
+          <div className="inline-flex items-center h-9 rounded-full overflow-hidden text-[13px] bg-gray-100 border border-gray-200">
+            <span className="inline-flex items-center gap-2 pl-3.5 pr-3 font-semibold text-gray-700 whitespace-nowrap">
+              <span className="relative flex w-2 h-2">
                 <span key={draftSavedAt} style={{ animationIterationCount: 2 }}
                   className="absolute inset-0 rounded-full bg-emerald-500 opacity-60 animate-ping motion-reduce:hidden" />
-                <span className="relative w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                <span className="relative w-2 h-2 rounded-full bg-emerald-500" />
               </span>
               Draft saved
               <span className="font-medium text-gray-400">{formatDraftAge(draftSavedAt + draftTick * 0)}</span>
             </span>
-            <span aria-hidden="true" className="w-px h-3.5 bg-gray-300" />
+            <span aria-hidden="true" className="w-px h-4 bg-gray-300" />
             <button type="button" onClick={confirmDiscardDraft} aria-label="Discard saved draft"
-              className="inline-flex items-center gap-1 h-full pl-2 pr-2.5 font-semibold text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors">
-              <Icon name="trash" size={11} /> Clear
+              className="inline-flex items-center gap-1.5 h-full pl-3 pr-3.5 font-semibold text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors">
+              <Icon name="trash" size={14} /> Clear
             </button>
           </div>
         </div>
@@ -775,11 +832,347 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
 
       {!loadingExisting && <>
 
-      <div className={CARD}>
-        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Entry Date</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+      <div className="grid gap-4 items-start @5xl:grid-cols-[minmax(0,1fr)_minmax(320px,360px)]">
+
+      {/* The dept rows: a card of their own, the wide left column */}
+      <div className="min-w-0 space-y-4 order-2 @5xl:col-start-1 @5xl:row-start-1">
+      <div className="@container rounded-2xl border border-slate-200 bg-white p-4 @lg:p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] space-y-4">
+        <h2 className="hidden @5xl:block text-[20px] font-bold text-slate-900 tracking-[-0.01em]">{editId ? 'Edit Store Requisition' : 'New Store Requisition'}</h2>
+
+      {deptRows.map(function (row, idx) {
+        var isKitchen = isKitchenRow(row)
+        var deptName = (departments.find(function (d) { return String(d.id) === String(row.departmentId) }) || {}).name || ''
+        var subDeptName = (subDepartments.find(function (sd) { return String(sd.id) === String(row.subDepartmentId) }) || {}).name || ''
+        var isOpen = expandedRowId === row.id
+        var itemCount = row.inventoryRows.length
+        var casualCount = row.casualRows.length
+        var adjCount = (row.expenseRows || []).length
+
+        // Collapsed: a one-line summary bar — department, what's on it, its
+        // total — not the full field set. Every row but the one being
+        // actively edited renders this instead.
+        if (!isOpen) {
+          return (
+            <div key={row.id} onClick={function () { toggleRowExpanded(row.id) }}
+              className="bg-white border border-gray-200 rounded-2xl px-4 py-3 flex items-center justify-between gap-3 cursor-pointer hover:border-indigo-300 transition-colors">
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-gray-900 truncate">
+                  {deptName ? (deptName + (subDeptName ? ' · ' + subDeptName : '')) : ('Dept Row ' + (idx + 1))}
+                </p>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {itemCount > 0 && <span className="text-[10px] font-bold text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{itemCount} item{itemCount === 1 ? '' : 's'}</span>}
+                  {casualCount > 0 && <span className="text-[10px] font-bold text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{casualCount} casual{casualCount === 1 ? '' : 's'}</span>}
+                  {adjCount > 0 && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5">{adjCount} adjustment{adjCount === 1 ? '' : 's'}</span>}
+                  {itemCount === 0 && casualCount === 0 && adjCount === 0 && <span className="text-[10px] text-gray-400">Empty — tap to fill in</span>}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <p className="text-sm font-bold text-indigo-600 whitespace-nowrap">{rupees(rowTotal(row))}</p>
+                <button onClick={function (e) { e.stopPropagation(); removeDeptRow(row.id) }} aria-label="Remove row"
+                  className="w-7 h-7 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
+                  <Icon name="close" size={13} />
+                </button>
+                <Icon name="chevronDown" size={14} className="text-gray-400" />
+              </div>
+            </div>
+          )
+        }
+
+        return (
+          <div key={row.id} className="rounded-2xl border border-violet-100 bg-white">
+            <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-t-2xl bg-violet-50 border-b border-violet-100 cursor-pointer" onClick={function () { toggleRowExpanded(row.id) }}>
+              <p className="min-w-0 flex items-center gap-2.5 text-[15px] font-bold text-slate-900">
+                <span className="shrink-0 w-8 h-8 rounded-lg bg-white border border-violet-100 text-violet-600 inline-flex items-center justify-center"><Icon name="list" size={16} /></span>
+                <span className="truncate">Dept Row {idx + 1}{deptName ? <span className="font-semibold text-slate-500">{' · ' + deptName}</span> : null}</span>
+              </p>
+              <div className="shrink-0 flex items-center gap-1.5">
+                <button onClick={function (e) { e.stopPropagation(); removeDeptRow(row.id) }} aria-label="Remove row"
+                  className="w-8 h-8 rounded-lg bg-white border border-red-100 text-red-500 flex items-center justify-center hover:bg-red-50">
+                  <Icon name="trash" size={14} />
+                </button>
+                <span className="w-8 h-8 inline-flex items-center justify-center text-slate-500"><Icon name="chevronUp" size={16} /></span>
+              </div>
+            </div>
+
+            <div className="p-3.5 @lg:p-4 space-y-4">
+              <div className={'grid grid-cols-1 sm:grid-cols-2 gap-3 ' + (isKitchen ? '@3xl:grid-cols-4' : '@3xl:grid-cols-3')}>
+                <div>
+                  <label className={LABEL}>Department{REQ}</label>
+                  <select value={row.departmentId} onChange={function (e) { onChangeDepartment(row.id, e) }} className={CTRL}>
+                    <option value="">Select Department</option>
+                    {departments.map(function (d) { return <option key={d.id} value={d.id}>{d.name}</option> })}
+                  </select>
+                </div>
+                <div>
+                  <label className={LABEL}>Sub-Department{REQ}</label>
+                  <select value={row.subDepartmentId} onChange={function (e) { onChangeSubDepartment(row.id, e) }} disabled={!row.departmentId} className={CTRL}>
+                    <option value="">Select Sub-Department</option>
+                    {subDeptsFor(row.departmentId).map(function (sd) { return <option key={sd.id} value={sd.id}>{sd.name}</option> })}
+                  </select>
+                </div>
+                {isKitchen && (
+                  <div>
+                    <label className={LABEL}>Section</label>
+                    <select value={row.section} onChange={function (e) { onChangeSection(row.id, e) }} className={CTRL + ' bg-amber-50 border-amber-300'}>
+                      <option value="">Select…</option>
+                      {KITCHEN_SECTIONS.map(function (s) { return <option key={s} value={s}>{s}</option> })}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label className={LABEL}>Req No. (Optional)</label>
+                  <input type="text" value={row.reqNo} onChange={function (e) { onChangeReqNo(row.id, e) }}
+                    placeholder="Slip number" className={CTRL} style={{ fontSize: '16px' }} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 @3xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-3">
+                <div className="flex flex-col">
+                  <label className={LABEL}>Remarks</label>
+                  <textarea value={row.remarks} onChange={function (e) { onChangeRemarks(row.id, e) }} rows={3}
+                    placeholder="Optional note for this row…"
+                    className="flex-1 w-full min-h-[88px] px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white text-slate-800 resize-y focus:outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
+                    style={{ fontSize: '16px' }} />
+                </div>
+                <div className="flex flex-col">
+                  <label className={LABEL}>Req Images (Optional)</label>
+                  {(row.reqImages || []).length === 0 ? (
+                    <label className="flex-1 min-h-[88px] rounded-xl border-2 border-dashed border-violet-200 bg-violet-50/30 flex flex-col items-center justify-center gap-0.5 text-center cursor-pointer hover:bg-violet-50 transition-colors">
+                      <Icon name="camera" size={20} className="text-violet-500" />
+                      <span className="mt-1 text-[13px] font-semibold text-slate-700">Upload Image</span>
+                      <span className="text-[11px] text-slate-400">Photo or JPG / PNG</span>
+                      <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={function (e) { onPickReqImages(row, e) }} />
+                    </label>
+                  ) : (
+                    <div className="flex-1 min-h-[88px] rounded-xl border border-slate-200 bg-slate-50/60 p-2 flex flex-wrap content-start gap-2">
+                      {(row.reqImages || []).map(function (im) {
+                        return (
+                          <div key={im.id} className="relative w-14 h-14 shrink-0">
+                            <a href={im.previewUrl} target="_blank" rel="noreferrer">
+                              <img src={im.previewUrl} alt="Requisition slip" className="w-14 h-14 object-cover rounded-lg border border-slate-300" />
+                            </a>
+                            <button type="button" onClick={function () { removeReqImage(row, im.id) }} aria-label="Remove image"
+                              className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
+                              <Icon name="close" size={8} />
+                            </button>
+                          </div>
+                        )
+                      })}
+                      <label className="w-14 h-14 shrink-0 rounded-lg border-2 border-dashed border-violet-200 flex items-center justify-center text-violet-500 cursor-pointer hover:bg-violet-50" title="Add image">
+                        <Icon name="plus" size={16} />
+                        <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={function (e) { onPickReqImages(row, e) }} />
+                      </label>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* what to add to this row, and its total; a picked one opens just below */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={function () { patchRow(row.id, { showInventory: !row.showInventory }) }}
+                    className={'inline-flex items-center gap-2 h-10 px-4 rounded-xl border text-[13px] font-semibold transition-colors ' + (row.showInventory ? 'bg-violet-50 border-violet-300 text-violet-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50')}>
+                    <Icon name="box" size={15} /> Add Inventory
+                  </button>
+                  <button onClick={function () { patchRow(row.id, { showCasual: !row.showCasual }) }}
+                    className={'inline-flex items-center gap-2 h-10 px-4 rounded-xl border text-[13px] font-semibold transition-colors ' + (row.showCasual ? 'bg-violet-50 border-violet-300 text-violet-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50')}>
+                    <Icon name="users" size={15} /> Add Casual
+                  </button>
+                  <button onClick={function () { patchRow(row.id, { showExpense: !row.showExpense }) }}
+                    className={'inline-flex items-center gap-2 h-10 px-4 rounded-xl border text-[13px] font-semibold transition-colors ' + (row.showExpense ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50')}>
+                    <Icon name="filter" size={15} /> Adjust Expense
+                  </button>
+                </div>
+                <p className="ml-auto text-[14px] font-semibold text-slate-700">Row Total: <span className="text-[18px] font-bold text-violet-600 tabular-nums">{rupees(rowTotal(row))}</span></p>
+              </div>
+
+            {(row.showInventory || row.showCasual || row.showExpense) && (
+            <div className="space-y-3">
+
+            {row.showInventory && (
+              <div className={TONES.violet.box}>
+                {sectionHead('violet', 'Inventory used', row.inventoryRows.length ? plural(row.inventoryRows.length, 'item', 'items') : '')}
+                {row.inventoryRows.length > 0 && (
+                  <>
+                    <div className={LINE_GRID + ' gap-2.5 px-4 pt-2.5 pb-1.5 border-b border-slate-100'}>
+                      <span className={TH}>Item</span>
+                      <span className={TH + ' text-right'}>Qty</span>
+                      <span className={TH + ' text-right'}>Rate</span>
+                      <span className={TH + ' text-right'}>Total</span>
+                      <span></span>
+                    </div>
+                    {row.inventoryRows.map(function (l, i) {
+                      return (
+                        <div key={l.id} className={LINE_GRID + ' gap-2.5 items-center px-4 py-2 hover:bg-violet-50/30 ' + (i > 0 ? 'border-t border-slate-100' : '')}>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-[13.5px] text-slate-900 truncate" title={l.name}>{l.name}</p>
+                            <p className="text-[12px] text-slate-500">{l.unit}</p>
+                          </div>
+                          <input type="number" value={l.qty} onChange={function (e) { changeInvQty(row, l.id, e) }} placeholder="0" aria-label="Quantity"
+                            className={NUM_IN} style={{ fontSize: '15px' }} />
+                          <span className="relative">
+                            <span aria-hidden="true" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-400 pointer-events-none">₹</span>
+                            <input type="number" value={l.ratePaise === '' ? '' : l.ratePaise / 100} onChange={function (e) { changeInvRate(row, l.id, e) }} placeholder="0" aria-label="Rate"
+                              className={NUM_IN + ' pl-6'} style={{ fontSize: '15px' }} />
+                          </span>
+                          <p className="text-right text-[14px] font-bold text-slate-900 tabular-nums truncate">{rupees((Number(l.qty) || 0) * l.ratePaise)}</p>
+                          <button onClick={function () { removeInventoryRow(row, l.id) }} aria-label={'Remove ' + l.name} title="Remove" className={DEL_BTN}>
+                            <Icon name="trash" size={14} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </>
+                )}
+                {/* the next line of the slip: type to find an item */}
+                <div className={'relative px-4 py-2.5 ' + (row.inventoryRows.length ? 'border-t border-slate-100' : '')}>
+                  <span aria-hidden="true" className="absolute left-7 top-1/2 -translate-y-1/2 text-violet-500 pointer-events-none"><Icon name="search" size={15} /></span>
+                  <input type="text" value={row.invSearch} onChange={function (e) { onInvSearchChange(row.id, e) }}
+                    placeholder={row.inventoryRows.length ? 'Add another item…' : 'Search for an item to add…'}
+                    className="w-full h-10 pl-9 pr-3 rounded-lg border border-dashed border-violet-300 bg-violet-50/30 text-sm text-slate-800 placeholder:text-violet-700/60 focus:outline-none focus:border-solid focus:border-violet-500 focus:bg-white focus:ring-2 focus:ring-violet-500/20"
+                    style={{ fontSize: '16px' }} />
+                  {row.invResults.length > 0 && (
+                    <div className="absolute z-20 left-4 right-4 top-full -mt-1 bg-white border border-slate-200 rounded-xl shadow-[0_12px_28px_-8px_rgba(15,23,42,0.25)] max-h-72 overflow-y-auto">
+                      {row.invResults.map(function (r) {
+                        return (
+                          <button key={r.itemSource + ':' + r.itemId} onClick={function () { addInventoryItem(row, r) }}
+                            className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-[13.5px] hover:bg-violet-50 border-b border-slate-100 last:border-0">
+                            <span className="min-w-0 truncate font-semibold text-slate-800">{r.name}</span>
+                            <span className="shrink-0 text-[12px] text-slate-500">{r.unit}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+                {row.inventoryRows.length > 0 && subtotalLine('Inventory subtotal', rupees(rowInvSubtotal(row)))}
+              </div>
+            )}
+
+            {row.showCasual && (
+              <div className={TONES.sky.box}>
+                {sectionHead('sky', 'Casuals used', row.casualRows.length ? plural(row.casualRows.length, 'role', 'roles') : '')}
+                {row.casualRows.length > 0 && (
+                  <>
+                    <div className={LINE_GRID + ' gap-2.5 px-4 pt-2.5 pb-1.5 border-b border-slate-100'}>
+                      <span className={TH}>Role</span>
+                      <span className={TH + ' text-right'}>Qty</span>
+                      <span className={TH + ' text-right'}>Rate</span>
+                      <span className={TH + ' text-right'}>Total</span>
+                      <span></span>
+                    </div>
+                    {row.casualRows.map(function (l, i) {
+                      var rate = casualRateFor(l.casualRosterId)
+                      return (
+                        <div key={l.id} className={LINE_GRID + ' gap-2.5 items-center px-4 py-2 hover:bg-sky-50/30 ' + (i > 0 ? 'border-t border-slate-100' : '')}>
+                          <SearchDropdown noVoice
+                            items={casualsFor(row.departmentId, row.subDepartmentId).map(function (c) { return { value: String(c.id), label: c.casual_type } })}
+                            value={l.casualRosterId}
+                            onChange={function (v) { changeCasualType(row, l.id, v) }}
+                            placeholder="Search role..." />
+                          <input type="number" value={l.qty} onChange={function (e) { changeCasualQty(row, l.id, e) }} aria-label="Quantity"
+                            className={NUM_IN} style={{ fontSize: '15px' }} />
+                          <p className="text-right text-[13px] font-medium text-slate-500 tabular-nums truncate">{rupees(rate)}</p>
+                          <p className="text-right text-[14px] font-bold text-slate-900 tabular-nums truncate">{rupees(l.qty * rate)}</p>
+                          <button onClick={function () { removeCasualRow(row, l.id) }} aria-label="Remove casual" title="Remove" className={DEL_BTN}>
+                            <Icon name="trash" size={14} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </>
+                )}
+                <div className={'px-4 py-2.5 ' + (row.casualRows.length ? 'border-t border-slate-100' : '')}>
+                  <button onClick={function () { addCasualRow(row) }} disabled={!row.departmentId}
+                    className={ADD_LINE + 'border-sky-300 bg-sky-50/30 text-sky-700 hover:bg-sky-50 hover:border-sky-400 disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed'}>
+                    <Icon name="plus" size={15} />
+                    {!row.departmentId ? 'Pick a department to add casuals' : row.casualRows.length ? 'Add another casual' : 'Add a casual'}
+                  </button>
+                </div>
+                {row.casualRows.length > 0 && subtotalLine('Casual subtotal', rupees(rowCasSubtotal(row)))}
+              </div>
+            )}
+
+            {row.showExpense && (
+              <div className={TONES.emerald.box}>
+                {sectionHead('emerald', 'Expense credits', row.expenseRows.length ? plural(row.expenseRows.length, 'credit', 'credits') : '',
+                  "Credits the chosen expense sub-type's ledger, and takes the same amount off this requisition.")}
+                {row.expenseRows.map(function (l) {
+                  return (
+                    <div key={l.id} className="px-4 py-3 border-b border-slate-100 space-y-2.5">
+                      <div className="flex items-start gap-2">
+                        {/* Not `stacked` -- Type and Sub-Type sit side by
+                            side (ExpenseTypeFields' own 2-col grid) instead
+                            of each taking its own full-width row. Any
+                            extra_fields the sub-type adds still render
+                            below, full width, since they're arbitrary. */}
+                        <div className="flex-1 min-w-0">
+                          <ExpenseTypeFields value={l}
+                            onChange={function (patch) { changeExpenseAdjField(row, l.id, patch) }}
+                            expTypes={expenseTypes} expSubTypes={expenseSubTypes}
+                            vendors={vendors} venues={venues} employees={employees} staff={staff} />
+                        </div>
+                        <button onClick={function () { removeExpenseAdjRow(row, l.id) }} aria-label="Remove expense credit" title="Remove" className={DEL_BTN + ' mt-1'}>
+                          <Icon name="trash" size={14} />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-[180px_minmax(0,1fr)] gap-2.5 sm:pr-10">
+                        <div>
+                          <label className={LABEL}>Credit amount</label>
+                          <span className="relative block">
+                            <span aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400 pointer-events-none">₹</span>
+                            <input type="number" value={l.amountRupees} onChange={function (e) { changeExpenseAdjField(row, l.id, { amountRupees: e.target.value }) }} placeholder="0"
+                              className={NUM_IN + ' h-10 pl-7'} style={{ fontSize: '15px' }} />
+                          </span>
+                        </div>
+                        <div>
+                          <label className={LABEL}>Remarks (optional)</label>
+                          <input type="text" value={l.remarks} onChange={function (e) { changeExpenseAdjField(row, l.id, { remarks: e.target.value }) }}
+                            className={CTRL} style={{ fontSize: '15px' }} />
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+                <div className="px-4 py-2.5">
+                  <button onClick={function () { addExpenseAdjRow(row) }}
+                    className={ADD_LINE + 'border-emerald-300 bg-emerald-50/30 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-400'}>
+                    <Icon name="plus" size={15} />
+                    {row.expenseRows.length ? 'Add another credit' : 'Add a credit'}
+                  </button>
+                </div>
+                {row.expenseRows.length > 0 && subtotalLine('Total credit', '−' + rupees(rowAdjSubtotal(row)), 'text-emerald-600')}
+              </div>
+            )}
+
+            </div>
+            )}
+            </div>
+          </div>
+        )
+      })}
+      </div>
+
+      <button onClick={addDeptRow}
+        className="w-full inline-flex items-center justify-center gap-2 h-14 text-[14px] font-bold text-violet-700 border-2 border-dashed border-violet-300 rounded-2xl bg-white/50 hover:bg-violet-50 transition-colors">
+        <Icon name="plus" size={18} /> Add Dept Row
+      </button>
+      </div>
+
+      {/* The right column — entry details, function, summary, buttons — held
+          in place while the rows scroll on a wide screen. On a phone the
+          wrapper dissolves (contents) and its parts fall into the page order:
+          entry details first, the rows, then the summary. Scrolls inside
+          itself only if it is ever taller than the screen. */}
+      <div className="contents @5xl:block @5xl:col-start-2 @5xl:row-start-1 @5xl:sticky @5xl:top-4 @5xl:space-y-4 @5xl:max-h-[calc(100vh-2rem)] @5xl:overflow-y-auto ambria-thin-scroll">
+      {/* Entry details (+ function): first on a phone, top of the right column on a wide screen */}
+      <div className="space-y-4 min-w-0 order-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] space-y-3">
+          <p className="flex items-center gap-2 text-[15px] font-bold text-slate-900">
+            <Icon name="calendar" size={18} className="text-violet-600" />Entry Details
+          </p>
           <div>
-            <label className={LABEL}>Date</label>
+            <label className={LABEL}>Entry Date{REQ}</label>
             {(function () {
               var toYMD = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
               var todayStr = toYMD(new Date())
@@ -791,20 +1184,21 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
               )
             })()}
           </div>
-          <div>
-            <label className={LABEL}>Requisition No (optional)</label>
-            <input type="text" value={requisitionNo} onChange={function (e) { setRequisitionNo(e.target.value) }}
-              placeholder="e.g. the slip number"
-              className={CTRL} />
-          </div>
-          <div>
-            <label className={LABEL}>Casual Slips (optional)</label>
-            <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 items-start">
+            <div className="min-w-0">
+              <label className={LABEL}>Requisition No. (Optional)</label>
+              <input type="text" value={requisitionNo} onChange={function (e) { setRequisitionNo(e.target.value) }}
+                placeholder="e.g. the slip number"
+                className={CTRL} />
+            </div>
+            <div>
+              <label className={LABEL}>Casual Slip (Optional)</label>
+              <div className="flex flex-wrap gap-2">
               {casualSlips.map(function (cs) {
                 return (
-                  <div key={cs.id} className="relative w-9 h-9 shrink-0">
+                  <div key={cs.id} className="relative w-10 h-10 shrink-0">
                     <a href={cs.previewUrl} target="_blank" rel="noreferrer">
-                      <img src={cs.previewUrl} alt="Casual slip" className="w-9 h-9 object-cover rounded-lg border border-gray-300" />
+                      <img src={cs.previewUrl} alt="Casual slip" className="w-10 h-10 object-cover rounded-lg border border-gray-300" />
                     </a>
                     <button type="button" onClick={function () { removeCasualSlip(cs.id) }} aria-label="Remove image"
                       className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
@@ -813,14 +1207,14 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                   </div>
                 )
               })}
-              <label className="w-9 h-9 shrink-0 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 cursor-pointer hover:bg-gray-50">
+              <label className="w-10 h-10 shrink-0 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 cursor-pointer hover:bg-gray-50">
                 <Icon name="camera" size={14} />
                 <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={onPickCasualSlips} />
               </label>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
       {entryDate && (
         <div className={CARD}>
@@ -865,316 +1259,52 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
         </div>
       )}
 
-      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">What was taken out</p>
+      </div>
 
-      {deptRows.map(function (row, idx) {
-        var isKitchen = isKitchenRow(row)
-        var deptName = (departments.find(function (d) { return String(d.id) === String(row.departmentId) }) || {}).name || ''
-        var subDeptName = (subDepartments.find(function (sd) { return String(sd.id) === String(row.subDepartmentId) }) || {}).name || ''
-        var isOpen = expandedRowId === row.id
-        var itemCount = row.inventoryRows.length
-        var casualCount = row.casualRows.length
-        var adjCount = (row.expenseRows || []).length
-
-        // Collapsed: a one-line summary bar — department, what's on it, its
-        // total — not the full field set. Every row but the one being
-        // actively edited renders this instead.
-        if (!isOpen) {
-          return (
-            <div key={row.id} onClick={function () { toggleRowExpanded(row.id) }}
-              className="bg-white border border-gray-200 rounded-2xl px-4 py-3 flex items-center justify-between gap-3 cursor-pointer hover:border-indigo-300 transition-colors">
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-gray-900 truncate">
-                  {deptName ? (deptName + (subDeptName ? ' · ' + subDeptName : '')) : ('Dept Row ' + (idx + 1))}
-                </p>
-                <div className="flex flex-wrap gap-1.5 mt-1">
-                  {itemCount > 0 && <span className="text-[10px] font-bold text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{itemCount} item{itemCount === 1 ? '' : 's'}</span>}
-                  {casualCount > 0 && <span className="text-[10px] font-bold text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{casualCount} casual{casualCount === 1 ? '' : 's'}</span>}
-                  {adjCount > 0 && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5">{adjCount} adjustment{adjCount === 1 ? '' : 's'}</span>}
-                  {itemCount === 0 && casualCount === 0 && adjCount === 0 && <span className="text-[10px] text-gray-400">Empty — tap to fill in</span>}
-                </div>
+      {/* Summary + actions: the foot on a phone; under entry details on a wide screen, held in view while the rows scroll */}
+      <div className="min-w-0 space-y-3 order-3">
+        <div className="rounded-2xl bg-gradient-to-br from-[#2A2550] to-[#3A3170] px-5 py-4 text-white shadow-[0_12px_30px_-12px_rgba(42,37,80,0.6)]">
+          <p className="flex items-center gap-2 text-[15px] font-bold">
+            <Icon name="chart" size={17} className="text-violet-300" />Requisition Summary
+          </p>
+          {(function () {
+            var inv = 0, cas = 0, adj = 0
+            deptRows.forEach(function (r) { inv += rowInvSubtotal(r); cas += rowCasSubtotal(r); adj += rowAdjSubtotal(r) })
+            return (
+              <div className="mt-3 space-y-1.5 text-[13px]">
+                <p className="flex justify-between gap-3 text-white/70"><span>Dept Rows</span><span className="font-semibold text-white tabular-nums">{deptRows.length}</span></p>
+                <p className="flex justify-between gap-3 text-white/70"><span>Inventory</span><span className="font-semibold text-white tabular-nums">{rupees(inv)}</span></p>
+                <p className="flex justify-between gap-3 text-white/70"><span>Casuals</span><span className="font-semibold text-white tabular-nums">{rupees(cas)}</span></p>
+                {adj > 0 && <p className="flex justify-between gap-3 text-white/70"><span>Adjustments</span><span className="font-semibold text-emerald-300 tabular-nums">−{rupees(adj)}</span></p>}
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <p className="text-sm font-bold text-indigo-600 whitespace-nowrap">{rupees(rowTotal(row))}</p>
-                <button onClick={function (e) { e.stopPropagation(); removeDeptRow(row.id) }} aria-label="Remove row"
-                  className="w-7 h-7 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
-                  <Icon name="close" size={13} />
-                </button>
-                <Icon name="chevronDown" size={14} className="text-gray-400" />
-              </div>
-            </div>
-          )
-        }
-
-        return (
-          <div key={row.id} className={CARD}>
-            <div className="flex items-center justify-between cursor-pointer" onClick={function () { toggleRowExpanded(row.id) }}>
-              <p className="text-sm font-bold text-gray-800">Dept Row {idx + 1}{deptName ? ' · ' + deptName : ''}</p>
-              <div className="flex items-center gap-1.5">
-                <button onClick={function (e) { e.stopPropagation(); removeDeptRow(row.id) }} aria-label="Remove row" className="w-7 h-7 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
-                  <Icon name="close" size={13} />
-                </button>
-                <Icon name="chevronDown" size={14} className="text-gray-400 rotate-180" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              <div>
-                <label className={LABEL}>Department</label>
-                <select value={row.departmentId} onChange={function (e) { onChangeDepartment(row.id, e) }} className={CTRL}>
-                  <option value="">Select…</option>
-                  {departments.map(function (d) { return <option key={d.id} value={d.id}>{d.name}</option> })}
-                </select>
-              </div>
-              <div>
-                <label className={LABEL}>Sub-Department</label>
-                <select value={row.subDepartmentId} onChange={function (e) { onChangeSubDepartment(row.id, e) }} disabled={!row.departmentId} className={CTRL}>
-                  <option value="">Select…</option>
-                  {subDeptsFor(row.departmentId).map(function (sd) { return <option key={sd.id} value={sd.id}>{sd.name}</option> })}
-                </select>
-              </div>
-              {isKitchen && (
-                <div className="col-span-2 sm:col-span-1">
-                  <label className={LABEL}>Section</label>
-                  <select value={row.section} onChange={function (e) { onChangeSection(row.id, e) }} className={CTRL + ' bg-amber-50 border-amber-300'}>
-                    <option value="">Select…</option>
-                    {KITCHEN_SECTIONS.map(function (s) { return <option key={s} value={s}>{s}</option> })}
-                  </select>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div>
-                <label className={LABEL}>Remarks</label>
-                <input type="text" value={row.remarks} onChange={function (e) { onChangeRemarks(row.id, e) }}
-                  placeholder="Optional note for this row…" className={CTRL} style={{ fontSize: '16px' }} />
-              </div>
-              <div>
-                <label className={LABEL}>Req No (optional)</label>
-                <input type="text" value={row.reqNo} onChange={function (e) { onChangeReqNo(row.id, e) }}
-                  placeholder="Slip number" className={CTRL} style={{ fontSize: '16px' }} />
-              </div>
-            </div>
-            <div>
-              <label className={LABEL}>Req Images (optional)</label>
-              <div className="flex flex-wrap gap-2">
-                {(row.reqImages || []).map(function (im) {
-                  return (
-                    <div key={im.id} className="relative w-11 h-11 shrink-0">
-                      <a href={im.previewUrl} target="_blank" rel="noreferrer">
-                        <img src={im.previewUrl} alt="Requisition slip" className="w-11 h-11 object-cover rounded-lg border border-gray-300" />
-                      </a>
-                      <button type="button" onClick={function () { removeReqImage(row, im.id) }} aria-label="Remove image"
-                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
-                        <Icon name="close" size={8} />
-                      </button>
-                    </div>
-                  )
-                })}
-                <label className="w-11 h-11 shrink-0 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 cursor-pointer hover:bg-gray-50">
-                  <Icon name="camera" size={14} />
-                  <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={function (e) { onPickReqImages(row, e) }} />
-                </label>
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <button onClick={function () { patchRow(row.id, { showInventory: !row.showInventory }) }}
-                className={'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg border ' + (row.showInventory ? 'bg-indigo-50 border-indigo-400 text-indigo-700' : 'bg-white border-gray-300 text-gray-600')}>
-                <Icon name="plus" size={13} /> Add Inventory
-              </button>
-              <button onClick={function () { patchRow(row.id, { showCasual: !row.showCasual }) }}
-                className={'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg border ' + (row.showCasual ? 'bg-indigo-50 border-indigo-400 text-indigo-700' : 'bg-white border-gray-300 text-gray-600')}>
-                <Icon name="plus" size={13} /> Add Casual
-              </button>
-              <button onClick={function () { patchRow(row.id, { showExpense: !row.showExpense }) }}
-                className={'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg border ' + (row.showExpense ? 'bg-emerald-50 border-emerald-400 text-emerald-700' : 'bg-white border-gray-300 text-gray-600')}>
-                <Icon name="plus" size={13} /> Adjust Expense
-              </button>
-            </div>
-
-            {row.showInventory && (
-              <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl space-y-1.5">
-                <p className="text-xs font-bold text-gray-500">Inventory used</p>
-                {row.inventoryRows.length > 0 && (
-                  <div className="rounded-lg border border-gray-200 bg-white">
-                    <div className="grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 px-2.5 pt-2 pb-1">
-                      <span className="text-[9.5px] font-bold text-gray-400 uppercase">Item</span>
-                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Qty</span>
-                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Rate</span>
-                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Total</span>
-                      <span></span>
-                    </div>
-                    {row.inventoryRows.map(function (l, i) {
-                      return (
-                        <div key={l.id} className={'grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 items-center px-2.5 py-1.5 ' + (i > 0 ? 'border-t border-gray-100' : '')}>
-                          <div className="min-w-0">
-                            <p className="font-semibold text-[12.5px] text-gray-800 truncate">{l.name}</p>
-                            <p className="text-[10px] text-gray-400">{l.unit}</p>
-                          </div>
-                          <input type="number" value={l.qty} onChange={function (e) { changeInvQty(row, l.id, e) }} placeholder="0"
-                            className="w-full h-8 px-1 text-right border border-gray-300 rounded" style={{ fontSize: '16px' }} />
-                          <input type="number" value={l.ratePaise === '' ? '' : l.ratePaise / 100} onChange={function (e) { changeInvRate(row, l.id, e) }} placeholder="0"
-                            className="w-full h-8 px-1 text-right border border-gray-300 rounded text-gray-700" style={{ fontSize: '16px' }} />
-                          <p className="text-right text-[12.5px] font-bold text-gray-900 truncate">{rupees((Number(l.qty) || 0) * l.ratePaise)}</p>
-                          <button onClick={function () { removeInventoryRow(row, l.id) }} aria-label="Remove item"
-                            className="justify-self-end w-7 h-7 rounded-md bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
-                            <Icon name="trash" size={12} />
-                          </button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-                {row.inventoryRows.length > 0 && (
-                  <p className="text-right text-xs text-gray-500">Inventory subtotal <span className="font-bold text-gray-900">{rupees(rowInvSubtotal(row))}</span></p>
-                )}
-                <div className="relative">
-                  <input type="text" value={row.invSearch} onChange={function (e) { onInvSearchChange(row.id, e) }}
-                    placeholder="Search inventory items to add..." className={CTRL + ' pl-8'} style={{ fontSize: '16px' }} />
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"><Icon name="search" size={14} /></span>
-                  {row.invResults.length > 0 && (
-                    <div className="absolute z-10 left-0 right-0 bottom-full mb-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-                      {row.invResults.map(function (r) {
-                        return (
-                          <button key={r.itemSource + ':' + r.itemId} onClick={function () { addInventoryItem(row, r) }}
-                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-indigo-50 border-b border-gray-100 last:border-0">
-                            <span className="font-semibold">{r.name}</span>
-                            <span className="text-gray-400 text-xs">{r.unit}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {row.showCasual && (
-              <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold text-gray-500">Casuals used</p>
-                  <button onClick={function () { addCasualRow(row) }} disabled={!row.departmentId}
-                    className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-indigo-600 border border-gray-300 rounded-md bg-white disabled:opacity-40">
-                    <Icon name="plus" size={11} /> Add Row
-                  </button>
-                </div>
-                {row.casualRows.length > 0 && (
-                  <div className="rounded-lg border border-gray-200 bg-white">
-                    <div className="grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 px-2.5 pt-2 pb-1">
-                      <span className="text-[9.5px] font-bold text-gray-400 uppercase">Role</span>
-                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Qty</span>
-                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Rate</span>
-                      <span className="text-[9.5px] font-bold text-gray-400 uppercase text-right">Total</span>
-                      <span></span>
-                    </div>
-                    {row.casualRows.map(function (l, i) {
-                      var rate = casualRateFor(l.casualRosterId)
-                      return (
-                        <div key={l.id} className={'grid grid-cols-[1fr_52px_64px_72px_30px] gap-2 items-center px-2.5 py-1.5 ' + (i > 0 ? 'border-t border-gray-100' : '')}>
-                          <SearchDropdown noVoice
-                            items={casualsFor(row.departmentId, row.subDepartmentId).map(function (c) { return { value: String(c.id), label: c.casual_type } })}
-                            value={l.casualRosterId}
-                            onChange={function (v) { changeCasualType(row, l.id, v) }}
-                            placeholder="Search role..." />
-                          <input type="number" value={l.qty} onChange={function (e) { changeCasualQty(row, l.id, e) }}
-                            className="w-full h-8 px-1 text-right border border-gray-300 rounded" style={{ fontSize: '16px' }} />
-                          <p className="text-right text-[12px] text-gray-500 truncate">{rupees(rate)}</p>
-                          <p className="text-right text-[12.5px] font-bold text-gray-900 truncate">{rupees(l.qty * rate)}</p>
-                          <button onClick={function () { removeCasualRow(row, l.id) }} aria-label="Remove casual"
-                            className="justify-self-end w-7 h-7 rounded-md bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
-                            <Icon name="trash" size={12} />
-                          </button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-                {row.casualRows.length > 0 && (
-                  <p className="text-right text-xs text-gray-500">Casual subtotal <span className="font-bold text-gray-900">{rupees(rowCasSubtotal(row))}</span></p>
-                )}
-              </div>
-            )}
-
-            {row.showExpense && (
-              <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold text-gray-500">Expense credit adjustments</p>
-                  <button onClick={function () { addExpenseAdjRow(row) }}
-                    className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-emerald-700 border border-gray-300 rounded-md bg-white">
-                    <Icon name="plus" size={11} /> Add Row
-                  </button>
-                </div>
-                {row.expenseRows.length > 0 && (
-                  <div className="space-y-1.5">
-                    {row.expenseRows.map(function (l) {
-                      return (
-                        <div key={l.id} className="rounded-lg border border-gray-200 bg-white p-2 space-y-1.5">
-                          <div className="flex items-start gap-2">
-                            {/* Not `stacked` -- Type and Sub-Type sit side by
-                                side (ExpenseTypeFields' own 2-col grid) instead
-                                of each taking its own full-width row. Any
-                                extra_fields the sub-type adds still render
-                                below, full width, since they're arbitrary. */}
-                            <div className="flex-1 min-w-0">
-                              <ExpenseTypeFields value={l}
-                                onChange={function (patch) { changeExpenseAdjField(row, l.id, patch) }}
-                                expTypes={expenseTypes} expSubTypes={expenseSubTypes}
-                                vendors={vendors} venues={venues} employees={employees} staff={staff} />
-                            </div>
-                            <button onClick={function () { removeExpenseAdjRow(row, l.id) }} aria-label="Remove expense adjustment"
-                              className="shrink-0 w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100">
-                              <Icon name="trash" size={13} />
-                            </button>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Credit amount</label>
-                              <input type="number" value={l.amountRupees} onChange={function (e) { changeExpenseAdjField(row, l.id, { amountRupees: e.target.value }) }} placeholder="0"
-                                className="w-full h-8 px-2 text-right border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Remarks (optional)</label>
-                              <input type="text" value={l.remarks} onChange={function (e) { changeExpenseAdjField(row, l.id, { remarks: e.target.value }) }}
-                                className="w-full h-8 px-2 border border-gray-300 rounded-lg" style={{ fontSize: '16px' }} />
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-                {row.expenseRows.length > 0 && (
-                  <p className="text-right text-xs text-gray-500">Adjustment total <span className="font-bold text-emerald-600">−{rupees(rowAdjSubtotal(row))}</span></p>
-                )}
-                <p className="text-[10.5px] text-gray-400">Credits the chosen expense sub-type's own ledger, and debits this requisition's total below by the same amount.</p>
-              </div>
-            )}
-
-            <div className="flex justify-end border-t border-gray-100 pt-2">
-              <p className="text-sm">Row total <span className="font-bold text-indigo-600">{rupees(rowTotal(row))}</span></p>
-            </div>
+            )
+          })()}
+          <div className="mt-3 pt-3 border-t border-white/15 flex items-baseline justify-between gap-3">
+            <p className="text-[16px] font-bold">Grand Total</p>
+            <p className="text-[24px] font-bold tabular-nums">{rupees(grandTotal)}</p>
           </div>
-        )
-      })}
-
-      {/* Same action as the one above the list — repeated here so adding
-          another row after scrolling down past several of them doesn't mean
-          scrolling back up to find the button again. */}
-      <button onClick={addDeptRow} className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold text-indigo-600 border border-dashed border-gray-300 rounded-lg hover:bg-indigo-50">
-        <Icon name="plus" size={13} /> Add Dept Row
-      </button>
-
-      <div className="bg-gray-900 rounded-2xl px-5 py-4 flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Grand total</p>
-          <p className="text-xl font-bold text-white mt-0.5">{rupees(grandTotal)}</p>
         </div>
-        <button onClick={handleSubmit} disabled={!canSubmit || saving}
-          className="px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-colors">
-          {saving ? 'Saving…' : (editId ? 'Save Changes' : 'Submit Requisition')}
-        </button>
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-3">
+          <button type="button" onClick={onCancel}
+            className="h-12 rounded-xl border border-slate-300 bg-white text-[14px] font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
+            Cancel
+          </button>
+          <button type="button" onClick={handleSubmit} disabled={!canSubmit || saving}
+            className="h-12 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-[14px] font-bold text-white shadow-[0_8px_20px_-8px_rgba(109,40,217,0.7)] hover:from-violet-700 hover:to-indigo-700 disabled:opacity-45 disabled:shadow-none transition-colors">
+            {!saving && <Icon name="send" size={15} />}
+            {saving ? 'Saving…' : (editId ? 'Save Changes' : 'Submit Requisition')}
+          </button>
+        </div>
+        {!canSubmit && !saving && submitBlocker && (
+          <p className="flex items-start gap-1.5 text-[12.5px] text-slate-600">
+            <Icon name="info" size={14} className="shrink-0 mt-px text-violet-500" />
+            <span>To submit: {submitBlocker}</span>
+          </p>
+        )}
+      </div>
+
+      </div>
+
       </div>
 
       </>}

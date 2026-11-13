@@ -238,6 +238,10 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
             else if (isSelected) tone = "bg-indigo-600 text-white font-bold shadow-[0_2px_6px_rgba(79,70,229,0.30)]"
             else if (isToday) tone = "text-indigo-700 font-extrabold ring-[1.5px] ring-inset ring-indigo-400 hover:bg-indigo-50"
             else if (hasEvent) tone = "text-slate-900 font-bold hover:bg-slate-100"
+            // With a min/max window the open days are the point: show every
+            // pickable day (past ones included) dark, so they stand apart
+            // from the faint days outside the window.
+            else if (minDate || maxDate) tone = "text-slate-800 font-semibold hover:bg-indigo-50 hover:text-indigo-700"
             else if (isPast) tone = "text-slate-300 font-medium hover:bg-slate-50 hover:text-slate-500"
             else tone = "text-slate-500 font-medium hover:bg-slate-100 hover:text-slate-900"
 

@@ -1170,8 +1170,8 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       var q = term.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')
       var termLower = term.trim().toLowerCase()
       Promise.all([
-        supabase.from('inventory_items').select('id, name, unit, category_id').ilike('name', '%' + q + '%').eq('status', 'approved').order('name').limit(20),
-        supabase.from('catering_store_items').select('id, name, unit, category_id').ilike('name', '%' + q + '%').eq('status', 'approved').order('name').limit(20),
+        supabase.from('inventory_items').select('id, name, unit, category_id, rate_paise').ilike('name', '%' + q + '%').eq('status', 'approved').order('name').limit(20),
+        supabase.from('catering_store_items').select('id, name, unit, category_id, rate_paise').ilike('name', '%' + q + '%').eq('status', 'approved').order('name').limit(20),
       ]).then(function (results) {
         var inv = (results[0].data || []).map(function (i) { return Object.assign({}, i, { _source: 'inventory' }) })
         var cs = (results[1].data || []).map(function (i) { return Object.assign({}, i, { _source: 'catering_store' }) })
@@ -1229,13 +1229,47 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           itemLastPurchase: row,
           itemLastPurchaseLoading: false
         })
+        // Rate starts at what this item was last bought for (the ledger's
+        // purchase history); never bought yet, then the rate saved on the
+        // item itself (inventory_items / catering_store_items.rate_paise).
+        // Left alone if something is already typed in it.
+        var fillPaise = (row && row.rate_paise > 0) ? row.rate_paise : (Number(item.rate_paise) > 0 ? Number(item.rate_paise) : 0)
+        if (fillPaise > 0) {
+          setEntries(function (prev) {
+            return prev.map(function (e, i) {
+              if (i !== entryIdx) return e
+              var changed = false
+              var copy = Object.assign({}, e)
+              copy.items = e.items.map(function (it) {
+                if (it.itemMatchedId !== item.id || String(it.itemRate || '').trim() !== '') return it
+                changed = true
+                return Object.assign({}, it, { itemRate: String(fillPaise / 100) })
+              })
+              return changed ? syncAmountToItemsFloor(e, copy) : e
+            })
+          })
+        }
       })
   }
 
   // Appends a new row matched to an existing catalog item -- picking from the
   // add-search dropdown never edits an item already in the list, it only
   // ever adds one more, so several items can be searched back-to-back.
+  // After an item is picked the next thing typed is its quantity: put the
+  // cursor in the new row's Qty box instead of leaving it in the search bar.
+  // A few frames of retry, since the row only exists once React has rendered it.
+  function focusNewItemQty(entryIdx, itemIdx) {
+    var tries = 0
+    function attempt() {
+      var el = document.getElementById('item-qty-' + entryIdx + '-' + itemIdx)
+      if (el) { el.focus(); try { el.select() } catch (_) {} ; return }
+      if (++tries < 10) requestAnimationFrame(attempt)
+    }
+    requestAnimationFrame(attempt)
+  }
+
   function addExistingItemRow(entryIdx, item) {
+    var newItemIdx = (entries[entryIdx] && entries[entryIdx].items ? entries[entryIdx].items.length : 0)
     setEntries(function (prev) {
       return prev.map(function (e, i) {
         if (i !== entryIdx) return e
@@ -1255,12 +1289,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     setItemAddMatches([])
     setItemAddSearchKey('')
     loadLastPurchase(entryIdx, item)
+    focusNewItemQty(entryIdx, newItemIdx)
   }
 
   // Appends a brand-new (not-yet-in-catalog) row and opens its detail panel
   // right away, since unlike a matched item it still needs a unit (and
   // optionally a category) set before it's complete.
   function addNewItemRow(entryIdx, name) {
+    var newItemIdx = (entries[entryIdx] && entries[entryIdx].items ? entries[entryIdx].items.length : 0)
     setEntries(function (prev) {
       return prev.map(function (e, i) {
         if (i !== entryIdx) return e
@@ -1271,6 +1307,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     })
     setItemAddMatches([])
     setItemAddSearchKey('')
+    focusNewItemQty(entryIdx, newItemIdx)
   }
 
   function duplicateEntry(idx) {

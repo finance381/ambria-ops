@@ -374,7 +374,7 @@ function StoreRequisitions({ profile }) {
           <Icon name="search" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input type="text" value={searchNo} onChange={function (e) { setSearchNo(e.target.value) }}
             placeholder="Search by requisition / slip number…"
-            className="w-full pl-9 pr-8 py-2 border border-gray-300 rounded-lg text-sm placeholder:text-gray-400"
+            className="w-full h-10 pl-9 pr-8 border border-slate-300 rounded-lg bg-white text-sm placeholder:text-slate-400 focus:outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
             style={{ fontSize: '16px' }} />
           {searchNo && (
             <button onClick={function () { setSearchNo('') }} aria-label="Clear search"
@@ -386,10 +386,12 @@ function StoreRequisitions({ profile }) {
         {(function () {
           var count = (linkFilter ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0)
           return (
-            <button onClick={function () { setFiltersOpen(!filtersOpen) }}
-              className={'shrink-0 px-3.5 py-2 text-xs font-bold rounded-lg border transition-colors flex items-center gap-1.5 ' + (filtersOpen || count > 0 ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50')}>
-              {filtersOpen ? '▲' : '▼'} Filters
-              {count > 0 && <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-indigo-600 text-white text-[9.5px] font-bold">{count}</span>}
+            <button type="button" onClick={function () { setFiltersOpen(!filtersOpen) }} aria-expanded={filtersOpen}
+              className={'shrink-0 inline-flex items-center gap-2 h-10 px-3.5 rounded-lg border text-[13px] font-semibold transition-colors ' + (filtersOpen || count > 0 ? 'bg-violet-50 border-violet-300 text-violet-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50')}>
+              <Icon name="filter" size={15} />
+              Filters
+              {count > 0 && <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-violet-600 text-white text-[10.5px] font-bold tabular-nums">{count}</span>}
+              <Icon name="chevronDown" size={14} className={'transition-transform ' + (filtersOpen ? 'rotate-180' : '')} />
             </button>
           )
         })()}
@@ -406,43 +408,42 @@ function StoreRequisitions({ profile }) {
               </button>
             )}
             {filtersOpen && (
-              <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Contract</label>
-                  <div className="flex gap-2 flex-wrap">
-                    {['', 'linked', 'unlinked'].map(function (f) {
-                      var label = f === '' ? 'All' : f === 'linked' ? 'Linked' : 'Unlinked'
-                      return (
-                        <button key={f} onClick={function () { setLinkFilter(f === linkFilter ? '' : f) }}
-                          className={'px-3 py-1.5 text-[11px] font-bold rounded-full border transition-colors ' +
-                            (linkFilter === f ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50')}>
-                          {label}
-                        </button>
-                      )
-                    })}
+              <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-3.5">
+                {/* One row on a wide screen: contract, from, to, reset */}
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] items-end">
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-[12px] font-medium text-slate-500 mb-1.5">Contract</label>
+                    <div className="grid grid-cols-3 sm:inline-grid h-10 p-1 rounded-lg bg-slate-100 border border-slate-200">
+                      {['', 'linked', 'unlinked'].map(function (f) {
+                        var label = f === '' ? 'All' : f === 'linked' ? 'Linked' : 'Not linked'
+                        var on = linkFilter === f
+                        return (
+                          <button key={f || 'all'} type="button" aria-pressed={on} onClick={function () { setLinkFilter(f === linkFilter ? '' : f) }}
+                            className={'px-3.5 rounded-md text-[13px] font-semibold whitespace-nowrap transition-colors ' +
+                              (on ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800')}>
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">From</label>
-                    <input type="date" value={dateFrom}
+                  <div className="min-w-0">
+                    <label className="block text-[12px] font-medium text-slate-500 mb-1.5">From</label>
+                    <input type="date" value={dateFrom} max={dateTo || undefined}
                       onChange={function (e) { setDateFrom(e.target.value) }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      style={{ fontSize: '16px' }} />
+                      className="w-full h-10 px-3 border border-slate-300 rounded-lg bg-white text-slate-800 focus:outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20" style={{ fontSize: '15px' }} />
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">To</label>
-                    <input type="date" value={dateTo}
+                  <div className="min-w-0">
+                    <label className="block text-[12px] font-medium text-slate-500 mb-1.5">To</label>
+                    <input type="date" value={dateTo} min={dateFrom || undefined}
                       onChange={function (e) { setDateTo(e.target.value) }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      style={{ fontSize: '16px' }} />
+                      className="w-full h-10 px-3 border border-slate-300 rounded-lg bg-white text-slate-800 focus:outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20" style={{ fontSize: '15px' }} />
                   </div>
-                </div>
-                {count > 0 && (
-                  <button onClick={resetFilters} className="text-[11px] font-bold text-red-600 hover:text-red-700">
-                    Reset filters
+                  <button type="button" onClick={resetFilters} disabled={count === 0}
+                    className="col-span-2 sm:col-span-1 h-10 px-3.5 inline-flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-semibold text-red-600 hover:bg-red-50 disabled:text-slate-400 disabled:hover:bg-transparent disabled:cursor-default transition-colors">
+                    <Icon name="refresh" size={14} />Reset
                   </button>
-                )}
+                </div>
               </div>
             )}
           </div>
@@ -469,59 +470,71 @@ function StoreRequisitions({ profile }) {
         <>
         <div className="space-y-3">
           {reqs.map(function (r) {
+            // The day it is for, as a small calendar leaf: the thing people
+            // scan this list by. A multi-day entry says where it ends.
+            var d0 = new Date((r.date_from || '') + 'T00:00:00')
+            var hasDate = !isNaN(d0.getTime())
+            var isRange = r.date_to && r.date_to !== r.date_from
+            var linked = r._linkedEvents && r._linkedEvents.length > 0
+            var linkedText = linked ? r._linkedEvents.map(function (e) {
+              return (e.event_name || e.client_name || 'Event #' + e.id) + (e.venue_name ? ' (' + e.venue_name + ')' : '')
+            }).join(', ') : ''
             return (
               <div key={r.id} onClick={function () { openDetail(r.id) }}
-                className="bg-white border border-gray-200 rounded-xl p-4 cursor-pointer hover:border-indigo-300 transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
-                      {r.date_from === r.date_to ? formatDate(r.date_from) : (formatDate(r.date_from) + ' – ' + formatDate(r.date_to))}
+                className="group bg-white border border-slate-200 rounded-xl px-3.5 py-3 cursor-pointer transition-all duration-200 ease-out hover:border-violet-300 hover:shadow-[0_10px_24px_-12px_rgba(76,29,149,0.35)] motion-safe:hover:-translate-y-0.5 active:translate-y-0 active:shadow-sm">
+                <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[auto_minmax(0,1fr)_180px_210px] items-center gap-x-4 gap-y-1">
+                  <div className="shrink-0 w-12 h-12 rounded-xl bg-violet-50 border border-violet-100 flex flex-col items-center justify-center leading-none transition-colors duration-200 group-hover:bg-violet-600 group-hover:border-violet-600" title={formatDate(r.date_from) + (isRange ? ' – ' + formatDate(r.date_to) : '')}>
+                    <span className="text-[18px] font-bold text-violet-800 tabular-nums transition-colors duration-200 group-hover:text-white">{hasDate ? d0.getDate() : '—'}</span>
+                    <span className="mt-0.5 text-[11px] font-semibold text-violet-600 transition-colors duration-200 group-hover:text-violet-100">{hasDate ? d0.toLocaleString('en-IN', { month: 'short' }) : ''}</span>
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1.5 min-w-0">
+                      {linked
+                        ? <Icon name="link" size={13} className="shrink-0 text-emerald-600" />
+                        : <Icon name="link" size={13} className="shrink-0 text-slate-300" />}
+                      <span className={'truncate text-[13.5px] ' + (linked ? 'font-semibold text-slate-900' : 'font-medium text-slate-500')} title={linkedText}>
+                        {linked ? linkedText : 'Not linked to a function'}
+                      </span>
                       {r.requisition_no && (
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5">
-                          #{r.requisition_no}
-                        </span>
-                      )}
-                      {r.event_ids && r.event_ids.length > 0 ? (
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">
-                          Linked
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
-                          Unlinked
-                        </span>
+                        <span className="shrink-0 text-[11px] font-semibold text-violet-700 bg-violet-50 rounded-md px-1.5 py-0.5">#{r.requisition_no}</span>
                       )}
                     </p>
-                    <p className="text-xs text-gray-400 mt-0.5">{r._createdByName || '—'} · {formatDate(r.created_at)}</p>
-                    {r._linkedEvents && r._linkedEvents.length > 0 && (
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {r._linkedEvents.map(function (e) {
-                          return (e.event_name || e.client_name || 'Event #' + e.id) +
-                            (e.venue_name ? ' (' + e.venue_name + ')' : '')
-                        }).join(', ')}
-                      </p>
-                    )}
                     {r._deptBadges && r._deptBadges.length > 0 && (
                       <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
                         {r._deptBadges.map(function (label, bi) {
                           return (
-                            <span key={bi} className="text-[10px] font-semibold text-gray-600 bg-gray-100 border border-gray-200 rounded-full px-2 py-0.5">
+                            <span key={bi} className="text-[11px] font-medium text-slate-600 bg-slate-100 rounded-md px-2 py-0.5">
                               {label}
                             </span>
                           )
                         })}
                       </div>
                     )}
+                    {/* phone: who logged it, under the rest (its own column on a wider screen) */}
+                    <p className="md:hidden mt-1 text-[11.5px] text-slate-500">
+                      {(r._createdByName || '—') + ', logged ' + formatDate(r.created_at)}{isRange ? ' · till ' + formatDate(r.date_to) : ''}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <p className="text-sm font-bold text-indigo-600 whitespace-nowrap">{formatPoints(r.total_paise || 0)}</p>
-                    <button onClick={function (ev) { ev.stopPropagation(); openForm(r.id) }} aria-label="Edit"
-                      className="w-8 h-8 rounded-lg bg-gray-50 text-gray-500 flex items-center justify-center hover:bg-indigo-50 hover:text-indigo-600 transition-colors">
-                      <Icon name="edit" size={14} />
-                    </button>
-                    <button onClick={function (ev) { ev.stopPropagation(); setConfirmDeleteId(r.id) }} aria-label="Delete"
-                      className="w-8 h-8 rounded-lg bg-gray-50 text-gray-500 flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors">
-                      <Icon name="trash" size={14} />
-                    </button>
+
+                  <div className="hidden md:block min-w-0">
+                    <p className="text-[13px] font-semibold text-slate-800 truncate">{r._createdByName || '—'}</p>
+                    <p className="text-[11.5px] text-slate-500">Logged {formatDate(r.created_at)}</p>
+                    {isRange && <p className="text-[11.5px] text-slate-500">Till {formatDate(r.date_to)}</p>}
+                  </div>
+
+                  <div className="flex flex-col items-end gap-1.5 md:flex-row md:items-center md:justify-end md:gap-3">
+                    <p className="text-[15px] font-bold text-slate-900 tabular-nums whitespace-nowrap transition-colors duration-200 group-hover:text-violet-700">{formatPoints(r.total_paise || 0)}</p>
+                    <div className="flex items-center gap-1">
+                      <button onClick={function (ev) { ev.stopPropagation(); openForm(r.id) }} aria-label="Edit" title="Edit"
+                        className="w-8 h-8 rounded-lg text-slate-400 flex items-center justify-center hover:bg-violet-50 hover:text-violet-700 transition-colors">
+                        <Icon name="edit" size={15} />
+                      </button>
+                      <button onClick={function (ev) { ev.stopPropagation(); setConfirmDeleteId(r.id) }} aria-label="Delete" title="Delete"
+                        className="w-8 h-8 rounded-lg text-slate-400 flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors">
+                        <Icon name="trash" size={15} />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
