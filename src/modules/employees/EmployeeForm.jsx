@@ -418,8 +418,18 @@ function EmployeeForm({ employee, profile, jobDepartments, managers, canSeeSalar
     setSaving(false)
 
     if (fileErrors.length > 0) {
-      setError('Employee saved, but: ' + fileErrors.join(' · ') + ' — you can retry from the edit screen.')
-      // Don't close so user sees the error; still call onSaved to refresh list
+      var fileMsg = 'Employee saved, but: ' + fileErrors.join(' · ') + ' — you can retry from the edit screen.'
+      if (!isEdit) {
+        // A new employee is already created at this point. Staying open in
+        // create mode meant Save again inserted a second employee, so close
+        // and say what to redo from the edit screen.
+        alert(fileMsg)
+        if (onSaved) onSaved()
+        if (onClose) onClose()
+        return
+      }
+      setError(fileMsg)
+      // Editing: stay open so the error is seen (saving again only updates); still refresh the list
       if (onSaved) onSaved()
       return
     }

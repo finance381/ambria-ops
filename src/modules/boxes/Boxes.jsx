@@ -295,7 +295,15 @@ function Boxes({ profile }) {
 
   // ── DELETE BOX ──
 
+  var deleteBoxOnceRef = useRef(false)
+  // One run at a time, confirm dialog included: the lock is taken before
+  // the confirm, so a double tap can't start a second run.
   async function deleteBox(box) {
+    if (deleteBoxOnceRef.current) return
+    deleteBoxOnceRef.current = true
+    try { await deleteBoxInner(box) } finally { deleteBoxOnceRef.current = false }
+  }
+  async function deleteBoxInner(box) {
     if (!(await appConfirm('Delete box ' + box.code + '? All contents will be removed.'))) return
     setSaving(true)
     var { error } = await supabase.from('boxes').delete().eq('id', box.id)

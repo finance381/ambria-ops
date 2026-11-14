@@ -481,7 +481,7 @@ function Events({ profile }) {
           var showLocation = group.location && !group.venues.some(function (v) { return v.toLowerCase().indexOf(group.location.toLowerCase()) !== -1 || group.location.toLowerCase().indexOf(v.toLowerCase()) !== -1 })
           elements.push(
             <div key={group.id}
-              onClick={function () { setSelectedGroup(group); setShowGroupLedger(false) }}
+              onClick={function () { setSelectedGroup(group) }}
               className="group bg-white border border-slate-200 rounded-2xl p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-indigo-300 hover:shadow-[0_6px_18px_rgba(15,23,42,0.07)] cursor-pointer transition-all">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">

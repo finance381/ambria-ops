@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useDeferredValue, memo } from
 import { pushBack } from '../../lib/backNav'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
+import { fetchAllRows } from '../../lib/fetchAll'
 import { logActivity } from '../../lib/logger'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
 import PayVendorModal from './PayVendorModal'
@@ -860,15 +861,18 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
     // place and built it again — which is the flicker on every press of the
     // deleted-entries checkbox. They stay up, dimmed, until the new set
     // arrives to replace them.
-    var q = supabase.from('ledger_entries')
-      .select('*')
-      .eq('ledger_type', 'vendor')
-      .eq('party_id', v.vendor_id)
-      .order('entry_date', { ascending: true })
-      .order('id', { ascending: true })
-      .limit(1000)
-    if (!withDeleted) q = q.is('deleted_at', null)
-    var { data, error } = await q
+    // every page, not the first 1000 -- past that the newest entries (and the
+    // running balance) were cut off without a word
+    var { data, error } = await fetchAllRows(function () {
+      var q = supabase.from('ledger_entries')
+        .select('*')
+        .eq('ledger_type', 'vendor')
+        .eq('party_id', v.vendor_id)
+        .order('entry_date', { ascending: true })
+        .order('id', { ascending: true })
+      if (!withDeleted) q = q.is('deleted_at', null)
+      return q
+    })
     if (entriesReqRef.current !== ticket) return
     if (error) { setEntries([]); setEntriesLoading(false); return }
 

@@ -927,7 +927,12 @@ function InventoryForm({ item, prefill, profile, onClose, onSaved, variant }) {
       var logAction = isEdit ? 'ITEM_UPDATE' : 'ITEM_SUBMIT'
       var logDetail = effectiveName + ' | Cat: ' + (categories.find(function (c) { return String(c.id) === categoryId })?.name || '—') + ' | Qty: ' + (Number(qty) || 0)
       try { await logActivity(logAction, logDetail) } catch (_) {}
-      onSaved(targetItem, tableName)
+      // Wait for the parent too when it does its own write before closing
+      // this form (receiving a new item from Item Receipts / a purchase
+      // order): Save stays disabled meanwhile, so a second click can't add
+      // the same stock again.
+      var afterSave = onSaved(targetItem, tableName)
+      if (afterSave && typeof afterSave.then === 'function') { try { await afterSave } catch (_) {} }
     } catch (err) { setErrors(function (prev) { return { ...prev, submit: err.message || 'Failed to save' } }) }
     setSaving(false)
   }

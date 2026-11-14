@@ -1861,6 +1861,13 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
         </button>
       </div>
 
+      {cameraOpen && (
+        <CameraCapture
+          onCapture={function (f) { f._preview = URL.createObjectURL(f); setExpReceipt(f); setCameraOpen(false) }}
+          onClose={function () { setCameraOpen(false) }}
+        />
+      )}
+
       {expReceiptZoom && createPortal((
         <div onClick={function () { setExpReceiptZoom('') }}
           className="fixed inset-0 z-[9998] bg-black/90 flex items-center justify-center p-4" style={{ margin: 0 }}>
@@ -1908,7 +1915,9 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
 
   // Fetch stock qty for existing items when admin can approve
   useEffect(function () {
-    var canAdmin = isAdmin && req.status === 'pending'
+    // same people as canAdminApprove -- an auditor or admin-approver saw
+    // "0 in stock" for everything and could only send it all to PO
+    var canAdmin = (isAdmin || isAuditor || isReqAdminApprover) && req.status === 'pending'
     if (!canAdmin) return
     var existingItems = items.filter(function (li) { return li.item_id && li._source !== 'new' })
     if (existingItems.length === 0) return
@@ -1964,15 +1973,24 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
     if (li.estimated_cost_paise) totalPaise += li.estimated_cost_paise
   })
 
+  var approveOnceRef = useRef(false)
+  // One run at a time (a double tap used to run the whole approve twice) --
+  // the status checks inside stop a second approver / another tab.
   async function approve() {
+    if (approveOnceRef.current) return
+    approveOnceRef.current = true
+    try { await approveInner() } finally { approveOnceRef.current = false }
+  }
+  async function approveInner() {
     setSaving(true)
 
     // Dept approve — just forward to admin, no fulfillment logic
     if (canDeptApprove) {
-      var { error } = await supabase.from('requisitions').update({
+      var { data: deptRows, error } = await supabase.from('requisitions').update({
         status: 'pending', dept_approved_by: profile.id, dept_approved_at: new Date().toISOString()
-      }).eq('id', req.id)
+      }).eq('id', req.id).eq('status', 'pending_dept').select('id')
       if (error) { alert('Approve failed: ' + error.message); setSaving(false); return }
+      if (!deptRows || deptRows.length === 0) { alert('Not approved — this requisition was already approved or changed by someone else. The screen will refresh.'); setSaving(false); onUpdated(); return }
       try { await logActivity('REQUISITION_APPROVE', (req.purpose || 'Req #' + req.id) + ' | dept') } catch (_) {}
       setSaving(false)
       onUpdated()
@@ -1980,10 +1998,13 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
     }
 
     // Admin approve + fulfill
-    var { error: reqErr } = await supabase.from('requisitions').update({
+    // Only from 'pending': a second approver (or another tab) changes no row
+    // and stops here, before issuing the same items from stock again.
+    var { data: apprRows, error: reqErr } = await supabase.from('requisitions').update({
       status: 'approved', reviewed_by: profile.id, reviewed_at: new Date().toISOString()
-    }).eq('id', req.id)
+    }).eq('id', req.id).eq('status', 'pending').select('id')
     if (reqErr) { alert('Approve failed: ' + reqErr.message); setSaving(false); return }
+    if (!apprRows || apprRows.length === 0) { alert('Not approved — this requisition was already approved or changed by someone else. The screen will refresh.'); setSaving(false); onUpdated(); return }
 
     var stockCount = 0
     var poCount = 0
@@ -2044,7 +2065,15 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
     onUpdated()
   }
 
+  var cancelReqOnceRef = useRef(false)
+  // One run at a time, confirm dialog included: the lock is taken before
+  // the confirm, so a double tap can't start a second run.
   async function cancelReq() {
+    if (cancelReqOnceRef.current) return
+    cancelReqOnceRef.current = true
+    try { await cancelReqInner() } finally { cancelReqOnceRef.current = false }
+  }
+  async function cancelReqInner() {
     if (!(await appConfirm('Cancel this requisition? Items will be removed from the procurement queue.'))) return
     setSaving(true)
     var { error: reqErr } = await supabase.from('requisitions').update({ status: 'cancelled' }).eq('id', req.id)
@@ -2331,13 +2360,16 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
                         p_req_item_id: li.id,
                         p_user_id: profile.id,
                       })
-                      setSaving(false)
                       if (rpcErr || (result && !result.ok)) {
+                        setSaving(false)
                         alert('Failed: ' + (rpcErr?.message || result?.error || 'Unknown error'))
                         return
                       }
+                      // stays disabled through the activity log and the refresh,
+                      // so a second tap can't acknowledge the same item twice
                       try { await logActivity('REQUISITION_ACKNOWLEDGE', titleCase(li.item_name) + ' | ' + (req.purpose || 'Req #' + req.id)) } catch (_) {}
                       onUpdated()
+                      setSaving(false)
                     }}
                       className="w-full py-2 text-[11px] font-bold text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 disabled:opacity-50 transition-colors">
                       {saving ? 'Confirming...' : '✓ Confirm Received'}
@@ -2519,13 +2551,6 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
           <img src={zoomImg} alt="Receipt" className="max-w-full max-h-full object-contain rounded-lg" />
         </div>
       ), document.body)}
-
-      {cameraOpen && (
-        <CameraCapture
-          onCapture={function (f) { f._preview = URL.createObjectURL(f); setExpReceipt(f); setCameraOpen(false) }}
-          onClose={function () { setCameraOpen(false) }}
-        />
-      )}
     </div>
   )
 }

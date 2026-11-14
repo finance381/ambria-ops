@@ -28,7 +28,7 @@ function ImageLightbox({ url, alt, onClose }) {
   if (!url) return null
 
   return createPortal(
-    <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center p-4"
       onClick={goBack}>
       {/* stopPropagation — without it this click also bubbles to the
           backdrop's own onClick={goBack} below, firing goBack() twice and

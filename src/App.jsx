@@ -36,14 +36,13 @@ if (typeof window !== 'undefined' && !window.__ambriaNumberWheelGuardAdded) {
 }
 
 function App() {
+  var { user, profile, loading, signIn, signOut } = useAuth()
   var params = new URLSearchParams(window.location.search)
   if (params.get('form') === 'employee') {
     // Legacy URL — form now lives outside PWA scope. Delete this block in v78.
     window.location.replace('https://finance381.github.io/employee-form/')
     return null
   }
-
-  var { user, profile, loading, signIn, signOut } = useAuth()
 
   if (loading) {
     return (

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate } from '../../lib/format'
 
@@ -11,7 +11,11 @@ function ActivityLogs({ profile }) {
   var [search, setSearch] = useState('')
   var [page, setPage] = useState(1)
   var [totalCount, setTotalCount] = useState(0)
-  var [searchTimer, setSearchTimer] = useState(null)
+  // the search actually applied (400ms after typing stops), so the load
+  // runs once, with page 1, instead of with the old page and again after
+  var [appliedSearch, setAppliedSearch] = useState('')
+  var loadTicketRef = useRef(0)
+  var loadedOnceRef = useRef(false)
   var perPage = 50
 
   useEffect(function () {
@@ -27,20 +31,20 @@ function ActivityLogs({ profile }) {
   useEffect(function () {
     if (Object.keys(userMap).length === 0) return
     loadLogs()
-  }, [page, userFilter, userMap])
+  }, [page, userFilter, userMap, appliedSearch])
 
   // Debounced search — 400ms after typing stops
   useEffect(function () {
-    if (searchTimer) clearTimeout(searchTimer)
     var timer = setTimeout(function () {
+      setAppliedSearch(search)
       setPage(1)
-      loadLogs()
     }, 400)
-    setSearchTimer(timer)
     return function () { clearTimeout(timer) }
   }, [search])
 
   async function loadLogs() {
+    var ticket = ++loadTicketRef.current
+    var term = appliedSearch.trim()
     setLoading(true)
     var from = (page - 1) * perPage
     var to = from + perPage - 1
@@ -48,22 +52,24 @@ function ActivityLogs({ profile }) {
     // Count query
     var countQuery = supabase.from('activity_logs').select('id', { count: 'exact', head: true })
     if (userFilter) countQuery = countQuery.eq('user_id', userFilter)
-    if (search.trim()) countQuery = countQuery.or('details.ilike.%' + search.trim() + '%,action.ilike.%' + search.trim() + '%')
+    if (term) countQuery = countQuery.or('details.ilike.%' + term + '%,action.ilike.%' + term + '%')
 
     // Data query
     var dataQuery = supabase.from('activity_logs').select('*')
       .order('created_at', { ascending: false })
       .range(from, to)
     if (userFilter) dataQuery = dataQuery.eq('user_id', userFilter)
-    if (search.trim()) dataQuery = dataQuery.or('details.ilike.%' + search.trim() + '%,action.ilike.%' + search.trim() + '%')
+    if (term) dataQuery = dataQuery.or('details.ilike.%' + term + '%,action.ilike.%' + term + '%')
 
     var [countRes, dataRes] = await Promise.all([countQuery, dataQuery])
+    if (ticket !== loadTicketRef.current) return // an older search finishing late
 
     setTotalCount(countRes.count || 0)
     var enriched = (dataRes.data || []).map(function (log) {
       return Object.assign({}, log, { profile: userMap[log.user_id] || null })
     })
     setLogs(enriched)
+    loadedOnceRef.current = true
     setLoading(false)
   }
 
@@ -100,7 +106,7 @@ function ActivityLogs({ profile }) {
     UPDATE_BUFFER: 'bg-blue-100 text-blue-700',
   }
 
-  if (loading) {
+  if (loading && !loadedOnceRef.current) {
     return <p className="text-gray-400 text-sm">Loading activity logs...</p>
   }
 

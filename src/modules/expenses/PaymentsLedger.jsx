@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
+import { fetchAllRows } from '../../lib/fetchAll'
 import { formatPoints, formatPointsPlain, formatDate, formatDateTime } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import { scrollToTopOf } from '../../lib/scrollToTop'
@@ -219,7 +220,7 @@ function PaymentsLedger({ profile }) {
     setLoading(true)
 
     var [ledgerRes, collectRes, expWalletRes] = await Promise.all([
-      supabase
+      fetchAllRows(function () { return supabase
         .from('ledger_entries')
         .select('id, ledger_type, party_id, entry_date, created_at, description, debit_paise, ref_id, ref_type, metadata, created_by, checked_by, checked_at, tally_entered_by, tally_entered_at')
         .in('ledger_type', ['vendor', 'user_salary'])
@@ -232,8 +233,8 @@ function PaymentsLedger({ profile }) {
         .gte('entry_date', dateFrom)
         .lte('entry_date', dateTo)
         .order('entry_date', { ascending: false })
-        .limit(1000),
-      supabase
+        .order('id', { ascending: false }) }),
+      fetchAllRows(function () { return supabase
         .from('wallet_transactions')
         .select('id, created_at, amount_paise, description, payment_mode, bank_payment_type, receipt_no, reference_id, performed_by, status, received_image_path, checked_by, checked_at, tally_entered_by, tally_entered_at')
         .eq('reference_type', 'collection')
@@ -242,17 +243,17 @@ function PaymentsLedger({ profile }) {
         .gte('created_at', dateFrom)
         .lte('created_at', dateTo + 'T23:59:59')
         .order('created_at', { ascending: false })
-        .limit(1000),
+        .order('id', { ascending: false }) }),
       // Wallet-funded expense spend (payment_cash_paise) — the real cash outflow happens
       // the moment the expense is submitted, funded from the submitter's own wallet float.
-      supabase
+      fetchAllRows(function () { return supabase
         .from('wallet_transactions')
         .select('id, wallet_id, amount_paise, description, reference_type, reference_id, created_at')
         .in('reference_type', ['expense', 'expense_refund'])
         .gte('created_at', dateFrom)
         .lte('created_at', dateTo + 'T23:59:59')
         .order('created_at', { ascending: false })
-        .limit(1000),
+        .order('id', { ascending: false }) }),
     ])
 
     var ledgerRows = ledgerRes.data || []

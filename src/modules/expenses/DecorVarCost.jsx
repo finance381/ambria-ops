@@ -587,17 +587,28 @@ function DecorVarCost({ profile, inAdmin }) {
       p_amount_paise: entryAmountPaise(sheet, lines, sheetData.rates),
       p_remark: ed.remark ? ed.remark.trim() : null,
     })
-    setEdSaving(false)
-    if (error) { setEdErr(error.message); return }
+    if (error) { setEdSaving(false); setEdErr(error.message); return }
     var savedDate = ed.entry_date
     dirtyRef.current = false
+    // Save stays disabled until the record has reloaded and the screen has
+    // moved on: re-enabling it before (while loadRecord ran) let a second
+    // click on a new sheet create a second sheet with the same entry.
     await loadRecord(data.cost_id)
     setFlash('Saved ' + formatDate(savedDate))
     moveTo('record')
+    setEdSaving(false)
   }
 
   // ═══ record actions ═══════════════════════════════════════════════════
+  var dvcDeleteOnceRef = useRef(false)
+  // One run at a time, confirm dialog included: the lock is taken before
+  // the confirm, so a double tap can't start a second run.
   async function deleteEntry(entry) {
+    if (dvcDeleteOnceRef.current) return
+    dvcDeleteOnceRef.current = true
+    try { await deleteEntryInner(entry) } finally { dvcDeleteOnceRef.current = false }
+  }
+  async function deleteEntryInner(entry) {
     if (!(await appConfirm('Delete the entry for ' + formatDate(entry.entry_date) + '?'))) return
     setBusy('del-' + entry.id); setRecordErr('')
     var { error } = await supabase.rpc('fn_dvc_delete_entry', { p_entry_id: entry.id })
@@ -607,7 +618,14 @@ function DecorVarCost({ profile, inAdmin }) {
     setFlash('Entry deleted')
   }
 
+  // One run at a time, confirm dialog included: the lock is taken before
+  // the confirm, so a double tap can't start a second run.
   async function deleteSheet() {
+    if (dvcDeleteOnceRef.current) return
+    dvcDeleteOnceRef.current = true
+    try { await deleteSheetInner() } finally { dvcDeleteOnceRef.current = false }
+  }
+  async function deleteSheetInner() {
     var msg = cur.status === 'submitted'
       ? 'Delete submitted sheet ' + cur.serial_no + ' and every date on it?\n\nThis cannot be undone. The sheets after it move up a number.'
       : 'Delete draft ' + cur.serial_no + ' and every date saved on it?\n\nThe sheets after it move up a number.'

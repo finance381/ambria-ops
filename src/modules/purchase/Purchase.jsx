@@ -69,7 +69,7 @@ function Purchase({ profile, mode }) {
   var [loading, setLoading] = useState(true)
   var [queueLoading, setQueueLoading] = useState(true)
   var [saving, setSaving] = useState(false)
-  useRealtime(['purchase_orders', 'purchase_order_items'], function () { if (!saving) { loadQueue(); loadPos() } })
+  useRealtime(['purchase_orders', 'purchase_order_items'], function () { if (!saving) { loadQueue(); loadPos(); if (isReceiver || isAdmin) loadReceiving() } })
   // Opening a PO's detail fully replaces the list's own returned JSX with a
   // separate tree, so the list unmounts rather than just being covered —
   // coming back always landed at the top of the list, regardless of where
@@ -224,7 +224,9 @@ function Purchase({ profile, mode }) {
     var q1 = supabase
       .from('purchase_order_items')
       .select('id, po_id, item_id, item_name, category_id, _source, qty_ordered, actual_qty, unit, vendor_name, vendor_rate_paise, actual_cost_paise, status, purchased_by, purchased_at, received_by, received_at, expense_id, categories(name)')
-      .order('purchased_at', { ascending: true })
+      // the 'purchased' queue is oldest first (what to receive next); any
+      // other view is newest first, so the 200 cap drops old rows, not new ones
+      .order('purchased_at', { ascending: effStatus === 'purchased' })
       .limit(200)
     if (effStatus) q1 = q1.eq('status', effStatus)
     var { data, error } = await q1
@@ -272,13 +274,19 @@ function Purchase({ profile, mode }) {
     var qtyReceived = Number(receiveQty)
     if (!qtyReceived || qtyReceived <= 0) { alert('Enter valid qty'); return }
     setSaving(true)
-    var { error } = await supabase.from('purchase_order_items').update({
+    var { data: recvRows, error } = await supabase.from('purchase_order_items').update({
       actual_qty: qtyReceived,
       received_by: profile.id,
       received_at: new Date().toISOString(),
       status: 'received',
-    }).eq('id', poItem.id)
+    }).eq('id', poItem.id).eq('status', 'purchased').select('id')
+    // only a still-purchased item flips: a second receive (double tap, another
+    // receiver) changes no row, so the stock trigger doesn't add the qty twice
     if (error) { alert('Failed: ' + error.message); setSaving(false); return }
+    if (!recvRows || recvRows.length === 0) {
+      alert('Not received — this item was already received by someone else. The list will refresh.')
+      setReceivingItem(null); setReceiveQty(''); await loadReceiving(); setSaving(false); return
+    }
     try { await logActivity('PO_ITEM_RECEIVED', titleCase(poItem.item_name) + ' | qty: ' + qtyReceived + ' | existing ' + poItem._source) } catch (_) {}
     setReceivingItem(null)
     setReceiveQty('')
@@ -286,18 +294,33 @@ function Purchase({ profile, mode }) {
     setSaving(false)
   }
 
+  // Opening "Receive as new" on a row someone already received would create a
+  // second stock item, so the status is checked again first.
+  async function openNewReceive(it) {
+    if (!it) { setShowInvForm(null); return }
+    var { data: cur } = await supabase.from('purchase_order_items').select('status').eq('id', it.id).maybeSingle()
+    if (cur && cur.status !== 'purchased') {
+      alert('This item was already received by someone else. The list will refresh.')
+      await loadReceiving(); return
+    }
+    setShowInvForm(it)
+  }
+
   // ─── RECEIVE NEW ITEM — callback after InventoryForm saves ───
   async function receiveNewDone(savedItem, tableName) {
     if (!showInvForm || !savedItem?.id) { setShowInvForm(null); return }
     var poItem = showInvForm
     var linkCol = tableName === 'catering_store_items' ? 'cs_item_id' : 'inventory_item_id'
-    var { error } = await supabase.from('purchase_order_items').update({
+    var { data: linkRows, error } = await supabase.from('purchase_order_items').update({
       [linkCol]: savedItem.id,
       received_by: profile.id,
       received_at: new Date().toISOString(),
       status: 'received',
-    }).eq('id', poItem.id)
-    if (error) {
+    }).eq('id', poItem.id).eq('status', 'purchased').select('id')
+    if (!error && (!linkRows || linkRows.length === 0)) {
+      // someone else received this PO item while the form was open
+      alert('This PO item was already received by someone else, so the item you just created (' + tableName + ' #' + savedItem.id + ') is a duplicate. Ask an admin to delete it.')
+    } else if (error) {
       // InventoryForm already created savedItem (with its own stock) before this ran --
       // a generic alert here used to look recoverable, inviting a retry of "receive as
       // new item" for the same PO item, which would create a genuine second stock item.
@@ -427,7 +450,15 @@ function Purchase({ profile, mode }) {
   }
 
   // ─── CANCEL PO (admin only — handles purchased item returns) ───
+  var cancelPoOnceRef = useRef(false)
+  // One run at a time, confirm dialog included: the lock is taken before
+  // the confirm, so a double tap can't start a second run.
   async function cancelPo(poId) {
+    if (cancelPoOnceRef.current) return
+    cancelPoOnceRef.current = true
+    try { await cancelPoInner(poId) } finally { cancelPoOnceRef.current = false }
+  }
+  async function cancelPoInner(poId) {
     if (saving) return
     var hasReceived = activePoItems.some(function (it) { return it.status === 'received' })
     if (hasReceived) { alert('Cannot cancel — some items already received into inventory. Close PO instead.'); return }
@@ -485,10 +516,12 @@ function Purchase({ profile, mode }) {
     if (!item || item.status !== 'pending_return') return
     if (!(await appConfirm('Confirm this item has been returned? Wallet will be credited ' + formatPaise(item.actual_cost_paise) + '.'))) return
     setSaving(true)
-    // Update item status
-    var { data: statusRows, error } = await supabase.from('purchase_order_items').update({ status: 'returned' }).eq('id', poItemId).select('id')
+    // Update item status -- only from pending_return, so this flips once: a
+    // second run (double tap on Confirm, another tab) updates no row and stops
+    // here, before the wallet credit and the reversal expense below.
+    var { data: statusRows, error } = await supabase.from('purchase_order_items').update({ status: 'returned' }).eq('id', poItemId).eq('status', 'pending_return').select('id')
     if (error) { alert('Failed: ' + error.message); setSaving(false); return }
-    if (!statusRows || statusRows.length === 0) { alert('Return blocked — no row updated. You may not be permitted to confirm this return.'); setSaving(false); return }
+    if (!statusRows || statusRows.length === 0) { alert('Return not confirmed — it is already confirmed, or you are not permitted to confirm it.'); setSaving(false); return }
     // Credit purchaser wallet
     var returnWarnings = []
     if (item.actual_cost_paise > 0 && item.purchased_by) {
@@ -765,7 +798,7 @@ function Purchase({ profile, mode }) {
         receivingItem={receivingItem} setReceivingItem={setReceivingItem}
         receiveQty={receiveQty} setReceiveQty={setReceiveQty}
         saving={saving} showInvForm={showInvForm} setShowInvForm={setShowInvForm}
-        onReceiveExisting={receiveExistingItem} onReceiveNewDone={receiveNewDone}
+        onReceiveExisting={receiveExistingItem} onReceiveNewDone={receiveNewDone} onOpenNew={openNewReceive}
         profile={profile} title="Receive Items"
       />
     )
@@ -1230,7 +1263,7 @@ function Purchase({ profile, mode }) {
           receivingItem={receivingItem} setReceivingItem={setReceivingItem}
           receiveQty={receiveQty} setReceiveQty={setReceiveQty}
           saving={saving} showInvForm={showInvForm} setShowInvForm={setShowInvForm}
-          onReceiveExisting={receiveExistingItem} onReceiveNewDone={receiveNewDone}
+          onReceiveExisting={receiveExistingItem} onReceiveNewDone={receiveNewDone} onOpenNew={openNewReceive}
           profile={profile}
         />
       )}
@@ -1241,7 +1274,7 @@ function Purchase({ profile, mode }) {
 // ═══════════════════════════════════════════════════════════════
 // RECEIVING CONTENT — shared by receiver view + admin tab
 // ═══════════════════════════════════════════════════════════════
-function ReceivingContent({ items, loading, receivingItem, setReceivingItem, receiveQty, setReceiveQty, saving, showInvForm, setShowInvForm, onReceiveExisting, onReceiveNewDone, profile, title }) {
+function ReceivingContent({ items, loading, receivingItem, setReceivingItem, receiveQty, setReceiveQty, saving, showInvForm, setShowInvForm, onReceiveExisting, onReceiveNewDone, onOpenNew, profile, title }) {
   if (showInvForm) {
     return (
       <div className="space-y-3">
@@ -1263,7 +1296,7 @@ function ReceivingContent({ items, loading, receivingItem, setReceivingItem, rec
           }}
           profile={profile}
           onClose={function () { setShowInvForm(null) }}
-          onSaved={function (savedItem, tableName) { onReceiveNewDone(savedItem, tableName) }}
+          onSaved={function (savedItem, tableName) { return onReceiveNewDone(savedItem, tableName) }}
         />
       </div>
     )
@@ -1336,7 +1369,7 @@ function ReceivingContent({ items, loading, receivingItem, setReceivingItem, rec
               </div>
             )}
             {it._source === 'new' && it.status === 'purchased' && (
-              <button onClick={function () { setShowInvForm(it) }}
+              <button onClick={function () { if (onOpenNew) onOpenNew(it); else setShowInvForm(it) }}
                 className="w-full py-2 text-sm font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
                 📋 Receive & Add to Inventory
               </button>

@@ -377,7 +377,8 @@ function Vendors({ profile }) {
       return na !== nb
     }
     function arrayDiffer(a, b) {
-      var sa = (a || []).slice().sort(); var sb = (b || []).slice().sort()
+      // bigint[] comes back as strings, the CSV gives numbers -- compare as text
+      var sa = (a || []).map(String).sort(); var sb = (b || []).map(String).sort()
       if (sa.length !== sb.length) return true
       for (var i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) return true
       return false

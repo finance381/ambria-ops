@@ -182,7 +182,11 @@ function PublicEmployeeForm() {
       </div>
     )
   }
+  return <PublicEmployeeFormBody />
+}
 
+// the form itself, so its hooks never sit after the "open in browser" return
+function PublicEmployeeFormBody() {
   var [saving, setSaving] = useState(false)
   var [done, setDone] = useState(null)
   var [error, setError] = useState('')

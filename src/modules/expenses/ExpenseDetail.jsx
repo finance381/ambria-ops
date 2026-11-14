@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatPoints } from '../../lib/format'
@@ -52,6 +52,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
   var [deductionTypes, setDeductionTypes] = useState([])
   var [showTypeSuggestions, setShowTypeSuggestions] = useState(false)
   var [deleteMode, setDeleteMode] = useState(false)
+  var deleteLockRef = useRef(false)
   var [deleteReason, setDeleteReason] = useState('')
   var [allocations, setAllocations] = useState([])
   var [allocVenues, setAllocVenues] = useState({})
@@ -384,9 +385,12 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
       status: 'acknowledged',
       acknowledged_by: profile.id,
       acknowledged_at: new Date().toISOString(),
-    }).eq('id', exp.id).select('id')
+    }).eq('id', exp.id).eq('status', exp.status).is('deleted_at', null).select('id')
+    // the status check makes the wallet step below match what is really in the
+    // DB: a second Accept (another reviewer, another tab) changes no row and
+    // stops here instead of re-debiting the wallet again
     if (error) { alert('Acknowledge failed: ' + error.message); setSaving(false); return }
-    if (!rows || rows.length === 0) { alert('Acknowledge blocked — no row updated. You may not be permitted to acknowledge this expense right now.'); setSaving(false); return }
+    if (!rows || rows.length === 0) { alert('This expense was already changed (by someone else, or in another tab) — nothing was done. The screen will refresh.'); setSaving(false); onUpdated(); return }
     // If acknowledging a flagged expense, re-debit wallet (was refunded on flag) --
     // only the amount that was actually refunded, not the full gross amount, so a
     // credit-split expense doesn't get double what was ever really debited.
@@ -417,9 +421,11 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
       flag_reason: rejectReason.trim(),
       reviewed_by: profile.id,
       reviewed_at: new Date().toISOString(),
-    }).eq('id', exp.id).select('id')
+    }).eq('id', exp.id).eq('status', exp.status).is('deleted_at', null).select('id')
+    // a second Send back (or one after the expense was deleted) changes no row
+    // and stops here, before the wallet is refunded a second time
     if (error) { alert('Flag failed: ' + error.message); setSaving(false); return }
-    if (!rows || rows.length === 0) { alert('Flag blocked — no row updated. You may not be permitted to flag this expense right now.'); setSaving(false); return }
+    if (!rows || rows.length === 0) { alert('This expense was already changed (by someone else, or in another tab) — nothing was done. The screen will refresh.'); setSaving(false); onUpdated(); return }
     if (exp.status === 'recorded') {
       // walletExposure(exp), not the full amount_paise -- for a credit-split
       // expense only the cash portion was ever actually debited.
@@ -452,9 +458,33 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
       penalty_paise: deductionPaise,
       penalized_by: profile.id,
       penalized_at: new Date().toISOString(),
-    }).eq('id', exp.id).select('id')
+    }).eq('id', exp.id).eq('status', exp.status).is('deleted_at', null).select('id')
     if (error) { alert('Deduction failed: ' + error.message); setSaving(false); return }
-    if (!rows || rows.length === 0) { alert('Deduction blocked — no row updated. You may not be permitted to deduct this expense right now.'); setSaving(false); return }
+    if (!rows || rows.length === 0) { alert('This expense was already changed (by someone else, or in another tab) — nothing was done. The screen will refresh.'); setSaving(false); onUpdated(); return }
+    if (exp.status === 'flagged') {
+      // Send back already gave the whole amount back, so crediting the
+      // deduction again paid it twice. Here only the allowed part (amount
+      // minus deduction) is taken out again, which ends at the same balance
+      // as deducting a recorded expense.
+      var keepPaise = walletExposure(exp) - deductionPaise
+      if (keepPaise > 0) {
+        var { error: dErr } = await supabase.rpc('wallet_admin_debit', {
+          p_user_id: exp.user_id,
+          p_amount_paise: keepPaise,
+          p_description: 'Accepted with deduction: expense #' + exp.id + ' — ' + rejectReason.trim(),
+          p_ref_type: 'expense',
+          p_ref_id: String(exp.id),
+        })
+        if (dErr) {
+          alert('Deduction recorded, but the wallet debit failed: ' + dErr.message + ' — balance may be out of sync. Flag for admin correction.')
+          setSaving(false); onUpdated(); return
+        }
+      }
+      try { await logActivity('EXPENSE_DEDUCT', (exp.description || 'Expense') + ' | Deduction ' + formatPoints(deductionPaise) + ' | ' + rejectReason.trim()) } catch (_) {}
+      setSaving(false)
+      onUpdated()
+      return
+    }
     // Used to also post a salary ledger debit via trg_expense_deduction_to_
     // salary_ledger (dropped in migration 00123) — the deduction now only
     // ever moves money in the wallet, the same way a full "flag" already
@@ -487,9 +517,11 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
       flag_reason: null,
       reviewed_by: null,
       reviewed_at: null,
-    }).eq('id', exp.id).select('id')
+    }).eq('id', exp.id).eq('status', 'flagged').select('id')
+    // only a flagged expense flips, so a second resubmit (double tap, another
+    // tab) changes no row and stops here, before the wallet is debited again
     if (error) { alert('Resubmit failed: ' + error.message); setSaving(false); return }
-    if (!rows || rows.length === 0) { alert('Resubmit blocked — no row updated. You may not be permitted to resubmit this expense right now.'); setSaving(false); return }
+    if (!rows || rows.length === 0) { alert('Resubmit not done — it is already resubmitted, or you are not permitted to resubmit it right now.'); setSaving(false); onUpdated(); return }
     // walletExposure(exp), not the full amount_paise -- same reasoning as flag()/acknowledge().
     var { error: wErr } = await supabase.rpc('wallet_self_debit', {
       p_amount_paise: walletExposure(exp),
@@ -502,12 +534,18 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
       setSaving(false); onUpdated(); return
     }
     try { await logActivity('EXPENSE_RESUBMIT', (exp.description || 'Expense') + ' | ' + formatPoints(walletExposure(exp))) } catch (_) {}
-    setSaving(false)
     onUpdated()
+    setSaving(false)
   }
 
   async function deleteExp() {
-    if (saving) return
+    // A ref, not the `saving` state: several fast clicks all run before React
+    // re-renders with saving=true, so the state check let each of them
+    // through and the 2nd/3rd call failed with "already_deleted". The ref
+    // flips on the first click itself. It stays set after a successful
+    // delete too, so the button can't fire again while the screen closes.
+    if (deleteLockRef.current) return
+    deleteLockRef.current = true
     setSaving(true)
     // One atomic server-side call — it does the soft-delete and the refund
     // (only when a debit actually exists to refund against) together, rather
@@ -515,9 +553,12 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
     var { error } = await supabase.rpc('fn_delete_expense_and_refund', {
       p_expense_id: exp.id, p_delete_reason: deleteReason.trim() || null,
     })
-    if (error) { alert('Delete failed: ' + error.message); setSaving(false); return }
+    // Already deleted (an earlier click got there first, or another tab) is
+    // the outcome that was asked for, not a failure.
+    var alreadyGone = error && /already_deleted/.test(error.message || '')
+    if (error && !alreadyGone) { alert('Delete failed: ' + error.message); deleteLockRef.current = false; setSaving(false); return }
+    if (alreadyGone) { onUpdated(); return }
     try { await logActivity('EXPENSE_DELETE', (exp.description || 'Expense') + (deleteReason.trim() ? ' | ' + deleteReason.trim() : '')) } catch (_) {}
-    setSaving(false)
     onUpdated()
   }
 

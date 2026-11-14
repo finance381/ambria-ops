@@ -1973,6 +1973,11 @@ function RateCardEditor({ profile }) {
   if (!canEdit) return (
     <div style={{ padding: 40, textAlign: 'center', color: C.muted, fontSize: 14 }}>Rate card edit access required</div>
   )
+  return <RateCardEditorBody />
+}
+
+// the editor itself, so its hooks never sit after the access check's return
+function RateCardEditorBody() {
   var [tab, setTab] = useState('venues')
   var [config, setConfig] = useState({})
   var [loading, setLoading] = useState(true)

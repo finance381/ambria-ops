@@ -122,7 +122,9 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
   }
 
   function selectDate(dateStr) {
-    if (value === dateStr) { onChange(''); if (collapsible) setOpen(false); return }
+    // tapping the picked day again used to clear it (a required date got
+    // emptied by accident) -- the Clear button is the way to empty it
+    if (value === dateStr) { if (collapsible) setOpen(false); return }
     onChange(dateStr)
     if (collapsible) setOpen(false)
   }
@@ -292,7 +294,7 @@ function EventDatePicker({ value, onChange, label, collapsible, includePast, tri
                 Clear
               </button>
             )}
-            <button type="button" onClick={function () { selectDate(todayStr) }} disabled={value === todayStr}
+            <button type="button" onClick={function () { selectDate(todayStr) }} disabled={value === todayStr || !!(minDate && todayStr < minDate) || !!(maxDate && todayStr > maxDate)}
               className="h-8 px-3 rounded-lg border border-slate-200 text-[12.5px] font-bold text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 transition-colors">
               Today
             </button>

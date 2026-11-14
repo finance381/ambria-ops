@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
@@ -95,9 +95,19 @@ function ProjectLedger({ profile, project, onBack }) {
   var [reverseTarget, setReverseTarget] = useState(null)
   var [reversingEntry, setReversingEntry] = useState(false)
 
+  // entries reversed in this session, shown as reversed straight away rather
+  // than after load() finishes -- until then the row still offered Reverse,
+  // and a second reverse inserted a second reversal (nothing in the table
+  // stops two rows with the same reversal_of)
+  var [justReversed, setJustReversed] = useState({})
+  var reverseOnceRef = useRef(false)
   async function reverseEntry() {
     var e = reverseTarget
-    if (!e || reversingEntry) return
+    if (!e || reversingEntry || reverseOnceRef.current) return
+    if (justReversed[e.id] || entries.some(function (o) { return o.reversal_of === e.id })) {
+      setReverseTarget(null); alert('This entry is already reversed.'); return
+    }
+    reverseOnceRef.current = true
     setReversingEntry(true)
     var { error: insErr } = await supabase.from('project_ledger').insert({
       project_id: project.id,
@@ -110,7 +120,9 @@ function ProjectLedger({ profile, project, onBack }) {
       reversal_of: e.id,
     })
     setReversingEntry(false)
+    reverseOnceRef.current = false
     if (insErr) { alert('Reverse failed: ' + insErr.message); return }
+    setJustReversed(function (m) { var n = Object.assign({}, m); n[e.id] = true; return n })
     setReverseTarget(null)
     try { await logActivity('PROJECT_LEDGER_REVERSE', project.name + ' | entry #' + e.id) } catch (_) {}
     load()
@@ -188,7 +200,7 @@ function ProjectLedger({ profile, project, onBack }) {
               </thead>
               <tbody>
                 {entries.map(function (e) {
-                  var isReversed = entries.some(function (o) { return o.reversal_of === e.id })
+                  var isReversed = !!justReversed[e.id] || entries.some(function (o) { return o.reversal_of === e.id })
                   var canReverse = canWrite && e.entry_type !== 'reversal' && !isReversed
                   return (
                     <tr key={e.id} className={"border-b border-gray-100 last:border-b-0 " + (isReversed ? "opacity-50" : "")}>

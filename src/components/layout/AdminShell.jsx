@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import PageWave from '../ui/PageWave'
 import Logo from '../ui/Logo'
 import Icon from '../ui/Icon'
+import { useLang } from '../../lib/i18n.jsx'
 import NotificationBell from '../ui/NotificationBell'
 import { useBackButtonClose } from '../../lib/useBackButtonClose'
 // Inventory's photograph: warm light through leaves across a pale wall,
@@ -405,6 +406,9 @@ var ADMIN_NAV_KEY = 'ambria.admin.nav'
 function AdminShell({ profile, onSignOut, initialNotifLink }) {
   var permsNew = profile.permsNew || []
   var visibleTabs = ADMIN_TABS.filter(function (t) { return tabAllowed(t, permsNew) })
+  // Hindi picked on the phone carries over here, and the desktop has no
+  // language toggle -- this is the way back to English.
+  var { lang, switchLang } = useLang()
 
   // TabbedSection only re-syncs its own `sub` state from activeSubTab when
   // that prop is truthy (see its useEffect) — passing null there is a no-op,
@@ -649,6 +653,13 @@ function AdminShell({ profile, onSignOut, initialNotifLink }) {
             <span className="block text-[10.5px] text-slate-400 truncate">{roleLabelOf(profile.role)}</span>
           </span>
         </div>
+        {lang !== 'en' && (
+          <button onClick={function () { switchLang('en') }} data-notranslate
+            className="w-full flex items-center gap-3 px-3 h-[34px] rounded-xl text-[12.5px] font-medium text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
+            <span className="shrink-0"><Icon name="globe" size={16} /></span>
+            Switch to English
+          </button>
+        )}
         <button onClick={onSignOut}
           className="w-full flex items-center gap-3 px-3 h-[34px] rounded-xl text-[12.5px] font-medium text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
           <span className="shrink-0"><Icon name="logout" size={16} /></span>
@@ -857,7 +868,14 @@ function AdminShell({ profile, onSignOut, initialNotifLink }) {
         {ActiveModule && (
           <Suspense fallback={<div className="text-center py-8 text-sm text-gray-400">Loading...</div>}>
             <ActiveModule profile={profile}
-              onNavigate={function (tab, sub, deepLink) { setActive(tab); setSubTab(sub || null); setDeepLinkExpense(deepLink || null) }}
+              onNavigate={function (tab, sub, deepLink) {
+                // A card or link can point at a section this user can't open --
+                // that used to land on a bare "<section> — coming soon" page.
+                if (!visibleTabs.some(function (t) { return t.key === tab })) { alert("You don't have access to that section."); return }
+                var subCfg = SUB_TAB_CONFIG[tab]
+                if (sub && subCfg && !subCfg.some(function (c) { return c.key === sub && subTabAllowed(c, permsNew) })) sub = defaultSubTabKey(tab)
+                setActive(tab); setSubTab(sub || null); setDeepLinkExpense(deepLink || null)
+              }}
               activeSubTab={subTab} inAdmin
               deepLinkExpense={deepLinkExpense}
               onDeepLinkHandled={function () { setDeepLinkExpense(null) }}

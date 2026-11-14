@@ -70,6 +70,7 @@ export function useAuth() {
   }
 
   async function signOut() {
+    try { sessionStorage.removeItem('ambria_nav'); sessionStorage.removeItem('ambria.admin.nav') } catch (_) {}
     await supabase.auth.signOut()
   }
 

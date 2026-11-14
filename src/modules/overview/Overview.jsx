@@ -30,12 +30,12 @@
 
   // Navigation map: which admin tab + sub-tab to open
   var NAV_MAP = {
-    inventory: { tab: 'inventory', sub: 'pending' },
+    inventory: { tab: 'reviews' },
     requisitions: { tab: 'procurement', sub: 'requisitions' },
-    expenses: { tab: 'expenses' },
+    expenses: { tab: 'expenses', sub: 'expenses' },
     po_draft: { tab: 'procurement', sub: 'purchase' },
     po_unassigned: { tab: 'procurement', sub: 'purchase' },
-    receiving: { tab: 'procurement', sub: 'purchase' },
+    receiving: { tab: 'inventory', sub: 'receive' },
     vendors: { tab: 'procurement', sub: 'vendors' },
     events: { tab: 'events' },
     challans_active: { tab: 'inventory', sub: 'challans' },

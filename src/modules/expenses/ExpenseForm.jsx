@@ -2119,6 +2119,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           : (editExp.amount_paise || 0)
         var walletDiff = newWalletSpend - oldWalletSpend
         var walletDiffFailed = false
+        // A flagged expense was already refunded in full on Send back, and
+        // Resubmit debits the new amount -- a diff here was charged on top.
+        if (editExp.status === 'flagged') walletDiff = 0
         if (walletDiff !== 0) {
           var wRpc = walletDiff > 0 ? 'wallet_self_debit' : 'wallet_self_credit'
           var wAmt = Math.abs(walletDiff)
@@ -2157,6 +2160,9 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     var failed = 0
     var failedMsgs = []
     var entryWarnings = []
+    // entries whose expense row now exists (fully submitted, or recorded and
+    // then failed part-way) -- they must not go in again on a retry
+    var recordedIdx = []
     var batchId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null
 
     for (var i = 0; i < entries.length; i++) {
@@ -2403,6 +2409,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
 
           try { await logActivity('EXPENSE_SUBMIT', (paise / 100) + ' pts | ' + e.description.trim().slice(0, 50)) } catch (_) {}
           submitted++
+          recordedIdx.push(i)
         } catch (err) {
           console.error('EXPENSE_SUBMIT_FAIL entry', i, err)
           var msg = (err && err.message) ? err.message : String(err)
@@ -2417,6 +2424,7 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           // (0 rows affected, no error) rather than actually removing it. So don't bother
           // attempting it — just say plainly that the row needs manual admin correction.
           if (exp && exp.id) {
+            recordedIdx.push(i)
             try { await supabase.from('expense_allocations').delete().eq('expense_id', exp.id) } catch (_) {}
             msg += ' (expense #' + exp.id + ' was already recorded and could NOT be auto-removed — an admin must add its missing allocation/wallet entry, or delete it manually)'
           }
@@ -2427,8 +2435,15 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
       }
 
     if (failed > 0 && submitted > 0) {
+      // Take the ones that went through out of the form, so Submit again
+      // only retries the failed ones -- leaving them in re-inserted each one
+      // (a second expense and a second wallet debit).
+      setEntries(function (prev) {
+        var left = prev.filter(function (_, j) { return recordedIdx.indexOf(j) === -1 })
+        return left.length > 0 ? left : prev
+      })
       setSaving(false)
-      setError(failed + ' failed, ' + submitted + ' submitted\n' + failedMsgs.join('\n'))
+      setError(failed + ' failed, ' + submitted + ' submitted (removed from the form; Submit again sends only the failed ones)\n' + failedMsgs.join('\n'))
     } else if (failed > 0) {
       setSaving(false)
       setError('All ' + failed + ' entries failed to submit\n' + failedMsgs.join('\n'))

@@ -1684,10 +1684,10 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
       location_id: locationId || null,
       location_name: locationName || null,
     }
-    if (taxMode !== 0 || split5 !== 50) {
-      row.tax_mode = taxMode; row.split_5_pct = split5
-      row.total_tax_paise = toPaise(ttx); row.guest_pays_paise = toPaise(guestPays); row.net_to_you_paise = toPaise(netToYou)
-    }
+    // always written: only writing them when not default meant switching an
+    // existing quote back to the default left the old tax figures saved
+    row.tax_mode = taxMode; row.split_5_pct = split5
+    row.total_tax_paise = toPaise(ttx); row.guest_pays_paise = toPaise(guestPays); row.net_to_you_paise = toPaise(netToYou)
     try {
       if (savedId) {
         var { error } = await supabase.from('quotes').update(row).eq('id', savedId)
@@ -1746,7 +1746,7 @@ function QuoteCalculator({ profile, onExit, onSignOut }) {
     if (q.deal_ent_paise != null) setDealEnt(String(fromPaise(q.deal_ent_paise)))
     if (q.deal_discount_paise != null) setDealDiscount(String(fromPaise(q.deal_discount_paise)))
     if (q.deal_value_paise != null && !q.deal_vm_paise) { setDealVm(String(fromPaise(q.deal_value_paise))) }
-    if (q.tax_mode != null) { setTaxMode(q.tax_mode); setSplit5(q.split_5_pct || 50) }
+    if (q.tax_mode != null) { setTaxMode(q.tax_mode); setSplit5(q.split_5_pct != null ? q.split_5_pct : 50) }
     setSavedId(q.id); setQuoteStatus(q.status || 'draft'); setNotes(q.notes || '')
     setLmsRef(q.lms_ref || null)
     setLocationId(q.location_id || ''); setLocationName(q.location_name || '')
