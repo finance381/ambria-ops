@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useDeferredValue, memo } from 'react'
 import { pushBack } from '../../lib/backNav'
-import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
@@ -24,10 +23,8 @@ import EventDatePicker from '../../components/ui/EventDatePicker'
 import vendorBg from '../../assets/vendor-bg.webp'
 import { avatarTint } from '../../lib/avatarTint'
 import { ON, OFF } from '../../lib/ui'
-import { useBodyScrollLock } from '../../lib/useBodyScrollLock'
 import ReverseDialog from '../../components/ui/ReverseDialog'
-import { appConfirm } from '../../components/ui/AppDialog'
-import { useBackButtonClose } from '../../lib/useBackButtonClose'
+import MergeVendorsModal from '../../components/vendors/MergeVendorsModal'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 
@@ -42,9 +39,6 @@ function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
 // An entry points at an expense when its ref is an expense with a numeric id.
 // Asked in two places now — by the row, and by the list working out whether it
 // needs a column for the stamp — so it is written once.
-// One label for the merge dialog's two fields.
-var MERGE_LABEL = 'block text-[12px] font-semibold text-slate-600 mb-1.5'
-
 // How many vendor cards are drawn before the browser is let go to paint.
 // A constant, so the effect that tops up from it is not re-created every
 // render to chase a value that never changes.
@@ -614,12 +608,6 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
   // introducing a separate key.
   var canManageVendors = isAdmin || hasPerm(permsNew, 'procurement.vendors')
   var [showMergeModal, setShowMergeModal] = useState(false)
-  useBodyScrollLock(showMergeModal)
-  var [mergeSourceIds, setMergeSourceIds] = useState([])
-  var [mergeTargetId, setMergeTargetId] = useState('')
-  var [mergeSearch, setMergeSearch] = useState('')
-  var [mergeSaving, setMergeSaving] = useState(false)
-  useBackButtonClose(showMergeModal, function () { if (!mergeSaving) setShowMergeModal(false) })
 
   var [view, setView] = useState('list')  // 'list' | 'detail'
   var [vendors, setVendors] = useState([])
@@ -1135,152 +1123,17 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
     if (selectedVendor) await loadEntries(selectedVendor, showDeleted)
   }
 
-  function toggleMergeSource(vendorId) {
-    setMergeSourceIds(function (prev) {
-      if (prev.indexOf(vendorId) !== -1) return prev.filter(function (id) { return id !== vendorId })
-      return prev.concat([vendorId])
-    })
-    setMergeTargetId(function (prev) { return String(prev) === String(vendorId) ? '' : prev })
+  // A count of one is not "1 entries". Shown beside each vendor in the
+  // merge picker, so there's something to tell two same-named duplicates
+  // apart by.
+  function entryCount(v) {
+    var c = v.entry_count || 0
+    return c + (c === 1 ? ' entry' : ' entries')
   }
-
-  async function doMergeVendors() {
-    if (mergeSaving || mergeSourceIds.length === 0 || !mergeTargetId) return
-    var pool = vendors.filter(function (v) { return v.vendor_active })
-    var targetVendor = pool.find(function (v) { return String(v.vendor_id) === String(mergeTargetId) })
-    var sourceVendors = pool.filter(function (v) { return mergeSourceIds.indexOf(v.vendor_id) !== -1 })
-    var sourceNames = sourceVendors.map(function (v) { return v.vendor_name }).join(', ')
-    var totalEntries = sourceVendors.reduce(function (s, v) { return s + (v.entry_count || 0) }, 0)
-    var ok = await appConfirm(
-      'Merge ' + sourceNames + ' into "' + (targetVendor ? targetVendor.vendor_name : '—') + '"?\n\n' +
-      totalEntries + ' ledger entries and every expense reference will move to the target. ' +
-      'The merged vendor(s) will be deactivated. This cannot be undone from here.'
-    )
-    if (!ok) return
-    setMergeSaving(true)
-    var { data, error } = await supabase.rpc('fn_merge_vendors', {
-      p_source_ids: mergeSourceIds,
-      p_target_id: Number(mergeTargetId),
-    })
-    setMergeSaving(false)
-    if (error) { alert('Merge failed: ' + error.message); return }
-    try { await logActivity('VENDOR_MERGE', sourceNames + ' -> ' + (targetVendor ? targetVendor.vendor_name : mergeTargetId)) } catch (_) {}
-    setShowMergeModal(false)
-    setMergeSourceIds([])
-    setMergeTargetId('')
-    setMergeSearch('')
-    await loadVendors(true)
-    var summary = (data && (data.ledger_entries_moved || 0)) + ' ledger entries and ' + (data && (data.expenses_updated || 0)) + ' expense reference(s) moved.'
-    alert('Merged. ' + summary)
-  }
-
-  function renderMergeModal() {
-    if (!showMergeModal) return null
-    var q = mergeSearch.trim().toLowerCase()
-    var pool = vendors.filter(function (v) { return v.vendor_active })
-    var searched = q ? pool.filter(function (v) { return (v.vendor_name || '').toLowerCase().indexOf(q) !== -1 }) : pool
-    var targetOptions = pool.filter(function (v) { return mergeSourceIds.indexOf(v.vendor_id) === -1 })
-    var sourceTotalEntries = pool
-      .filter(function (v) { return mergeSourceIds.indexOf(v.vendor_id) !== -1 })
-      .reduce(function (s, v) { return s + (v.entry_count || 0) }, 0)
-    var readyToMerge = mergeSourceIds.length > 0 && mergeTargetId
-
-    // A count of one is not "1 entries". The list prints this next to every
-    // vendor in it, so it is worth the line.
-    function entryCount(v) {
-      var c = v.entry_count || 0
-      return c + (c === 1 ? ' entry' : ' entries')
-    }
-
-    return createPortal((
-      <div className="fixed inset-0 z-[9998] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
-        onClick={function () { if (!mergeSaving) setShowMergeModal(false) }}>
-        <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg p-5 space-y-4 max-h-[90vh] overflow-y-auto overscroll-contain ambria-thin-scroll"
-          onClick={function (ev) { ev.stopPropagation() }}>
-          {/* The emoji went the way of the others: a font-chosen picture that
-              came out as a blue tile beside a heading it was meant to sit on
-              the baseline of. */}
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="flex items-center gap-2 font-display text-[17px] font-bold text-slate-900">
-                <Icon name="split" size={17} className="shrink-0 text-indigo-500" />
-                Merge Vendors
-              </h3>
-              <p className="mt-1 text-[12.5px] text-slate-500 leading-snug">
-                Fold duplicates into one. Every ledger entry and expense reference moves to the target you pick below.
-              </p>
-            </div>
-            <button type="button" onClick={function () { setShowMergeModal(false) }} disabled={mergeSaving} aria-label="Close"
-              className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-40 transition-colors">
-              <Icon name="close" size={16} />
-            </button>
-          </div>
-
-          <div>
-            <label className={MERGE_LABEL}>
-              Vendors to merge
-              {mergeSourceIds.length > 0 && (
-                <span className="ml-1.5 font-bold text-indigo-600" data-notranslate>{mergeSourceIds.length} selected</span>
-              )}
-            </label>
-            <SearchField value={mergeSearch} onChange={function (v) { setMergeSearch(v) }} placeholder="Search vendors..." />
-            <div className="mt-2 border border-slate-200 rounded-xl max-h-60 overflow-y-auto overscroll-contain ambria-thin-scroll divide-y divide-slate-100">
-              {searched.length === 0 && <p className="text-[12.5px] text-slate-400 text-center py-6">No vendors match</p>}
-              {searched.map(function (v) {
-                var checked = mergeSourceIds.indexOf(v.vendor_id) !== -1
-                return (
-                  <label key={v.vendor_id}
-                    className={"flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors " +
-                      (checked ? "bg-indigo-50" : "hover:bg-slate-50")}>
-                    <input type="checkbox" checked={checked} onChange={function () { toggleMergeSource(v.vendor_id) }}
-                      className="shrink-0 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30" />
-                    <span className={"flex-1 min-w-0 truncate text-[13px] font-semibold " + (checked ? "text-indigo-800" : "text-slate-800")}>
-                      {v.vendor_name}
-                    </span>
-                    <span className="shrink-0 text-[11.5px] text-slate-500 tabular-nums" data-notranslate>
-                      {entryCount(v)} · {formatPoints(v.balance_paise || 0)}
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
-          </div>
-
-          {mergeSourceIds.length > 0 && (
-            <div>
-              <label className={MERGE_LABEL}>Merge into</label>
-              <SearchDropdown
-                items={targetOptions.map(function (v) { return { label: v.vendor_name + ' (' + entryCount(v) + ')', value: String(v.vendor_id) } })}
-                value={mergeTargetId ? String(mergeTargetId) : ''}
-                onChange={function (val) { setMergeTargetId(val) }}
-                placeholder="Search target vendor..." noVoice />
-              {/* What the press will actually do, in the numbers it will do it
-                  to. A merge cannot be undone from this screen, so the sentence
-                  before it should be the specific one. */}
-              <p className="mt-2 flex items-start gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[12px] font-semibold text-amber-800">
-                <span className="shrink-0 mt-px"><Icon name="alert" size={14} /></span>
-                <span>
-                  <span data-notranslate>{sourceTotalEntries}</span> {sourceTotalEntries === 1 ? 'entry' : 'entries'} from{' '}
-                  <span data-notranslate>{mergeSourceIds.length}</span> {mergeSourceIds.length === 1 ? 'vendor' : 'vendors'} will move here. This cannot be undone.
-                </span>
-              </p>
-            </div>
-          )}
-
-          <div className="flex gap-2 pt-3 border-t border-slate-100">
-            <button type="button" onClick={function () { setShowMergeModal(false) }} disabled={mergeSaving}
-              className="flex-1 h-11 text-[13px] font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 disabled:opacity-40 transition-colors">
-              Cancel
-            </button>
-            <button type="button" onClick={doMergeVendors} disabled={!readyToMerge || mergeSaving}
-              className="flex-1 h-11 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-indigo-600 transition-all">
-              <Icon name={mergeSaving ? 'refresh' : 'split'} size={15} />
-              {mergeSaving ? 'Merging…' : 'Merge Vendors'}
-            </button>
-          </div>
-        </div>
-      </div>
-    ), document.body)
-  }
+  var mergeVendorOptions = vendors.map(function (v) {
+    return { id: v.vendor_id, name: v.vendor_name, active: v.vendor_active, subtitle: entryCount(v) + ' · ' + formatPoints(v.balance_paise || 0), weight: v.entry_count || 0 }
+  })
+  function mergeWeightLabel(n) { return n + (n === 1 ? ' ledger entry' : ' ledger entries') }
 
   if (!canView) {
     return <p className="text-slate-400 text-[13px] font-medium text-center py-12">You don't have access to Vendor Ledger.</p>
@@ -1567,7 +1420,9 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
             </div>
           )}
           {renderVendorPager()}
-          {renderMergeModal()}
+          <MergeVendorsModal open={showMergeModal} onClose={function () { setShowMergeModal(false) }}
+            vendors={mergeVendorOptions} weightLabel={mergeWeightLabel}
+            onMerged={function () { return loadVendors(true) }} />
         </div>
       )
     }
@@ -1709,7 +1564,9 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
           </div>
         )}
         {renderVendorPager()}
-        {renderMergeModal()}
+        <MergeVendorsModal open={showMergeModal} onClose={function () { setShowMergeModal(false) }}
+          vendors={mergeVendorOptions} weightLabel={mergeWeightLabel}
+          onMerged={function () { return loadVendors(true) }} />
       </div>
     )
   }

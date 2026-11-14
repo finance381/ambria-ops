@@ -6,6 +6,7 @@ import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import DescriptionNote from '../../components/ui/DescriptionNote'
 import VoiceInput from '../../components/ui/VoiceInput'
+import MergeVendorsModal from '../../components/vendors/MergeVendorsModal'
 
 function imagePublicUrl(path) {
   if (!path) return ''
@@ -40,6 +41,7 @@ function Vendors({ profile }) {
   var [importReview, setImportReview] = useState(null)
   var [importSummary, setImportSummary] = useState(null)
   var importFileRef = useRef(null)
+  var [showMergeModal, setShowMergeModal] = useState(false)
 
   // Quotation images — replaced/removed wholesale as a vendor sends updated
   // quotes, not kept as history. { id, file: File|null (pending upload),
@@ -1133,6 +1135,18 @@ function Vendors({ profile }) {
     )
   }
 
+  // Unfiltered (allVendorsRaw, not the category-tag-scoped `vendors`) —
+  // merging is master-data housekeeping, not something that should hide a
+  // duplicate from someone just because it carries a different category tag
+  // than they're scoped to.
+  var mergeVendorOptions = allVendorsRaw.map(function (v) {
+    // Two same-named duplicates with no phone/contact on file would
+    // otherwise show an identical subtitle (or none) and be impossible to
+    // tell apart in the picker — the id is always there and always unique.
+    var extra = v.phone || v.contact || v.vendor_type || ''
+    return { id: v.id, name: v.name, active: v.active, subtitle: '#' + v.id + (extra ? ' · ' + extra : '') }
+  })
+
   // ═══ LIST VIEW ═══
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -1208,6 +1222,11 @@ function Vendors({ profile }) {
             ⤓ Export CSV
           </button>
         </div>
+        <button onClick={function () { setShowMergeModal(true) }}
+          className="w-full lg:w-auto px-3 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+          title="Fold duplicate vendor records into one">
+          Merge Vendors
+        </button>
         <button onClick={startAdd}
           className="w-full lg:w-auto px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors shadow-sm whitespace-nowrap">
           + Add Vendor
@@ -1391,6 +1410,8 @@ function Vendors({ profile }) {
           })}
         </div>
       )}
+      <MergeVendorsModal open={showMergeModal} onClose={function () { setShowMergeModal(false) }}
+        vendors={mergeVendorOptions} onMerged={loadAll} />
     </div>
   )
 }
