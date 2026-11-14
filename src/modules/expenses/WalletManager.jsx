@@ -214,8 +214,21 @@ function mergeExpenseWalletRows(txns) {
     var rows = groups[key].slice().sort(function (a, b) { return new Date(a.created_at) - new Date(b.created_at) })
     if (rows.length === 1) { out.push(rows[0]); return }
     var first = rows[0]
+    var last = rows[rows.length - 1]
     rows.slice(1).forEach(function (r) { trailingEdits.push(r) })
     var net = rows.reduce(function (s, r) { return s + (r.type === 'credit' ? -(r.amount_paise || 0) : (r.amount_paise || 0)) }, 0)
+    // A straight delete (debit, then its exact-matching refund, nothing
+    // since) nets to zero by construction, and amount_paise/type below stay
+    // net-based -- CSV/PDF export totals and the Balance line both depend on
+    // that staying true. But "0 pts" on screen erases the one thing this
+    // specific card exists to show: that a refund happened. Flagged
+    // separately, display-only, and scoped tight (exactly the debit + its
+    // one matching expense_refund credit, nothing else in the group) so a
+    // longer flag/reinstate/edit cycle that happens to net to zero isn't
+    // forced through this same reading, which wouldn't actually be true for it.
+    var isPlainDeleteRefund = net === 0 && rows.length === 2 &&
+      first.type !== 'credit' && last.type === 'credit' && last.reference_type === 'expense_refund' &&
+      (last.amount_paise || 0) === (first.amount_paise || 0) && (first.amount_paise || 0) > 0
     // The balance right before this GROUP started (i.e. before its original,
     // first transaction) -- the one stable anchor, since later edits can
     // land after other unrelated transactions and latest.balance_after_paise
@@ -227,6 +240,12 @@ function mergeExpenseWalletRows(txns) {
     out.push(Object.assign({}, first, {
       amount_paise: Math.abs(net),
       type: net < 0 ? 'credit' : 'debit',
+      // Display-only: the amount actually refunded, for a card whose net
+      // (and therefore balance effect) is zero -- the two render sites pick
+      // this up to show "+refund amount" instead of "0 pts", without
+      // touching amount_paise/type/balance_after_paise, which every export
+      // and the gap-check both still need reconciling to net.
+      _zeroNetRefundPaise: isPlainDeleteRefund ? last.amount_paise : null,
       // The balance as if this row's full (merged) effect happened in one
       // atomic step right here -- what actually reconciles against whatever
       // sits above/below it in the list, not the literal post-edit balance,
@@ -3650,6 +3669,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <div className="space-y-2">
               {previewTxns.slice(0, 5).map(function (t) {
                 var isCredit = t.type === 'credit'
+                // See renderTxnRow's own copy of this for why -- a merged
+                // delete+refund's amount_paise/type stay net-based (0) for
+                // the balance math, with the actual refund surfaced here
+                // display-only via _zeroNetRefundPaise.
+                var hasZeroNetRefund = t._zeroNetRefundPaise != null
+                var displayCredit = hasZeroNetRefund ? true : isCredit
+                var displayAmountPaise = hasZeroNetRefund ? t._zeroNetRefundPaise : Math.abs(t.amount_paise)
                 var isExpKind = t.reference_type === 'expense' || t.reference_type === 'expense_refund'
                 var xp = isExpKind && t.reference_id ? expenseRefs[t.reference_id] : null
                 var tr = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
@@ -3712,8 +3738,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   <div key={t.id}
                     onClick={handleRowClick}
                     className={"flex items-center gap-3 p-3 bg-white border rounded-xl " + (isCancelled ? "border-gray-200 opacity-50" : "border-gray-200") + (rowIsClickable ? " cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors" : "")}>
-                    <div className={"w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 " + (isCredit ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600")}>
-                      <span className="text-sm font-bold">{isCredit ? '+' : '−'}</span>
+                    <div className={"w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 " + (displayCredit ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600")}>
+                      <span className="text-sm font-bold">{displayCredit ? '+' : '−'}</span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
@@ -3722,7 +3748,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                             {REF_TYPE_LABELS[t.reference_type] || t.reference_type}
                           </span>
                         )}
-                        <p className={"text-sm font-bold text-gray-800 truncate " + (isCancelled ? "line-through" : "")}>{t.description || (isCredit ? 'Credit' : 'Debit')}</p>
+                        <p className={"text-sm font-bold text-gray-800 truncate " + (isCancelled ? "line-through" : "")}>{t.description || (displayCredit ? 'Credit' : 'Debit')}</p>
                         {t.status === 'pending' && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded flex-shrink-0">Pending</span>}
                         {isCancelled && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded flex-shrink-0">Cancelled</span>}
                       </div>
@@ -3763,9 +3789,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                       </div>
                     </div>
                     <span className="flex-shrink-0 text-right">
-                      <span className={"block text-sm font-bold " + (isCredit ? "text-green-600" : "text-red-600")}>
-                        {isCredit ? '+' : '−'}{formatPoints(t.amount_paise)}
+                      <span className={"block text-sm font-bold " + (displayCredit ? "text-green-600" : "text-red-600")}>
+                        {displayCredit ? '+' : '−'}{formatPoints(displayAmountPaise)}
                       </span>
+                      {hasZeroNetRefund && (
+                        <span className="block text-[10px] font-semibold text-slate-400">Refunded, balance unchanged</span>
+                      )}
                       {/* The verdict goes with the figure rather than the
                           description, here as everywhere else. */}
                       {(function () {
@@ -4402,6 +4431,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     // different card, and 240 lines is not something to keep two copies of.
     function renderTxnRow(t) {
     var isCredit = t.type === 'credit'
+    // A merged delete+refund nets to zero (amount_paise/type stay net-based
+    // for the balance/gap-check math above) but still carries the actual
+    // refund amount here for display, so the card doesn't read as "nothing
+    // happened" — see mergeExpenseWalletRows's _zeroNetRefundPaise.
+    var hasZeroNetRefund = t._zeroNetRefundPaise != null
+    var displayCredit = hasZeroNetRefund ? true : isCredit
+    var displayAmountPaise = hasZeroNetRefund ? t._zeroNetRefundPaise : Math.abs(t.amount_paise)
     // Whatever this row's own balance implies happened right before it,
     // compared with what the next OLDER row in the list actually shows —
     // a gap means something moved the balance in between that isn't in this
@@ -4889,8 +4925,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             )}
           </div>
           <div className="text-right flex-shrink-0 ml-2">
-            <p className={"text-[15px] font-bold tabular-nums " + (isCredit ? "text-emerald-600" : "text-red-600")} data-notranslate>
-              {isCredit ? '+' : '−'}{formatPoints(Math.abs(t.amount_paise))}
+            <p className={"text-[15px] font-bold tabular-nums " + (displayCredit ? "text-emerald-600" : "text-red-600")} data-notranslate>
+              {displayCredit ? '+' : '−'}{formatPoints(displayAmountPaise)}
             </p>
             {/* A running balance is a figure someone reads, not a caption.
                 At slate-400 it sat around 3:1 on the card and read as
@@ -4898,6 +4934,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             <p className="text-[11.5px] text-slate-500 tabular-nums" data-notranslate>
               Balance: <span className="font-semibold text-slate-700">{formatPoints(t.balance_after_paise)}</span>
             </p>
+            {hasZeroNetRefund && (
+              <p className="text-[10px] font-semibold text-slate-400">Refunded, balance unchanged</p>
+            )}
             {gapNote != null && (
               <p className={"mt-0.5 text-[10.5px] font-bold tabular-nums " + (gapNote > 0 ? "text-emerald-600" : "text-red-500")}
                 title="The balance moved by more than this row's own amount since the row above it — something not in this list changed it in between (a filter, another page, or a deleted expense's hidden refund). Turn on &quot;Show deleted expenses&quot; to check.">

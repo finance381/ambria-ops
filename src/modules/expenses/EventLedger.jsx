@@ -612,14 +612,19 @@ function EventLedger(props) {
       r._enteredAt = chk ? chk.tally_entered_at : null
       return r
     })
-    // event_ledger_select's RLS only shows a 'collection' row to its own
-    // creator (plus finance_hr/dept-hierarchy reach) -- so this direct query
-    // above never returns more than the viewer's own collections. Discard
-    // whatever collection rows it did return and replace them wholesale with
-    // fn_event_collections (00155), a SECURITY DEFINER RPC that returns every
-    // collector's rows for these events, so two people collecting against
-    // the same function both see the full picture here.
-    rows = rows.filter(function (r) { return r.entry_type !== 'collection' }).concat(await loadAllCollections(ids))
+    // event_ledger_select's RLS only shows a 'collection' row -- and an
+    // 'adjustment' row (a collection cancel's reversal, almost always
+    // created by whoever cancelled it, not the original collector) -- to
+    // its own creator (plus finance_hr/dept-hierarchy reach) -- so this
+    // direct query above never returns more than the viewer's own rows of
+    // either kind. Discard whatever it did return for both and replace
+    // wholesale with fn_event_collections (00155, widened in 00192), a
+    // SECURITY DEFINER RPC that returns every collector's collections AND
+    // every cancellation reversing one, for these events -- so two people
+    // collecting against the same function both see the full picture here,
+    // and a cancelled collection doesn't silently vanish for whoever logged
+    // the original payment.
+    rows = rows.filter(function (r) { return r.entry_type !== 'collection' && r.entry_type !== 'adjustment' }).concat(await loadAllCollections(ids))
     setEntries(rows)
     setEntriesLoading(false)
   }
@@ -630,8 +635,8 @@ function EventLedger(props) {
     return data.map(function (r) {
       return {
         id: r.id,
-        entry_type: 'collection',
-        direction: 'in',
+        entry_type: r.entry_type,
+        direction: r.direction,
         payment_mode: r.payment_mode,
         amount_paise: r.amount_paise,
         reference_type: r.reference_type,
