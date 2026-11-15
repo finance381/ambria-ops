@@ -440,6 +440,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   // rows and they are all in hand, so reordering them is free and does not cost
   // a round trip every time somebody changes their mind.
   var [txnSort, setTxnSort] = useState('latest')
+  // Client-side search over the rows already loaded: expense type, description, amount.
+  var [txnSearch, setTxnSearch] = useState('')
 
   // A busy wallet runs to five hundred rows, and each one of these carries
   // chips, thumbnails and an allocation block — so the browser was building
@@ -5086,6 +5088,30 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         return !(xp && xp.deleted_at)
       })
       var rows = mergeExpenseWalletRows(visible)
+      var q = txnSearch.trim().toLowerCase()
+      if (q) {
+        var qNum = q.replace(/[,\s]/g, '').replace(/pts?$/, '')
+        rows = rows.filter(function (t) {
+          var isExp = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
+          var xp = isExp ? expenseRefs[t.reference_id] : null
+          var text = [
+            t.description,
+            xp && xp.description,
+            xp && xp.expense_types?.name,
+            xp && xp.expense_sub_types?.name,
+          ].concat((xp && xp.expense_allocations || []).map(function (a) {
+            return (a.expense_types?.name || '') + ' ' + (a.expense_sub_types?.name || '')
+          })).filter(Boolean).join(' ').toLowerCase()
+          // A number is an amount: exact match, so 3000 doesn't pull in 33,000.
+          // "1500", "1,500" and "1500 pts" all work.
+          if (qNum && /^\d+(\.\d+)?$/.test(qNum)) {
+            if (Math.round(parseFloat(qNum) * 100) === (t.amount_paise || 0)) return true
+            // Still find it as a whole number written in the description.
+            return new RegExp('(^|[^\\d,.])' + qNum.replace('.', '\\.') + '([^\\d,.]|$)').test(text.replace(/(\d),(?=\d)/g, '$1'))
+          }
+          return text.indexOf(q) !== -1
+        })
+      }
       if (txnSort === 'oldest') {
         return rows.sort(function (a, b) { return new Date(a._sortAt || a.created_at) - new Date(b._sortAt || b.created_at) })
       }
@@ -5162,7 +5188,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     }
 
     function resetTxnFilters() {
-      setTxnFrom(''); setTxnTo(''); setTxnRefType('')
+      setTxnFrom(''); setTxnTo(''); setTxnRefType(''); setTxnSearch('')
       openWalletTxns(null, '', '', '')
     }
 
@@ -5355,7 +5381,26 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                   button promising to apply them was describing work that was
                   already done. Reset stays because clearing all three at once
                   is the one thing none of them can do on its own. */}
-              {(txnFrom || txnTo || txnRefType) && (
+              <div className="min-w-[240px] flex-1">
+                <label htmlFor="txn-search" className="block text-[11px] font-semibold text-slate-500 mb-1.5">Search</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                    <Icon name="search" size={15} />
+                  </span>
+                  <input id="txn-search" type="text" value={txnSearch}
+                    onChange={function (e) { setTxnSearch(e.target.value); setTxnPage(0) }}
+                    placeholder="Expense type, description or amount"
+                    className="w-full h-11 pl-9 pr-9 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" />
+                  {txnSearch && (
+                    <button type="button" aria-label="Clear search" onClick={function () { setTxnSearch(''); setTxnPage(0) }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 inline-flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                      <Icon name="close" size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {(txnFrom || txnTo || txnRefType || txnSearch) && (
                 <button type="button" onClick={resetTxnFilters}
                   className="shrink-0 h-11 px-4 inline-flex items-center gap-1.5 rounded-xl text-[13px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
                   <Icon name="close" size={14} />
@@ -5415,6 +5460,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     rows are. Saying nothing would read as an empty wallet. */}
                 {txnsLoading ? 'Loading transactions…'
                   : walletTxns.length === 0 ? 'No transactions yet'
+                  : txnSearch.trim() ? 'No transactions match "' + txnSearch.trim() + '"'
                   : 'No transactions match — try "Show deleted expenses"'}
               </p>
             ) : (
@@ -5555,6 +5601,22 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </div>
           </div>
         </div>
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+            <Icon name="search" size={15} />
+          </span>
+          <input type="text" value={txnSearch} aria-label="Search transactions"
+            onChange={function (e) { setTxnSearch(e.target.value); setTxnPage(0) }}
+            placeholder="Search type, description or amount"
+            style={{ fontSize: '16px' }}
+            className="w-full h-11 pl-9 pr-9 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-shadow" />
+          {txnSearch && (
+            <button type="button" aria-label="Clear search" onClick={function () { setTxnSearch(''); setTxnPage(0) }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 inline-flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+              <Icon name="close" size={13} />
+            </button>
+          )}
+        </div>
         {walletTxns.length > 0 && (function () {
           var totalCr = stats.credits, totalDb = stats.debits
           var opening = stats.opening, closing = stats.closing
@@ -5682,7 +5744,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         {txnsLoading && walletTxns.length === 0 ? (
           <p className="text-center text-[13px] font-medium text-slate-400 py-8">Loading transactions…</p>
         ) : sortedTxns.length === 0 && walletTxns.length > 0 ? (
-          <p className="text-center text-[13px] font-medium text-slate-400 py-8">No transactions match — try "Show deleted expenses"</p>
+          <p className="text-center text-[13px] font-medium text-slate-400 py-8">{txnSearch.trim() ? 'No transactions match "' + txnSearch.trim() + '"' : 'No transactions match — try "Show deleted expenses"'}</p>
         ) : (
           <>
             <div ref={txnListRef} className="space-y-2 scroll-mt-20">
