@@ -367,11 +367,42 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders })
   }
 
+  // Hoisted above the try block (LMS_SYNC_SAFETY_PATTERNS.md Rule 6) so a
+  // run-log row can be written even when the run throws early -- a silent
+  // 500 with nothing queryable afterward is exactly the "only a console.log
+  // nobody's watching" gap that let a real problem run undetected before.
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!
+  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  const supabase = createClient(supabaseUrl, supabaseKey)
+  var syncStartedAt = new Date().toISOString()
+  var isCron = false
+  var triggeredByUserId: string | null = null
+
+  async function logRun(status: string, extra: Record<string, unknown>) {
+    try {
+      var logRes = await supabase.from("lms_sync_runs").insert(Object.assign({
+        started_at: syncStartedAt,
+        finished_at: new Date().toISOString(),
+        trigger_source: isCron ? "cron" : "manual",
+        triggered_by: triggeredByUserId,
+        status: status,
+      }, extra))
+      // supabase-js resolves a DB/RLS error rather than throwing it -- same
+      // check already used for every other insert in this file (new-contract
+      // and stale-anomaly notifications below). Missing this was its own
+      // silent-failure risk: a run-log feature whose own writes fail quietly
+      // defeats the point of building it.
+      if (logRes.error) console.log("sync-events: run-log insert failed: " + logRes.error.message)
+    } catch (logErr) {
+      console.log("sync-events: run-log insert failed:", (logErr as Error).message)
+    }
+  }
+
   try {
     // Cron bypass — allow scheduled invocations via secret header (skips user auth)
     const cronSecret = req.headers.get("x-cron-secret")
     const cronExpected = Deno.env.get("SYNC_CRON_SECRET")
-    const isCron = !!(cronSecret && cronExpected && cronSecret === cronExpected)
+    isCron = !!(cronSecret && cronExpected && cronSecret === cronExpected)
 
     // Auth check — only admin/auditor can trigger
     const authHeader = req.headers.get("Authorization")
@@ -380,9 +411,6 @@ serve(async (req) => {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
       })
     }
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    const supabase = createClient(supabaseUrl, supabaseKey)
 
     // Skip user role check for cron
     if (!isCron) {
@@ -395,6 +423,7 @@ serve(async (req) => {
           status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" }
         })
       }
+      triggeredByUserId = user.id
       const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single()
       if (!profile || (profile.role !== "admin" && profile.role !== "auditor")) {
         return new Response(JSON.stringify({ error: "Admin only" }), {
@@ -418,8 +447,9 @@ serve(async (req) => {
       if (p.lms_user_id) lmsUserMap[String(p.lms_user_id)] = p.name
     })
 
-    // Parallel sync all departments
-    var syncStartedAt = new Date().toISOString()
+    // Parallel sync all departments (syncStartedAt is set at the top of the
+    // handler now, not here, so a run-log row reflects the true start time
+    // even if something above this point throws first)
 
     async function syncDept(dep: typeof DEPARTMENTS[0]) {
       var result = { synced: 0, fetched: 0, stale: 0, errors: [] as string[], newRows: [] as any[], staleAnomalies: [] as any[] }
@@ -623,6 +653,22 @@ serve(async (req) => {
         console.log("notifyStaleAnomalies failed:", (notifyErr as Error).message)
       }
     }
+
+    var deptSummary = DEPARTMENTS.map(function (dep, di) {
+      var r = deptResults[di]
+      if (r.status === "fulfilled") {
+        return { department: dep.name, fetched: r.value.fetched, synced: r.value.synced, stale: r.value.stale, errors: r.value.errors }
+      }
+      return { department: dep.name, fetched: 0, synced: 0, stale: 0, errors: [String(r.reason)] }
+    })
+    await logRun(errors.length > 0 ? "errors" : "ok", {
+      total_fetched: totalFetched,
+      total_synced: totalSynced,
+      total_stale: staleTotal,
+      dept_summary: deptSummary,
+      errors: errors.length > 0 ? errors : null,
+    })
+
     return new Response(JSON.stringify({
       synced: totalSynced,
       total: totalFetched,
@@ -633,8 +679,13 @@ serve(async (req) => {
     })
 
   } catch (err) {
-    console.log("Function error:", (err as Error).message)
-    return new Response(JSON.stringify({ error: (err as Error).message }), {
+    // A thrown non-Error (e.g. a rejected promise with a plain string/object)
+    // has no .message, which would otherwise store a blank `errors: [null]`
+    // row -- fall back to the thrown value itself, stringified.
+    var errMsg = (err instanceof Error) ? err.message : String(err)
+    console.log("Function error:", errMsg)
+    await logRun("error", { errors: [errMsg] })
+    return new Response(JSON.stringify({ error: errMsg }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     })
   }
