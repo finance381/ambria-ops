@@ -329,6 +329,12 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   var [venueFilter, setVenueFilter] = useState('')
   var [statusFilter, setStatusFilter] = useState('')
   var [pendingOnly, setPendingOnly] = useState(false)
+  // A further floor under whichever period is already picked -- not a
+  // replacement for it. Composes with the preset/custom range the same way
+  // the user/venue/status filters already narrow it: both ends in as another
+  // gte('expense_date', ...), so whichever of the two is later wins without
+  // this screen having to know or care which.
+  var [filterDateFrom, setFilterDateFrom] = useState('')
   // Which shape of PDF, asked once rather than settled by a second button on a
   // row that has no width for one. The two exports are not variants of a
   // preference — they answer different questions — so the sheet says what each
@@ -422,14 +428,14 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   useEffect(function () {
     isFirstLoad.current = true
     loadLedger()
-  }, [dateFrom, dateTo, userFilter, venueFilter, statusFilter, scopeKey])
+  }, [dateFrom, dateTo, filterDateFrom, userFilter, venueFilter, statusFilter, scopeKey])
 
   useEffect(function () {
     if (drillGroup) { setDrillOffset(0); setDrillPaint(DRILL_FIRST_PAINT); loadDrill(false) }
     // The page's filters are in the query now, so they have to be in here too
     // — otherwise narrowing the ledger behind an open drill leaves the drill
     // showing the answer to the filter before it.
-  }, [drillGroup, drillUserFilter, drillStatusFilter, drillVenueFilter, dateFrom, dateTo,
+  }, [drillGroup, drillUserFilter, drillStatusFilter, drillVenueFilter, dateFrom, dateTo, filterDateFrom,
     userFilter, venueFilter, statusFilter, scopeKey])
 
   // Top up during idle until every loaded row is drawn. requestIdleCallback
@@ -511,6 +517,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         .lte('expense_date', dateTo)
         .range(from, from + pageSize - 1)
       q = applyLedgerScope(q)
+      if (filterDateFrom) q = q.gte('expense_date', filterDateFrom)
       if (userFilter) q = q.eq('user_id', userFilter)
       if (venueFilter) q = q.eq('venue_id', Number(venueFilter))
       var page = await q
@@ -611,6 +618,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         .order('created_at', { ascending: false })
         .range(from, from + pageSize - 1)
       q = applyLedgerScope(q)
+      if (filterDateFrom) q = q.gte('expense_date', filterDateFrom)
       if (userFilter) q = q.eq('user_id', userFilter)
       if (venueFilter) q = q.eq('venue_id', Number(venueFilter))
       if (filter) {
@@ -689,6 +697,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
       .order('created_at', { ascending: false })
       .range(offset, offset + DRILL_LIMIT)
     q = applyLedgerScope(q)
+    if (filterDateFrom) q = q.gte('expense_date', filterDateFrom)
     if (userFilter) q = q.eq('user_id', userFilter)
     if (venueFilter) q = q.eq('venue_id', Number(venueFilter))
     if (drillGroup.deptId) q = q.eq('department_id', drillGroup.deptId)
@@ -957,6 +966,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
     doc.text('Generated: ' + new Date().toLocaleString('en-IN'), pageW - 14, 14, { align: 'right' })
     var fParts = []
     if (dateFrom || dateTo) fParts.push('Period: ' + (dateFrom || '…') + ' to ' + (dateTo || '…'))
+    if (filterDateFrom) fParts.push('From: ' + filterDateFrom)
     if (userFilter) { var u = users.find(function (x) { return String(x.id) === String(userFilter) }); fParts.push('User: ' + (u ? u.name : userFilter)) }
     if (venueFilter) { var v = venues.find(function (x) { return String(x.id) === String(venueFilter) }); fParts.push('Venue: ' + (v ? (v.name || v.code) : venueFilter)) }
     if (statusFilter) fParts.push('Status: ' + statusFilter)
@@ -1622,7 +1632,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
   }
 
   var ledgerFilterCount = (userFilter ? 1 : 0) + (venueFilter ? 1 : 0) +
-    (statusFilter ? 1 : 0) + (pendingOnly ? 1 : 0)
+    (statusFilter ? 1 : 0) + (pendingOnly ? 1 : 0) + (filterDateFrom ? 1 : 0)
 
   // The wide table is a function of the container, not the window.
   //
@@ -1891,7 +1901,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
               <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Narrow the list</p>
               {ledgerFilterCount > 0 && (
                 <button type="button"
-                  onClick={function () { setUserFilter(''); setVenueFilter(''); setStatusFilter(''); setPendingOnly(false) }}
+                  onClick={function () { setUserFilter(''); setVenueFilter(''); setStatusFilter(''); setPendingOnly(false); setFilterDateFrom('') }}
                   className="text-[11.5px] font-bold text-rose-600 hover:text-rose-700 transition-colors">
                   Clear all
                 </button>
@@ -1954,6 +1964,17 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
               <Icon name="chevronDown" size={14} />
             </span>
+          </div>
+          {/* A floor under whichever period the chips above already picked,
+              not another way of picking the period -- so it lives here with
+              the rest of what narrows the list, not up with This month/Custom. */}
+          <div className="relative flex-1 min-w-[150px]">
+            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="calendar" size={15} />
+            </span>
+            <input type="date" value={filterDateFrom} onChange={function (e) { setFilterDateFrom(e.target.value) }}
+              aria-label="Date from"
+              className={SELECT_FIELD} style={{ fontSize: '16px' }} />
           </div>
           <button type="button" onClick={function () { setPendingOnly(!pendingOnly) }} aria-pressed={pendingOnly}
             className={"h-11 px-3.5 inline-flex items-center gap-2 text-[12.5px] font-bold rounded-xl border transition-all duration-150 " +
