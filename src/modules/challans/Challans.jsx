@@ -145,6 +145,8 @@ function Challans({ profile }) {
   var [searchResults, setSearchResults] = useState([])
   var [selectedItem, setSelectedItem] = useState(null)
   var [addQty, setAddQty] = useState('')
+  var [searchHlIdx, setSearchHlIdx] = useState(-1)
+  var addQtyRef = useRef(null)
 
   // Receive mode
   var [receiveMode, setReceiveMode] = useState(false)
@@ -461,6 +463,7 @@ function Challans({ profile }) {
     ;(cs || []).forEach(function (it) { results.push(Object.assign({}, it, { source_type: 'catering' })) })
 
     setSearchResults(results)
+    setSearchHlIdx(-1)
   }
 
   function pickItem(item) {
@@ -468,6 +471,9 @@ function Challans({ profile }) {
     setAddItemSearch(item.name)
     setSearchResults([])
     setAddQty('1')
+    requestAnimationFrame(function () {
+      if (addQtyRef.current) { addQtyRef.current.focus(); try { addQtyRef.current.select() } catch (_) {} }
+    })
   }
 
   async function addItemToChallan() {
@@ -1285,17 +1291,38 @@ function Challans({ profile }) {
                     onChange={function (e) {
                       setAddItemSearch(e.target.value)
                       setSelectedItem(null)
+                      setSearchHlIdx(-1)
                       searchItems(e.target.value)
+                    }}
+                    onKeyDown={function (e) {
+                      if (searchResults.length === 0) return
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault()
+                        setSearchHlIdx(function (prev) { return Math.min(prev + 1, searchResults.length - 1) })
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault()
+                        setSearchHlIdx(function (prev) { return Math.max(prev - 1, 0) })
+                      } else if (e.key === 'Enter') {
+                        if (searchHlIdx >= 0 && searchHlIdx < searchResults.length) {
+                          e.preventDefault()
+                          pickItem(searchResults[searchHlIdx])
+                        }
+                      } else if (e.key === 'Escape') {
+                        setSearchResults([]); setSearchHlIdx(-1)
+                      }
                     }}
                     placeholder="Search inventory..."
                     className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                   {searchResults.length > 0 && !selectedItem && (
                     <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-56 overflow-y-auto">
-                      {searchResults.map(function (item) {
+                      {searchResults.map(function (item, rIdx) {
                         return (
                           <button key={item.source_type + '-' + item.id}
+                            ref={function (el) { if (el && rIdx === searchHlIdx) el.scrollIntoView({ block: 'nearest' }) }}
+                            onMouseEnter={function () { setSearchHlIdx(rIdx) }}
                             onClick={function () { pickItem(item) }}
-                            className="w-full text-left px-4 py-2.5 hover:bg-indigo-50 border-b border-gray-100 last:border-0 flex items-center justify-between">
+                            className={"w-full text-left px-4 py-2.5 border-b border-gray-100 last:border-0 flex items-center justify-between " +
+                              (rIdx === searchHlIdx ? "bg-indigo-50" : "hover:bg-indigo-50")}>
                             <span className="text-sm font-medium text-gray-800">{item.name}</span>
                             <span className="text-[10px] text-gray-400 ml-3 flex-shrink-0">{item.unit} · Stock: {item.qty}</span>
                           </button>
@@ -1305,7 +1332,7 @@ function Challans({ profile }) {
                   )}
                 </div>
                 {selectedItem && (
-                  <input type="number" value={addQty}
+                  <input ref={addQtyRef} type="number" value={addQty}
                     onChange={function (e) { setAddQty(e.target.value) }}
                     min="1" placeholder="Qty"
                     className="w-20 px-2 py-2.5 border border-gray-300 rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 flex-shrink-0" />

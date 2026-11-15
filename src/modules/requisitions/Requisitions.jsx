@@ -675,6 +675,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
   var [saving, setSaving] = useState(false)
   var [errors, setErrors] = useState({})
   var [activeSearchIndex, setActiveSearchIndex] = useState(-1)
+  var [activeHlIdx, setActiveHlIdx] = useState(-1)
   var [eventId, setEventId] = useState(editReq?.event_id ? String(editReq.event_id) : '')
   var [eventDate, setEventDate] = useState('')
   var [events, setEvents] = useState([])
@@ -875,6 +876,15 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
       })
     })
     setActiveSearchIndex(-1)
+    setActiveHlIdx(-1)
+    // Qty is the next thing to fill in after picking an item.
+    var tries = 0
+    function attempt() {
+      var el = document.getElementById('cart-qty-' + index)
+      if (el) { el.focus(); try { el.select() } catch (_) {} ; return }
+      if (++tries < 10) requestAnimationFrame(attempt)
+    }
+    requestAnimationFrame(attempt)
   }
 
   function toggleMode(index) {
@@ -1400,13 +1410,31 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
               {item.mode === 'existing' ? (
                 <div className="relative">
                   <input type="text" value={item.search}
-                    onFocus={function () { setActiveSearchIndex(index) }}
+                    onFocus={function () { setActiveSearchIndex(index); setActiveHlIdx(-1) }}
                     onChange={function (e) {
                       updateCart(index, 'search', e.target.value)
                       setActiveSearchIndex(index)
+                      setActiveHlIdx(-1)
                       if (!e.target.value.trim()) {
                         updateCart(index, 'item_id', null)
                         updateCart(index, 'item_name', '')
+                      }
+                    }}
+                    onKeyDown={function (e) {
+                      if (searchResults.length === 0) return
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault()
+                        setActiveHlIdx(function (prev) { return Math.min(prev + 1, searchResults.length - 1) })
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault()
+                        setActiveHlIdx(function (prev) { return Math.max(prev - 1, 0) })
+                      } else if (e.key === 'Enter') {
+                        if (activeHlIdx >= 0 && activeHlIdx < searchResults.length) {
+                          e.preventDefault()
+                          selectInventoryItem(index, searchResults[activeHlIdx])
+                        }
+                      } else if (e.key === 'Escape') {
+                        setActiveSearchIndex(-1); setActiveHlIdx(-1)
                       }
                     }}
                     placeholder="Search inventory..."
@@ -1417,11 +1445,14 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
                   )}
                   {searchResults.length > 0 && (
                     <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                      {searchResults.map(function (inv) {
+                      {searchResults.map(function (inv, rIdx) {
                         return (
                           <button key={inv._source + '-' + inv.id} type="button"
+                            ref={function (el) { if (el && rIdx === activeHlIdx) el.scrollIntoView({ block: 'nearest' }) }}
+                            onMouseEnter={function () { setActiveHlIdx(rIdx) }}
                             onClick={function () { selectInventoryItem(index, inv) }}
-                            className="w-full text-left px-3 py-2 hover:bg-indigo-50 active:bg-indigo-100 transition-colors border-b border-gray-100 last:border-0">
+                            className={"w-full text-left px-3 py-2 active:bg-indigo-100 transition-colors border-b border-gray-100 last:border-0 " +
+                              (rIdx === activeHlIdx ? "bg-indigo-50" : "hover:bg-indigo-50")}>
                             <p className="text-sm font-medium text-gray-800">{titleCase(inv.name)}</p>
                             <p className="text-[11px] text-gray-400">{inv.categories?.name || '—'} · {inv.unit} · <span className={"font-bold " + (inv.qty > 0 ? "text-green-600" : "text-red-500")}>{inv.qty} in stock</span> · {inv._source === 'catering_store' ? 'CS' : 'INV'}{inv.status !== 'approved' ? ' · ⏳ Pending' : ''}</p>
                           </button>
@@ -1452,7 +1483,7 @@ function RequisitionForm({ profile, editReq, editItems, onCancel, onSaved }) {
               <div className="flex gap-2">
                 <div className="w-24">
                   <label className="block text-[11px] text-gray-400 mb-0.5">Qty</label>
-                  <input type="number" min="1" step="any" inputMode="numeric" value={item.qty}
+                  <input id={'cart-qty-' + index} type="number" min="1" step="any" inputMode="numeric" value={item.qty}
                     onChange={function (e) { updateCart(index, 'qty', e.target.value) }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     style={{ fontSize: '16px' }} />

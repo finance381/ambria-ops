@@ -428,15 +428,24 @@ export async function generateStoreRequisitionReportPdf(report) {
     y += 5
     var fnRows = report.linkedEvents.map(function (e) {
       var menu = cateringMenuLabel(e.catering)
+      var p = ps && ps.byEvent && ps.byEvent[e.id]
       return [
         (e.event_name || e.client_name || 'Event #' + e.id) + (menu ? ' — Menu: ' + menu : ''),
         e.venue_name || '—',
         e.function_date ? formatDate(e.function_date) : '—',
+        p ? p.booking : '—',
+        p ? p.extra : '—',
+        p ? p.balance : '—',
+        p ? p.actual : '—',
       ]
     })
-    y = addTable(doc, y, ['Function', 'Venue', 'Date'], fnRows, {
+    y = addTable(doc, y, ['Function', 'Venue', 'Date', 'Booked', 'Extra', 'Returned', 'Actual'], fnRows, {
       styles: { fontSize: 7.5, cellPadding: 1.5, textColor: DARK },
       headStyles: { fillColor: BRAND, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5 },
+      columnStyles: {
+        3: { halign: 'right', cellWidth: 16 }, 4: { halign: 'right', cellWidth: 14 },
+        5: { halign: 'right', cellWidth: 18 }, 6: { halign: 'right', cellWidth: 14 },
+      },
     })
   }
 

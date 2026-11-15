@@ -20,7 +20,7 @@ function emptyDeptRow(id) {
     // same { id, file, path, previewUrl } shape as the top-level casualSlips.
     reqNo: '', reqImages: [],
     showInventory: false, showCasual: false, showExpense: false,
-    invSearch: '', invResults: [], invSearching: false,
+    invSearch: '', invResults: [], invSearching: false, invHlIdx: -1,
     inventoryRows: [], casualRows: [],
     // One row's optional credit against an expense sub-type's own ledger —
     // see "Adjust Expense" below. expense_type_id/expense_sub_type_id/meta
@@ -65,7 +65,7 @@ var DRAFT_DEBOUNCE_MS = 800
 // reload, so a draft only remembers the slip number, not a pending photo —
 // same reasoning as ExpenseForm's audio/receipt drafts.
 function serializeDraftRow(r) {
-  return Object.assign({}, r, { invSearch: '', invResults: [], invSearching: false, reqImages: serializeDraftImages(r.reqImages) })
+  return Object.assign({}, r, { invSearch: '', invResults: [], invSearching: false, invHlIdx: -1, reqImages: serializeDraftImages(r.reqImages) })
 }
 
 function isEmptyDraftRow(r) {
@@ -307,6 +307,28 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           return { id: i + 1, file: null, path: p, previewUrl: imagePublicUrl(p) }
         }))
         setNextCasualSlipId((reqRow.casual_slip_paths || []).length + 1)
+        // The function picker only ever fetches candidates for `functionDate`
+        // (see the effect below) -- leaving it blank on edit meant the saved
+        // event_ids were selected in state but had nothing to render against,
+        // so the card list came up empty and looked unselected. Seed it from
+        // whichever linked function was saved; re-picking a different date
+        // still works exactly as before.
+        if ((reqRow.event_ids || []).length > 0) {
+          // event_ids[0] alone can be a cancelled/merged id that events_safe
+          // no longer carries a function_date for (it filters those out),
+          // leaving the picker blank again even though a live sibling id has
+          // the date right there -- so every linked id is a candidate, not
+          // just the first.
+          supabase.from('events_safe').select('function_date').in('id', reqRow.event_ids)
+            .then(function (evRes) {
+              var withDate = (evRes.data || []).find(function (r) { return r.function_date })
+              if (!withDate) return
+              // Functional update: if the user already picked a date by hand
+              // in the moment before this resolved, that choice wins instead
+              // of being silently overwritten.
+              setFunctionDate(function (cur) { return cur ? cur : withDate.function_date })
+            })
+        }
       }
       var drIds = drRows.map(function (r) { return r.id })
       if (drIds.length === 0) {
@@ -347,7 +369,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
             departmentId: String(dr.department_id), subDepartmentId: String(dr.sub_department_id), section: dr.section || '', remarks: dr.remarks || '',
             reqNo: dr.req_no || '', reqImages: rowReqImages,
             showInventory: rowItems.length > 0, showCasual: rowCasuals.length > 0, showExpense: rowExpenseRows.length > 0,
-            invSearch: '', invResults: [], invSearching: false,
+            invSearch: '', invResults: [], invSearching: false, invHlIdx: -1,
             inventoryRows: rowItems, casualRows: rowCasuals, expenseRows: rowExpenseRows,
           }
         })
@@ -526,7 +548,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
 
   function onInvSearchChange(rowId, e) {
     var term = e.target.value
-    patchRow(rowId, { invSearch: term })
+    patchRow(rowId, { invSearch: term, invHlIdx: -1 })
     if (term.trim().length < 2) { patchRow(rowId, { invResults: [] }); return }
     var termLower = term.trim().toLowerCase()
     patchRow(rowId, { invSearching: true })
@@ -545,18 +567,61 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
         if (ra !== rb) return ra - rb
         return a.name.length - b.name.length
       }).slice(0, 12)
-      patchRow(rowId, { invResults: combined, invSearching: false })
+      patchRow(rowId, { invResults: combined, invSearching: false, invHlIdx: -1 })
     })
   }
 
-  async function addInventoryItem(row, pick) {
-    var latestRate = pick.ratePaise
-    var res = await supabase.rpc('fn_item_latest_rate', { p_item_id: pick.itemId, p_item_source: pick.itemSource })
-    if (!res.error && res.data != null) latestRate = res.data
+  // Mirrors ExpenseForm's focusNewItemQty: the row only exists once React has
+  // committed it, so retry across a few frames instead of assuming one is
+  // enough.
+  function focusInvQty(rowId, lineId) {
+    var tries = 0
+    function attempt() {
+      var el = document.getElementById('inv-qty-' + rowId + '-' + lineId)
+      if (el) { el.focus(); try { el.select() } catch (_) {} ; return }
+      if (++tries < 10) requestAnimationFrame(attempt)
+    }
+    requestAnimationFrame(attempt)
+  }
+
+  function patchRowFn(rowId, fn) {
+    setDeptRows(function (prev) { return prev.map(function (r) { return r.id === rowId ? fn(r) : r }) })
+  }
+
+  function addInventoryItem(row, pick) {
     var lineId = nextLineId
     setNextLineId(function (n) { return n + 1 })
-    var newLine = { id: lineId, itemSource: pick.itemSource, itemId: pick.itemId, name: pick.name, unit: pick.unit, qty: '', ratePaise: latestRate == null ? '' : latestRate }
-    patchRow(row.id, { inventoryRows: row.inventoryRows.concat([newLine]), invSearch: '', invResults: [] })
+    var fallbackRate = pick.ratePaise == null ? '' : pick.ratePaise
+    var newLine = { id: lineId, itemSource: pick.itemSource, itemId: pick.itemId, name: pick.name, unit: pick.unit, qty: '', ratePaise: fallbackRate }
+    // Line added and the dropdown cleared synchronously, off `prev` rather
+    // than the `row` snapshot captured at keydown time -- the old version
+    // awaited fn_item_latest_rate before touching state at all, so the
+    // dropdown stayed open and fully interactive for the whole round trip;
+    // a second Enter/click fired in that window built its own concat off the
+    // same stale pre-add array and whichever patch landed last silently
+    // erased the other's line (confirmed: holding Enter could drop one).
+    patchRowFn(row.id, function (r) {
+      return Object.assign({}, r, { inventoryRows: r.inventoryRows.concat([newLine]), invSearch: '', invResults: [], invHlIdx: -1 })
+    })
+    // The next thing typed after picking an item is its quantity, not another
+    // search term -- put the cursor there instead of leaving it in the
+    // (now-cleared) search box.
+    focusInvQty(row.id, lineId)
+
+    // The real last-purchase rate is a best-effort refinement on top of the
+    // catalog fallback already showing -- never blocks the line from
+    // appearing or the cursor from moving, and never clobbers a rate the
+    // user already typed over it while this was still in flight.
+    supabase.rpc('fn_item_latest_rate', { p_item_id: pick.itemId, p_item_source: pick.itemSource }).then(function (res) {
+      if (res.error || res.data == null) return
+      patchRowFn(row.id, function (r) {
+        return Object.assign({}, r, {
+          inventoryRows: r.inventoryRows.map(function (l) {
+            return (l.id === lineId && l.ratePaise === fallbackRate) ? Object.assign({}, l, { ratePaise: res.data }) : l
+          })
+        })
+      })
+    })
   }
   // Kept as the raw typed string (not coerced to a number) so the field can
   // actually be empty — a store requisition that starts every new line at
@@ -1008,7 +1073,7 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                             <p className="font-semibold text-[13.5px] text-slate-900 truncate" title={l.name}>{l.name}</p>
                             <p className="text-[12px] text-slate-500">{l.unit}</p>
                           </div>
-                          <input type="number" value={l.qty} onChange={function (e) { changeInvQty(row, l.id, e) }} placeholder="0" aria-label="Quantity"
+                          <input id={'inv-qty-' + row.id + '-' + l.id} type="number" value={l.qty} onChange={function (e) { changeInvQty(row, l.id, e) }} placeholder="0" aria-label="Quantity"
                             className={NUM_IN} style={{ fontSize: '15px' }} />
                           <span className="relative">
                             <span aria-hidden="true" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-400 pointer-events-none">₹</span>
@@ -1028,15 +1093,36 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
                 <div className={'relative px-4 py-2.5 ' + (row.inventoryRows.length ? 'border-t border-slate-100' : '')}>
                   <span aria-hidden="true" className="absolute left-7 top-1/2 -translate-y-1/2 text-violet-500 pointer-events-none"><Icon name="search" size={15} /></span>
                   <input type="text" value={row.invSearch} onChange={function (e) { onInvSearchChange(row.id, e) }}
+                    onKeyDown={function (e) {
+                      if (row.invResults.length === 0) return
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault()
+                        patchRow(row.id, { invHlIdx: Math.min((row.invHlIdx == null ? -1 : row.invHlIdx) + 1, row.invResults.length - 1) })
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault()
+                        patchRow(row.id, { invHlIdx: Math.max((row.invHlIdx == null ? -1 : row.invHlIdx) - 1, 0) })
+                      } else if (e.key === 'Enter') {
+                        if (row.invHlIdx >= 0 && row.invHlIdx < row.invResults.length) {
+                          e.preventDefault()
+                          addInventoryItem(row, row.invResults[row.invHlIdx])
+                        }
+                      } else if (e.key === 'Escape') {
+                        patchRow(row.id, { invResults: [], invHlIdx: -1 })
+                      }
+                    }}
                     placeholder={row.inventoryRows.length ? 'Add another item…' : 'Search for an item to add…'}
                     className="w-full h-10 pl-9 pr-3 rounded-lg border border-dashed border-violet-300 bg-violet-50/30 text-sm text-slate-800 placeholder:text-violet-700/60 focus:outline-none focus:border-solid focus:border-violet-500 focus:bg-white focus:ring-2 focus:ring-violet-500/20"
                     style={{ fontSize: '16px' }} />
                   {row.invResults.length > 0 && (
                     <div className="absolute z-20 left-4 right-4 top-full -mt-1 bg-white border border-slate-200 rounded-xl shadow-[0_12px_28px_-8px_rgba(15,23,42,0.25)] max-h-72 overflow-y-auto">
-                      {row.invResults.map(function (r) {
+                      {row.invResults.map(function (r, rIdx) {
                         return (
-                          <button key={r.itemSource + ':' + r.itemId} onClick={function () { addInventoryItem(row, r) }}
-                            className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-[13.5px] hover:bg-violet-50 border-b border-slate-100 last:border-0">
+                          <button key={r.itemSource + ':' + r.itemId} type="button"
+                            ref={function (el) { if (el && rIdx === row.invHlIdx) el.scrollIntoView({ block: 'nearest' }) }}
+                            onMouseEnter={function () { patchRow(row.id, { invHlIdx: rIdx }) }}
+                            onClick={function () { addInventoryItem(row, r) }}
+                            className={'flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-[13.5px] border-b border-slate-100 last:border-0 ' +
+                              (rIdx === row.invHlIdx ? 'bg-violet-50' : 'hover:bg-violet-50')}>
                             <span className="min-w-0 truncate font-semibold text-slate-800">{r.name}</span>
                             <span className="shrink-0 text-[12px] text-slate-500">{r.unit}</span>
                           </button>
