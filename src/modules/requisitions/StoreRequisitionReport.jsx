@@ -241,8 +241,9 @@ function StoreRequisitionReport({ reqs, dateFrom, dateTo, linkFilter }) {
               <div className="mt-2.5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                 {linkedEvents.map(function (e) {
                   var menu = cateringMenuLabel(e.catering)
+                  var p = plateSummary && plateSummary.byEvent && plateSummary.byEvent[e.id]
                   return (
-                    <div key={e.id} className="min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                    <div key={e.id} className="group/card relative min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 hover:border-emerald-200">
                       <div className="flex items-center justify-between gap-2 min-w-0">
                         <p className="min-w-0 truncate text-[13px] font-bold text-slate-900" title={e.event_name || e.client_name || ''}>{e.event_name || e.client_name || 'Event #' + e.id}</p>
                         {menu && <span className="shrink-0 max-w-[55%] truncate text-[11.5px] font-semibold text-amber-800 bg-amber-50 rounded px-1.5 py-0.5" title={menu}>{menu}</span>}
@@ -251,6 +252,31 @@ function StoreRequisitionReport({ reqs, dateFrom, dateTo, linkFilter }) {
                         <span className="min-w-0 truncate">{e.venue_name || '—'}</span>
                         <span className="shrink-0 tabular-nums">{e.function_date ? formatDate(e.function_date) : ''}</span>
                       </p>
+
+                      {/* Plate breakdown for just this function -- folded away
+                          behind hover so a multi-function requisition's card
+                          grid doesn't balloon into sixteen numbers at once.
+                          Opens upward on a CSS-only group-hover (no state,
+                          no portal) since the card grid never scrolls inside
+                          a clipping ancestor. */}
+                      {p && (
+                        <div className="pointer-events-none absolute left-1/2 bottom-[calc(100%+6px)] z-20 w-56 -translate-x-1/2 opacity-0 scale-95 origin-bottom transition-all duration-100 group-hover/card:opacity-100 group-hover/card:scale-100">
+                          <div className="rounded-xl border border-slate-200 bg-white shadow-lg p-2.5">
+                            <p className="px-0.5 text-[10.5px] font-bold uppercase tracking-wide text-slate-400">Plates for this function</p>
+                            <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                              {[['Booked', p.booking, false], ['Extra', p.extra, false], ['Returned', p.balance, false], ['Actual', p.actual, true]].map(function (st) {
+                                return (
+                                  <div key={st[0]} className={'rounded-lg px-2 py-1.5 ' + (st[2] ? 'bg-violet-50' : 'bg-slate-50')}>
+                                    <p className={'text-[10px] font-medium ' + (st[2] ? 'text-violet-700' : 'text-slate-500')}>{st[0]}</p>
+                                    <p className={'text-[14px] font-bold tabular-nums leading-tight ' + (st[2] ? 'text-violet-800' : 'text-slate-900')}>{st[1]}</p>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                          <div className="mx-auto h-2.5 w-2.5 -mt-[5px] rotate-45 border-b border-r border-slate-200 bg-white" />
+                        </div>
+                      )}
                     </div>
                   )
                 })}

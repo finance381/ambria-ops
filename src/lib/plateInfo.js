@@ -27,6 +27,11 @@ export async function computePlateSummary(eventIds) {
   var colls = res[1].data || []
 
   var booking = 0, extra = 0, balance = 0, actual = 0
+  // Per-event breakdown alongside the period total -- the report's "Linked
+  // functions" cards show the aggregate by default and this on hover, so a
+  // multi-function requisition can be read apart one contract at a time
+  // without a second round trip through the same two tables.
+  var byEvent = {}
   events.forEach(function (e) {
     var quota = e.total_plates || 0
     var issued = issues.filter(function (i) { return i.event_id === e.id && i.status === 'active' })
@@ -34,11 +39,13 @@ export async function computePlateSummary(eventIds) {
     var returned = colls.filter(function (c) { return c.event_id === e.id && (!c.status || c.status === 'active') })
       .reduce(function (s, c) { return s + Number(c.plates_returned || 0) }, 0)
     var consumed = Math.max(0, issued - returned)
+    var eventExtra = Math.max(0, consumed - quota)
     booking += quota
     balance += returned
     actual += consumed
-    extra += Math.max(0, consumed - quota)
+    extra += eventExtra
+    byEvent[e.id] = { booking: quota, extra: eventExtra, balance: returned, actual: consumed }
   })
 
-  return { booking: booking, extra: extra, balance: balance, actual: actual }
+  return { booking: booking, extra: extra, balance: balance, actual: actual, byEvent: byEvent }
 }

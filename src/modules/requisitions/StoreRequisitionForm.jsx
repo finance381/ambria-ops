@@ -307,6 +307,28 @@ function StoreRequisitionForm({ profile, onDone, onCancel, editId }) {
           return { id: i + 1, file: null, path: p, previewUrl: imagePublicUrl(p) }
         }))
         setNextCasualSlipId((reqRow.casual_slip_paths || []).length + 1)
+        // The function picker only ever fetches candidates for `functionDate`
+        // (see the effect below) -- leaving it blank on edit meant the saved
+        // event_ids were selected in state but had nothing to render against,
+        // so the card list came up empty and looked unselected. Seed it from
+        // whichever linked function was saved; re-picking a different date
+        // still works exactly as before.
+        if ((reqRow.event_ids || []).length > 0) {
+          // event_ids[0] alone can be a cancelled/merged id that events_safe
+          // no longer carries a function_date for (it filters those out),
+          // leaving the picker blank again even though a live sibling id has
+          // the date right there -- so every linked id is a candidate, not
+          // just the first.
+          supabase.from('events_safe').select('function_date').in('id', reqRow.event_ids)
+            .then(function (evRes) {
+              var withDate = (evRes.data || []).find(function (r) { return r.function_date })
+              if (!withDate) return
+              // Functional update: if the user already picked a date by hand
+              // in the moment before this resolved, that choice wins instead
+              // of being silently overwritten.
+              setFunctionDate(function (cur) { return cur ? cur : withDate.function_date })
+            })
+        }
       }
       var drIds = drRows.map(function (r) { return r.id })
       if (drIds.length === 0) {
