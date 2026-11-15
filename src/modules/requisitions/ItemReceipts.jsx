@@ -24,7 +24,7 @@ function matchRank(name, term) {
   return 3
 }
 
-function ItemReceipts({ profile, onCountChange }) {
+function ItemReceipts({ profile, onCountChange, onNavigateToExpenses }) {
   var [receipts, setReceipts] = useState([])
   var [loading, setLoading] = useState(true)
   var [hasMore, setHasMore] = useState(false)
@@ -53,7 +53,7 @@ function ItemReceipts({ profile, onCountChange }) {
   // ledger tab already opens an expense into, not a real new tab (this app
   // has no URL routing to deep-link one open to).
   var isAdmin = hasPerm(profile?.permsNew, 'finance.expenses.approve')
-  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadReceipts(false) })
+  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadReceipts(false) }, onNavigateToExpenses)
 
   // Debounce search
   useEffect(function () {

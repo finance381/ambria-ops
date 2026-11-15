@@ -39,7 +39,7 @@ var UNITS = [
   'Boxes', 'Cartons', 'Bottles', 'Sheets', 'Reams',
 ]
 
-function Requisitions({ profile, onBack }) {
+function Requisitions({ profile, onBack, onNavigateToExpenses }) {
   var [view, setView] = useState('list') // list | form | detail | approve
   var [myReqs, setMyReqs] = useState([])
   var [approvalReqs, setApprovalReqs] = useState([])
@@ -593,7 +593,7 @@ function Requisitions({ profile, onBack }) {
       })()}
 
       {view === 'receipts' && (
-        <ItemReceipts profile={profile} onCountChange={setPendingReceiptsCount} />
+        <ItemReceipts profile={profile} onCountChange={setPendingReceiptsCount} onNavigateToExpenses={onNavigateToExpenses} />
       )}
 
       {/* List (hidden in receipts view) */}
@@ -1965,7 +1965,11 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
   var canDelete = (req.requested_by === profile?.id && (req.status === 'pending_dept' || req.status === 'pending')) || isAdmin || isReqAdminApprover
   var canEdit = req.requested_by === profile?.id && (req.status === 'pending_dept' || req.status === 'pending')
   var noneInPO = items.length > 0 && items.every(function (li) { return !li.po_item_id })
-  var canCancel = req.requested_by === profile?.id && req.status === 'approved' && noneInPO
+  // Items issued from stock are 'dispatched' with no PO link, so noneInPO
+  // alone let the requester cancel them -- the stock stayed taken and the
+  // items vanished. Once anything has been issued, cancel is not offered.
+  var noneIssued = items.every(function (li) { return li.item_status !== 'dispatched' && li.item_status !== 'fulfilled' })
+  var canCancel = req.requested_by === profile?.id && req.status === 'approved' && noneInPO && noneIssued
 
   // Total cost
   var totalPaise = 0
@@ -2076,8 +2080,17 @@ function RequisitionDetail({ req, items, profile, isAdmin, isAuditor, isReqDeptA
   async function cancelReqInner() {
     if (!(await appConfirm('Cancel this requisition? Items will be removed from the procurement queue.'))) return
     setSaving(true)
-    var { error: reqErr } = await supabase.from('requisitions').update({ status: 'cancelled' }).eq('id', req.id)
+    // checked again here, against the DB: an admin may have issued an item
+    // since this screen loaded
+    var { data: issuedNow } = await supabase.from('requisition_items').select('id')
+      .eq('requisition_id', req.id).in('item_status', ['dispatched', 'fulfilled']).limit(1)
+    if (issuedNow && issuedNow.length > 0) {
+      alert('Not cancelled — some items have already been issued from stock. Confirm receipt of them instead, or ask an admin.')
+      setSaving(false); onUpdated(); return
+    }
+    var { data: cancelRows, error: reqErr } = await supabase.from('requisitions').update({ status: 'cancelled' }).eq('id', req.id).eq('status', 'approved').select('id')
     if (reqErr) { alert('Cancel failed: ' + reqErr.message); setSaving(false); return }
+    if (!cancelRows || cancelRows.length === 0) { alert('Not cancelled — this requisition was already changed by someone else. The screen will refresh.'); setSaving(false); onUpdated(); return }
     var itemIds = items.map(function (li) { return li.id })
     var itemCancelWarning = ''
     if (itemIds.length > 0) {

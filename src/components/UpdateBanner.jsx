@@ -52,7 +52,10 @@ function UpdateBanner() {
       setNow(t)
       if (t >= deadlineTs && !forcedRef.current) {
         forcedRef.current = true
-        try { updateServiceWorker(true) } catch (_) { window.location.reload() }
+        try { updateServiceWorker(true) } catch (_) {}
+        // same fallback as the Update button: when no worker was actually
+        // waiting, nothing reloads and the banner sat at "0m" forever
+        setTimeout(function () { window.location.reload() }, 4000)
       }
     }
     tick()

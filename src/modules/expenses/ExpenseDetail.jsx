@@ -1213,7 +1213,7 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
       )}
 
       {/* Own it */}
-      {canEdit && (
+      {canEdit && onEdit && (
         <div className="flex gap-2">
           <button onClick={onEdit} disabled={saving}
             className="flex-1 inline-flex items-center justify-center gap-2 py-3 text-[13px] font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 active:scale-[0.99] disabled:opacity-50 transition-all">
@@ -1302,9 +1302,9 @@ function ExpenseDetail({ exp, profile, isAdmin, isDeptApprover, inAdmin, onBack,
           bookkeeping, the other is undoing a mistake — so they sit below the
           rule at the size of what they are, rather than taking a full bar each
           in the middle of the decisions. */}
-      {(canRaiseGV || (canDelete && !deleteMode)) && (
+      {((canRaiseGV && onRaiseGV) || (canDelete && !deleteMode)) && (
         <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-200">
-          {canRaiseGV ? (
+          {canRaiseGV && onRaiseGV ? (
             <button onClick={onRaiseGV} disabled={saving}
               className="inline-flex items-center gap-1.5 h-9 px-3 -ml-1 rounded-lg text-[12.5px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 transition-colors">
               <Icon name="fileText" size={15} />

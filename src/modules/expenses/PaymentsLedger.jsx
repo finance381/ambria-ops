@@ -170,7 +170,7 @@ function DateRangeDropdown({ preset, onChange }) {
   )
 }
 
-function PaymentsLedger({ profile }) {
+function PaymentsLedger({ profile, onNavigateToExpenses }) {
   var permsNew = (profile && profile.permsNew) || []
   var canView = hasPerm(permsNew, 'finance.payments')
   var isAdmin = hasPerm(permsNew, 'admin.dashboard')
@@ -213,7 +213,7 @@ function PaymentsLedger({ profile }) {
   useBackButtonClose(!!enlargedImg, function () { setEnlargedImg(null) })
   var [checkingKey, setCheckingKey] = useState(null)
   var [enteringKey, setEnteringKey] = useState(null)
-  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { load() })
+  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { load() }, onNavigateToExpenses)
 
   async function load() {
     if (!canView) { setLoading(false); return }

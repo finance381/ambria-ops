@@ -354,6 +354,9 @@ function Shell({ profile, onSignOut, initialNotifLink }) {
       var fromGroup3 = activeGroup, fromTab3 = tab, fromSub3 = subTab
       pushBack(function () { setActiveGroup(fromGroup3); setTab(fromTab3); setSubTab(fromSub3) })
       setActiveGroup('events'); setTab('events'); setSubTab(null)
+    } else if (link === 'events:sync_issues') {
+      // Sync Issues only exists in the desktop view -- open it there
+      window.location.href = '?view=admin&notif=' + encodeURIComponent(link)
     } else if (link && link.indexOf('contracts:') === 0) {
       var fromGroup4 = activeGroup, fromTab4 = tab, fromSub4 = subTab
       pushBack(function () { setActiveGroup(fromGroup4); setTab(fromTab4); setSubTab(fromSub4) })
@@ -926,7 +929,7 @@ function Shell({ profile, onSignOut, initialNotifLink }) {
           <SalesQuickSend profile={profile} />
         )}
         {tab === 'requisitions' && (
-          <Requisitions profile={profile} onBack={goBack} />
+          <Requisitions profile={profile} onBack={goBack} onNavigateToExpenses={navigateToExpenses} />
         )}
         {tab === 'storereq' && (
           <StoreRequisitions profile={profile} />
@@ -947,7 +950,7 @@ function Shell({ profile, onSignOut, initialNotifLink }) {
           <EventLedger profile={profile} onNavigateToExpenses={navigateToExpenses} />
         )}
         {tab === 'inventory_ledger' && (
-          <InventoryLedger profile={profile} />
+          <InventoryLedger profile={profile} onNavigateToExpenses={navigateToExpenses} />
         )}
         {tab === 'vendor_ledger' && (
           <VendorLedger profile={profile} onNavigateToExpenses={navigateToExpenses} />
@@ -959,7 +962,7 @@ function Shell({ profile, onSignOut, initialNotifLink }) {
           <Payments profile={profile} />
         )}
         {tab === 'cash_bank' && (
-          <PaymentsLedger profile={profile} />
+          <PaymentsLedger profile={profile} onNavigateToExpenses={navigateToExpenses} />
         )}
         {tab === 'decor_var_cost' && (
           <DecorVarCost profile={profile} />
@@ -968,7 +971,7 @@ function Shell({ profile, onSignOut, initialNotifLink }) {
           <SalaryPayouts profile={profile} />
         )}
         {tab === 'salary_ledger' && (
-          <SalaryLedger profile={profile} />
+          <SalaryLedger profile={profile} onNavigateToExpenses={navigateToExpenses} />
         )}
         {tab === 'purchase' && (
           <Purchase profile={profile} mode="purchase" />

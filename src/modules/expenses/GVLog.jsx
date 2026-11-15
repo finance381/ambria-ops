@@ -6,11 +6,11 @@ import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import SearchField from '../../components/ui/SearchField'
 import DescriptionNote from '../../components/ui/DescriptionNote'
 
-function GVLog({ profile }) {
+function GVLog({ profile, onNavigateToExpenses }) {
   var permsNew = (profile && profile.permsNew) || []
   var isAdmin = profile?.role === 'admin' || hasPerm(permsNew, 'admin.dashboard')
   var canView = isAdmin || hasPerm(permsNew, 'finance.gv') || hasPerm(permsNew, 'finance.ledgers.gv')
-  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadGvs() })
+  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadGvs() }, onNavigateToExpenses)
 
   var [gvs, setGvs] = useState([])
   var [loading, setLoading] = useState(true)

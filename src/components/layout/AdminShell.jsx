@@ -287,7 +287,7 @@ var ADMIN_TABS = [
     // Quote Calc lives only in the separate mobile Shell.jsx nav, not here.
     // Including it just showed this tab to quote-only users with nothing
     // behind it to open.
-    anyPerm: ['events.list','events.extra_plate_collect','events.contracts'] },
+    anyPerm: ['events.list','events.extra_plate_collect','events.contracts','events.sync_issues'] },
   { key: 'masters',     label: 'Masters',     icon: 'settings',
     blurb: 'The lists every other screen picks from.',
     anyPerm: ['admin.masters', 'hr.casual_roster'] },

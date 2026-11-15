@@ -17,7 +17,7 @@ import { registerPdfFont } from '../../lib/pdfFont'
 import { openOrSharePdf } from '../../lib/pdfOutput'
 import { plainParticularsLines, plainDateLines, makeStatementCellHooks } from '../../lib/pdfStatementTable'
 
-function SalaryLedger({ profile, inAdmin }) {
+function SalaryLedger({ profile, inAdmin, onNavigateToExpenses }) {
   var permsNew = (profile && profile.permsNew) || []
   var isAdmin = hasPerm(permsNew, 'admin.dashboard')
   var canSeeSalary = hasPerm(permsNew, 'hr.employees.salary_view')
@@ -54,7 +54,7 @@ function SalaryLedger({ profile, inAdmin }) {
   }, [view])
   var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () {
     if (selectedEmp) loadEntries(selectedEmp, showDeleted)
-  })
+  }, onNavigateToExpenses)
 
   var [showPayModal, setShowPayModal] = useState(false)
   var [showAccrueModal, setShowAccrueModal] = useState(false)  // SL-C4

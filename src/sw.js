@@ -59,7 +59,9 @@ self.addEventListener('notificationclick', function (event) {
         if ('focus' in client) return client.focus()
       }
       if (self.clients.openWindow) {
-        var url = self.registration.scope + (link ? '?notif=' + encodeURIComponent(link) : '')
+        // Sync Issues lives only in the desktop view, so that link opens it there
+        var viewPart = link === 'events:sync_issues' ? 'view=admin&' : ''
+        var url = self.registration.scope + (link ? '?' + viewPart + 'notif=' + encodeURIComponent(link) : '')
         return self.clients.openWindow(url)
       }
     })

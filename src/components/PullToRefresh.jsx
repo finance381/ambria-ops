@@ -63,9 +63,15 @@ function PullToRefresh() {
     // a form control, where a drag is never meant as a page gesture) fixes
     // both that and the more common case of a swipe misfiring over an input.
     function startsInsideOwnScroller(target) {
+      // A popup or sheet is open (they lock the page scroll): a pull here
+      // reloaded the whole app and threw away the half-filled form in it.
+      if (document.body.style.overflow === 'hidden' || document.documentElement.style.overflow === 'hidden') return true
       var el = target
       while (el && el !== document.body) {
-        if (el.matches && el.matches('input, select, textarea, button, [contenteditable="true"]')) return true
+        if (el.matches && el.matches('input, select, textarea, button, [contenteditable="true"], [role="dialog"]')) return true
+        // anything inside a fixed layer (modal, bottom sheet, drawer) -- even
+        // a short one that doesn't scroll -- is not the page
+        if (window.getComputedStyle(el).position === 'fixed') return true
         if (el.scrollHeight > el.clientHeight + 1) {
           var oy = window.getComputedStyle(el).overflowY
           if (oy === 'auto' || oy === 'scroll') return true

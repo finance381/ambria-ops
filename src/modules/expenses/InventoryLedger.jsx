@@ -62,7 +62,7 @@ var GRID = 'grid items-center gap-x-3 grid-cols-[2.5rem_minmax(11rem,22rem)_10re
 
 var COL_HEAD = 'text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500'
 
-function InventoryLedger({ profile, deepLinkInventoryItem, onDeepLinkInventoryItemHandled }) {
+function InventoryLedger({ profile, deepLinkInventoryItem, onDeepLinkInventoryItemHandled, onNavigateToExpenses }) {
   var permsNew = (profile && profile.permsNew) || []
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.inventory')
   var canView = isAdmin || hasPerm(permsNew, 'finance.ledgers.inventory')
@@ -105,7 +105,7 @@ function InventoryLedger({ profile, deepLinkInventoryItem, onDeepLinkInventoryIt
     return String(rounded)
   }
 
-  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadAll() })
+  var { openExpenseDetail, expenseDetailModal } = useExpenseDetailModal(profile, isAdmin, function () { loadAll() }, onNavigateToExpenses)
 
   useEffect(function () {
     if (canView) loadAll()
