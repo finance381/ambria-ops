@@ -62,6 +62,8 @@ var TYPE_META = {
   salary_adjustment:  { label: 'Salary Adjustment',      direction: 'out', icon: 'minus',      tone: TONE.amber },
   collection:         { label: 'Event Collection',       direction: 'in',  icon: 'rupee',      tone: TONE.green },
   epc:                { label: 'Extra Plate Collection', direction: 'in',  icon: 'utensils',   tone: TONE.green },
+  collection_cancel:  { label: 'Collection Cancelled',    direction: 'out', icon: 'undo',       tone: TONE.amber },
+  extra_plate_cancel: { label: 'Extra Plate Cancelled',   direction: 'out', icon: 'undo',       tone: TONE.amber },
   expense:            { label: 'Expense (Cash)',         direction: 'out', icon: 'receipt',    tone: TONE.red },
   expense_refund:     { label: 'Expense Refund',         direction: 'in',  icon: 'undo',       tone: TONE.green },
 }
@@ -234,12 +236,32 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
         .lte('entry_date', dateTo)
         .order('entry_date', { ascending: false })
         .order('id', { ascending: false }) }),
+      // Both legs of a collection, cancelled or not -- plain event collections
+      // AND extra-plate collections, which cancel through a different function
+      // with its own reversal shape:
+      //  - the original row (kept even once status flips to 'cancelled' --
+      //    it was still real money in at the time)
+      //  - fn_wallet_collect_cancel's reversal (reference_type=
+      //    'collection_cancel', reference_id = the original wallet_transaction's
+      //    own id)
+      //  - fn_extra_plate_cancel's reversal (reference_type=
+      //    'extra_plate_cancel', reference_id = the extra_plate_collections
+      //    row's id, NOT a wallet_transaction id -- resolved via epcById below).
+      //    Confirmed live (pg_get_functiondef) this one DOES set its own
+      //    payment_mode on insert, unlike collection_cancel's.
+      // Dropping cancelled originals and never fetching either reversal meant
+      // a cancelled collection just vanished from this ledger entirely, on
+      // both legs -- the opposite of what a cash/bank movement ledger is for.
       fetchAllRows(function () { return supabase
         .from('wallet_transactions')
-        .select('id, created_at, amount_paise, description, payment_mode, bank_payment_type, receipt_no, reference_id, performed_by, status, received_image_path, checked_by, checked_at, tally_entered_by, tally_entered_at')
-        .eq('reference_type', 'collection')
-        .not('payment_mode', 'is', null)
-        .neq('status', 'cancelled')
+        .select('id, created_at, amount_paise, description, payment_mode, bank_payment_type, receipt_no, reference_id, reference_type, performed_by, status, received_image_path, checked_by, checked_at, tally_entered_by, tally_entered_at')
+        .in('reference_type', ['collection', 'collection_cancel', 'extra_plate_cancel'])
+        // fn_wallet_collect_cancel's reversal row never sets payment_mode on
+        // itself (see migration 00160's INSERT column list) -- it's backfilled
+        // from the original collection's own mode below, once both rows are
+        // in hand. Filtering payment_mode up front like every other source in
+        // this query would silently drop every reversal before it got there.
+        .or('payment_mode.not.is.null,reference_type.eq.collection_cancel')
         .gte('created_at', dateFrom)
         .lte('created_at', dateTo + 'T23:59:59')
         .order('created_at', { ascending: false })
@@ -292,6 +314,22 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
       if (n && !isNaN(n) && candidateEventIds.indexOf(n) === -1) candidateEventIds.push(n)
     })
 
+    // A cancellation can land weeks after the collection it reverses, so the
+    // original can easily fall outside whatever date range is selected even
+    // though its 'collection_cancel' row is inside it. Fetched here by id,
+    // regardless of date, purely so the reversal row can still show the real
+    // cash/bank mode (and get found by the right Cash/Bank quick filter) and
+    // its receipt number -- not added as a visible row of its own, since the
+    // user's date range deliberately doesn't include it.
+    var knownOriginalIds = {}
+    collectRows.forEach(function (w) { if (w.reference_type === 'collection') knownOriginalIds[w.id] = true })
+    var missingOriginalIds = []
+    collectRows.forEach(function (w) {
+      if (w.reference_type === 'collection_cancel' && w.reference_id && !knownOriginalIds[w.reference_id] && missingOriginalIds.indexOf(w.reference_id) === -1) {
+        missingOriginalIds.push(w.reference_id)
+      }
+    })
+
     // An expense-funded row's "checked" state lives on the expense itself
     // (expenses.checked_by/checked_at), same as everywhere else that shows an
     // expense — not on this wallet_transactions row, which has its own
@@ -308,16 +346,23 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
     // silently came back null for any wallet that wasn't the viewer's own.
     // Owner ids are resolved below instead, through fn_profile_names
     // alongside the checked-by/entered-by names.
-    var [vRes, walletOwnersRes, epcRes, pRes, evRes, expCheckRes] = await Promise.all([
+    var [vRes, walletOwnersRes, epcRes, pRes, evRes, expCheckRes, missingOriginalsRes] = await Promise.all([
       vendorIds.length > 0 ? supabase.from('vendors').select('id, name').in('id', vendorIds) : Promise.resolve({ data: [] }),
       walletIdsForOwners.length > 0 ? supabase.from('wallets').select('id, user_id').in('id', walletIdsForOwners) : Promise.resolve({ data: [] }),
-      // EPC back-links so collections can be split from plain event collections
-      collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id, extras_charged, plates_returned, discount_paise, events(id, event_name, client_name, function_date, venue_name, location, session)').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
+      // EPC back-links so collections can be split from plain event collections.
+      // status included so a cancelled EPC's own originating collection row can
+      // be flagged the same way a plain cancelled collection already is -- the
+      // original wallet_transactions row's own status never changes when an
+      // extra-plate collection is cancelled (confirmed live: fn_extra_plate_cancel
+      // only ever updates extra_plate_collections.status), so that flag isn't on
+      // the row the rest of this file already knows how to read it from.
+      collectIds.length > 0 ? supabase.from('extra_plate_collections').select('id, event_id, wallet_tx_id, status, extras_charged, plates_returned, discount_paise, events(id, event_name, client_name, function_date, venue_name, location, session)').in('wallet_tx_id', collectIds) : Promise.resolve({ data: [] }),
       // fn_profile_names, not a direct select -- RLS on profiles only lets a
       // user read their own row, and most of these are someone else's.
       profileIds.length > 0 ? supabase.rpc('fn_profile_names', { p_ids: profileIds }) : Promise.resolve({ data: [] }),
       candidateEventIds.length > 0 ? supabase.from('events').select('id, event_name, client_name, function_date, venue_name, location, session').in('id', candidateEventIds) : Promise.resolve({ data: [] }),
       expenseIdsForCheck.length > 0 ? supabase.from('expenses').select('id, checked_by, checked_at, tally_entered_by, tally_entered_at').in('id', expenseIdsForCheck) : Promise.resolve({ data: [] }),
+      missingOriginalIds.length > 0 ? supabase.from('wallet_transactions').select('id, payment_mode, bank_payment_type, receipt_no').in('id', missingOriginalIds) : Promise.resolve({ data: [] }),
     ])
 
     var vendorNames = {}; (vRes.data || []).forEach(function (v) { vendorNames[v.id] = v.name })
@@ -325,6 +370,7 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
     var eventNames = {}; var eventInfo = {}
     ;(evRes.data || []).forEach(function (e) { eventNames[e.id] = e.event_name; eventInfo[e.id] = e })
     var expCheckById = {}; (expCheckRes.data || []).forEach(function (e) { expCheckById[e.id] = e })
+    var missingOriginalsById = {}; (missingOriginalsRes.data || []).forEach(function (o) { missingOriginalsById[o.id] = o })
 
     // Whoever marked an entry checked — collected only after the checked
     // state itself is known (the expense-linked one only just arrived above),
@@ -347,11 +393,62 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
     }
 
     var epcByWalletTx = {}
+    var epcById = {}
     ;(epcRes.data || []).forEach(function (e) {
       if (e.wallet_tx_id) epcByWalletTx[e.wallet_tx_id] = e
+      epcById[e.id] = e
       if (e.events && e.events.id && eventInfo[e.events.id] == null) eventInfo[e.events.id] = e.events
       if (e.events && e.events.id && eventNames[e.events.id] == null) eventNames[e.events.id] = e.events.event_name
     })
+
+    // Same out-of-range problem as missingOriginalIds above, one level
+    // removed: the main extra_plate_collections query above only looked
+    // among IN-RANGE wallet_tx_ids, so an 'extra_plate_cancel' reversal whose
+    // own collection predates the range has no epcById entry at all yet --
+    // confirmed the common case (a cancel can land weeks after the plates
+    // were actually collected), not a rare one.
+    var missingEpcIds = []
+    collectRows.forEach(function (w) {
+      if (w.reference_type === 'extra_plate_cancel' && w.reference_id && !epcById[w.reference_id] && missingEpcIds.indexOf(w.reference_id) === -1) {
+        missingEpcIds.push(w.reference_id)
+      }
+    })
+    if (missingEpcIds.length > 0) {
+      var moreEpcRes = await supabase.from('extra_plate_collections')
+        .select('id, event_id, wallet_tx_id, status, extras_charged, plates_returned, discount_paise, events(id, event_name, client_name, function_date, venue_name, location, session)')
+        .in('id', missingEpcIds)
+      ;(moreEpcRes.data || []).forEach(function (e) {
+        if (e.wallet_tx_id) epcByWalletTx[e.wallet_tx_id] = e
+        epcById[e.id] = e
+        if (e.events && e.events.id && eventInfo[e.events.id] == null) eventInfo[e.events.id] = e.events
+        if (e.events && e.events.id && eventNames[e.events.id] == null) eventNames[e.events.id] = e.events.event_name
+      })
+    }
+
+    // So a 'collection_cancel' reversal row (which carries no event link and
+    // no payment_mode of its own -- see the query above) can borrow both
+    // from the original collection it reverses.
+    var collectionById = {}
+    collectRows.forEach(function (w) { if (w.reference_type === 'collection') collectionById[w.id] = w })
+    // Fill in whatever the date range itself left out (see missingOriginalIds
+    // above) -- these only ever supply mode/receipt/bank-payment-type to a
+    // reversal row below, they were never added to collectRows itself.
+    Object.keys(missingOriginalsById).forEach(function (id) { if (!collectionById[id]) collectionById[id] = missingOriginalsById[id] })
+    // Same again for an extra-plate cancel's own original, now that
+    // missingEpcIds may have surfaced more wallet_tx_ids to chase.
+    var stillMissingOriginalIds = []
+    Object.keys(epcById).forEach(function (id) {
+      var e = epcById[id]
+      if (e.wallet_tx_id && !collectionById[e.wallet_tx_id] && stillMissingOriginalIds.indexOf(e.wallet_tx_id) === -1) {
+        stillMissingOriginalIds.push(e.wallet_tx_id)
+      }
+    })
+    if (stillMissingOriginalIds.length > 0) {
+      var moreOriginalsRes = await supabase.from('wallet_transactions')
+        .select('id, payment_mode, bank_payment_type, receipt_no')
+        .in('id', stillMissingOriginalIds)
+      ;(moreOriginalsRes.data || []).forEach(function (o) { if (!collectionById[o.id]) collectionById[o.id] = o })
+    }
 
     var combined = []
     ledgerRows.forEach(function (r) {
@@ -382,10 +479,27 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
       })
     })
     collectRows.forEach(function (w) {
-      var epc = epcByWalletTx[w.id]
+      var isPlainCancelLeg = w.reference_type === 'collection_cancel'
+      var isEpcCancelLeg = w.reference_type === 'extra_plate_cancel'
+      var isCancelLeg = isPlainCancelLeg || isEpcCancelLeg
+      // The two reversal shapes point at different things by reference_id:
+      // collection_cancel -> the original wallet_transaction's own id;
+      // extra_plate_cancel -> the extra_plate_collections row's own id (never
+      // a wallet_transaction id at all). Resolved here so either cancellation
+      // shows the same event/party/mode a reader would expect from its receipt.
+      var original = isPlainCancelLeg ? collectionById[w.reference_id] : null
+      var epcFromCancel = isEpcCancelLeg ? epcById[w.reference_id] : null
+      if (isEpcCancelLeg && epcFromCancel && epcFromCancel.wallet_tx_id) original = collectionById[epcFromCancel.wallet_tx_id]
+      // Whichever row actually carries the real reference (the original, be
+      // it looked up directly or for either cancel leg) -- source of both the
+      // EPC lookup and the plain event-id fallback below.
+      var sourceRow = isCancelLeg ? original : w
+      var epc = epcFromCancel || (sourceRow ? epcByWalletTx[sourceRow.id] : null)
       var isEpc = !!epc
-      var meta = isEpc ? TYPE_META.epc : TYPE_META.collection
-      var evId = isEpc ? epc.event_id : (w.reference_id ? Number(w.reference_id) : null)
+      var meta = isPlainCancelLeg ? TYPE_META.collection_cancel
+        : isEpcCancelLeg ? TYPE_META.extra_plate_cancel
+        : (isEpc ? TYPE_META.epc : TYPE_META.collection)
+      var evId = isEpc ? epc.event_id : ((sourceRow && sourceRow.reference_id) ? Number(sourceRow.reference_id) : null)
       var partyName = (evId && eventNames[evId]) || '—'
       combined.push({
         key: 'wt:' + w.id,
@@ -393,8 +507,11 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
         date: w.created_at ? w.created_at.split('T')[0] : '',
         logged_at: w.created_at,
         direction: meta.direction,
-        mode: w.payment_mode,
-        _bankPaymentType: w.bank_payment_type || null,
+        // The reversal never carries its own mode (see the query comment
+        // above) -- it moved the same cash/bank the original did. Original
+        // checked first: it's the one that's actually ever set.
+        mode: (original && original.payment_mode) || w.payment_mode || null,
+        _bankPaymentType: (original && original.bank_payment_type) || w.bank_payment_type || null,
         amount_paise: w.amount_paise || 0,
         party_name: partyName,
         collector_name: (w.performed_by && profileNames[w.performed_by]) || '',
@@ -407,10 +524,17 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
         _isEpc: isEpc,
         _epc: epc || null,
         _eventInfo: (evId && eventInfo[evId]) || null,
-        _receiptNo: w.receipt_no,
+        _receiptNo: w.receipt_no || (original && original.receipt_no) || null,
         _performedBy: w.performed_by,
         _imgUrl: getReceiptUrl(w.received_image_path),
         _imgIsVoice: isVoiceNotePath(w.received_image_path),
+        // True only for the original leg once it's been cancelled -- the
+        // reversal row itself is never flagged this way, it IS the cancel.
+        // Two different signals depending on which path cancelled it: a plain
+        // collection flips its own wallet_transactions.status; an extra-plate
+        // collection instead flips extra_plate_collections.status and never
+        // touches the funding wallet_transactions row at all (confirmed live).
+        _cancelled: !isCancelLeg && (w.status === 'cancelled' || (isEpc && epc.status === 'cancelled')),
         checked_by: w.checked_by,
         checked_at: w.checked_at,
         _checkedByName: (w.checked_by && profileNames[w.checked_by]) || null,
@@ -551,7 +675,10 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
         // The collector and the type are on the row, so they are worth
         // searching: "who took this" is a question people actually ask of
         // this screen, and it used to match nothing.
-        var hay = [r.party_name, r.description, r.collector_name, r.recorded_by, r.type_label].join(' ').toLowerCase()
+        // _receiptNo included so searching the last few digits printed on a
+        // receipt (the part someone actually remembers) finds it -- it wasn't
+        // in the haystack at all before, only ever visible, never searchable.
+        var hay = [r.party_name, r.description, r.collector_name, r.recorded_by, r.type_label, r._receiptNo].join(' ').toLowerCase()
         if (hay.indexOf(q) === -1) return false
       }
       return true
@@ -965,6 +1092,7 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
                       <span className={CHIP_SM + src.tone}><Icon name={src.icon} size={11} className="shrink-0" />{src.label}</span>
                       <span className={CHIP_SM + r.type_tone}>{r.type_icon && <Icon name={r.type_icon} size={11} className="shrink-0" />}{r.type_label}</span>
                       <span className={CHIP_SM + m.tone}><Icon name={m.icon} size={11} className="shrink-0" />{m.label}</span>
+                      {r._cancelled && <span className={CHIP_SM + TONE.red}><Icon name="close" size={11} className="shrink-0" />Cancelled</span>}
                     </div>
                     <div className="mt-2.5 flex items-center justify-between gap-2">
                       {/* When and by whom, each with its icon. */}
@@ -1119,6 +1247,12 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
                             {r.type_icon && <Icon name={r.type_icon} size={12} className="shrink-0" />}
                             {r.type_label}
                           </span>
+                          {r._cancelled && (
+                            <span className={CHIP + TONE.red}>
+                              <Icon name="close" size={12} className="shrink-0" />
+                              Cancelled
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -1227,7 +1361,10 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
             <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto"
               onClick={function (ev) { ev.stopPropagation() }}>
               <div className="flex items-start justify-between gap-2">
-                <h3 className="text-base font-bold text-gray-900">{r.type_label}</h3>
+                <h3 className="flex items-center gap-2 text-base font-bold text-gray-900">
+                  {r.type_label}
+                  {r._cancelled && <span className={CHIP + TONE.red}><Icon name="close" size={12} className="shrink-0" />Cancelled</span>}
+                </h3>
                 <button onClick={closeDetail} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
               </div>
               <p className={"text-2xl font-bold " + (r.direction === 'in' ? "text-green-700" : "text-gray-900")}>
@@ -1259,7 +1396,7 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
 
                 {r.source === 'collection' && <p className="pt-2 mt-1 border-t border-gray-200 text-[11px] font-bold uppercase tracking-wide text-gray-600">Other details</p>}
                 <div className="flex justify-between"><span className="text-gray-500">Party</span><span className="font-medium text-gray-800">{r.party_name}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Mode</span><span className="font-medium text-gray-800">{r.mode === 'cash' ? 'Cash' : 'Bank'}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Mode</span><span className="font-medium text-gray-800">{(MODE_META[r.mode] || {}).label || '—'}</span></div>
                 {r._bankPaymentType && (
                   <div className="flex justify-between"><span className="text-gray-500">Payment Type</span><span className="font-medium text-gray-800">{r._bankPaymentType}</span></div>
                 )}
@@ -1273,7 +1410,7 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
                   <div className="flex justify-between"><span className="text-gray-500">Salary month</span><span className="font-medium text-gray-800">{meta.salary_month}</span></div>
                 )}
                 {r.source === 'collection' && (
-                  <div className="flex justify-between"><span className="text-gray-500">Collected by</span><span className="font-medium text-gray-800">{detailTarget.loading ? '…' : (detailTarget.collectorName || '—')}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">{(r.type_label === 'Collection Cancelled' || r.type_label === 'Extra Plate Cancelled') ? 'Cancelled by' : 'Collected by'}</span><span className="font-medium text-gray-800">{detailTarget.loading ? '…' : (detailTarget.collectorName || '—')}</span></div>
                 )}
                 {r.source === 'collection' && r._isEpc && r._epc && (
                   <div className="flex justify-between"><span className="text-gray-500">Extra plates</span><span className="font-medium text-gray-800">{r._epc.extras_charged}</span></div>
