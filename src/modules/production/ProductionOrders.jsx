@@ -71,7 +71,9 @@ function ProductionOrders({ profile }) {
   var [fItemSearch, setFItemSearch] = useState('')
   var [fItem, setFItem] = useState(null)
   var [fSearchResults, setFSearchResults] = useState([])
+  var [fSearchHlIdx, setFSearchHlIdx] = useState(-1)
   var [fQty, setFQty] = useState('')
+  var fQtyRef = useRef(null)
   var [fDesc, setFDesc] = useState('')
   var [fDept, setFDept] = useState('')
   var [fAssigned, setFAssigned] = useState('')
@@ -199,12 +201,17 @@ function ProductionOrders({ profile }) {
     ;(invRes.data || []).forEach(function (it) { results.push(Object.assign({}, it, { _source: 'inventory' })) })
     ;(csRes.data || []).forEach(function (it) { results.push(Object.assign({}, it, { _source: 'catering_store' })) })
     setFSearchResults(results)
+    setFSearchHlIdx(-1)
   }
 
   function pickItem(item) {
     setFItem(item)
     setFItemSearch(item.name)
     setFSearchResults([])
+    setFSearchHlIdx(-1)
+    requestAnimationFrame(function () {
+      if (fQtyRef.current) { fQtyRef.current.focus(); try { fQtyRef.current.select() } catch (_) {} }
+    })
   }
 
   // ── FORM ──
@@ -491,20 +498,41 @@ function ProductionOrders({ profile }) {
                 onChange={function (e) {
                   setFItemSearch(e.target.value)
                   setFItem(null)
+                  setFSearchHlIdx(-1)
                   searchItems(e.target.value)
+                }}
+                onKeyDown={function (e) {
+                  if (fSearchResults.length === 0) return
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    setFSearchHlIdx(function (prev) { return Math.min(prev + 1, fSearchResults.length - 1) })
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    setFSearchHlIdx(function (prev) { return Math.max(prev - 1, 0) })
+                  } else if (e.key === 'Enter') {
+                    if (fSearchHlIdx >= 0 && fSearchHlIdx < fSearchResults.length) {
+                      e.preventDefault()
+                      pickItem(fSearchResults[fSearchHlIdx])
+                    }
+                  } else if (e.key === 'Escape') {
+                    setFSearchResults([]); setFSearchHlIdx(-1)
+                  }
                 }}
                 placeholder="Search inventory item..."
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               {fSearchResults.length > 0 && !fItem && (
                 <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
-                  {fSearchResults.map(function (item) {
+                  {fSearchResults.map(function (item, rIdx) {
                     var catName = item.categories?.name || '—'
                     var subCatName = item.sub_categories?.name || ''
                     var imgUrl = getImageUrl(item.image_path)
                     return (
                       <button key={item._source + '-' + item.id}
+                        ref={function (el) { if (el && rIdx === fSearchHlIdx) el.scrollIntoView({ block: 'nearest' }) }}
+                        onMouseEnter={function () { setFSearchHlIdx(rIdx) }}
                         onClick={function () { pickItem(item) }}
-                        className="w-full text-left px-3 py-2.5 hover:bg-indigo-50 border-b border-gray-100 last:border-0 flex items-center gap-3">
+                        className={"w-full text-left px-3 py-2.5 border-b border-gray-100 last:border-0 flex items-center gap-3 " +
+                          (rIdx === fSearchHlIdx ? "bg-indigo-50" : "hover:bg-indigo-50")}>
                         {imgUrl ? (
                           <img src={imgUrl} alt="" className="w-10 h-10 rounded object-cover border border-gray-200 flex-shrink-0" />
                         ) : (
@@ -544,7 +572,7 @@ function ProductionOrders({ profile }) {
           <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">Qty to Produce *</label>
-              <input type="number" min="1" value={fQty}
+              <input ref={fQtyRef} type="number" min="1" value={fQty}
                 onChange={function (e) { setFQty(e.target.value) }}
                 placeholder="0"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />

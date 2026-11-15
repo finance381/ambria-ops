@@ -66,6 +66,8 @@ function Boxes({ profile }) {
   var [searching, setSearching] = useState(false)
   var [addQty, setAddQty] = useState('')
   var [selectedItem, setSelectedItem] = useState(null)
+  var [searchHlIdx, setSearchHlIdx] = useState(-1)
+  var addQtyRef = useRef(null)
 
   var isAdmin = isPrivilegedRole(profile)
 
@@ -231,6 +233,7 @@ function Boxes({ profile }) {
     })
 
     setSearchResults(results)
+    setSearchHlIdx(-1)
     setSearching(false)
   }
 
@@ -239,6 +242,11 @@ function Boxes({ profile }) {
     setAddItemSearch(item.name)
     setSearchResults([])
     setAddQty('1')
+    // Qty is the very next thing to set after picking an item -- same as
+    // Store Requisition/Expense Form's item-add flows.
+    requestAnimationFrame(function () {
+      if (addQtyRef.current) { addQtyRef.current.focus(); try { addQtyRef.current.select() } catch (_) {} }
+    })
   }
 
   async function addItemToBox() {
@@ -459,17 +467,38 @@ function Boxes({ profile }) {
                 onChange={function (e) {
                   setAddItemSearch(e.target.value)
                   setSelectedItem(null)
+                  setSearchHlIdx(-1)
                   searchItems(e.target.value)
+                }}
+                onKeyDown={function (e) {
+                  if (searchResults.length === 0) return
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    setSearchHlIdx(function (prev) { return Math.min(prev + 1, searchResults.length - 1) })
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    setSearchHlIdx(function (prev) { return Math.max(prev - 1, 0) })
+                  } else if (e.key === 'Enter') {
+                    if (searchHlIdx >= 0 && searchHlIdx < searchResults.length) {
+                      e.preventDefault()
+                      pickItem(searchResults[searchHlIdx])
+                    }
+                  } else if (e.key === 'Escape') {
+                    setSearchResults([]); setSearchHlIdx(-1)
+                  }
                 }}
                 placeholder="Search inventory items..."
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               {searchResults.length > 0 && !selectedItem && (
                 <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {searchResults.map(function (item) {
+                  {searchResults.map(function (item, rIdx) {
                     return (
                       <button key={item.source_type + '-' + item.id}
+                        ref={function (el) { if (el && rIdx === searchHlIdx) el.scrollIntoView({ block: 'nearest' }) }}
+                        onMouseEnter={function () { setSearchHlIdx(rIdx) }}
                         onClick={function () { pickItem(item) }}
-                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-0">
+                        className={"w-full text-left px-3 py-2 border-b border-gray-100 last:border-0 " +
+                          (rIdx === searchHlIdx ? "bg-gray-50" : "hover:bg-gray-50")}>
                         <span className="text-sm font-medium text-gray-800">{item.name}</span>
                         <span className="text-[10px] text-gray-400 ml-2">{item.unit} · Stock: {item.qty}</span>
                         <span className={"text-[10px] ml-2 px-1.5 py-0.5 rounded " +
@@ -485,7 +514,7 @@ function Boxes({ profile }) {
             {selectedItem && (
               <div className="flex items-center gap-3">
                 <span className="text-sm text-gray-700 flex-1">{selectedItem.name}</span>
-                <input type="number" value={addQty}
+                <input ref={addQtyRef} type="number" value={addQty}
                   onChange={function (e) { setAddQty(e.target.value) }}
                   min="1" placeholder="Qty"
                   className="w-20 px-2 py-1.5 border border-gray-300 rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-500" />
