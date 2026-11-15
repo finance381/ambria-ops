@@ -1071,22 +1071,42 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
                     <Icon name="arrowRight" size={16} className={isIn ? 'rotate-90' : '-rotate-90'} />
                   </span>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="min-w-0 font-display text-[15px] font-bold text-slate-900 leading-snug break-words">{r.party_name}</p>
-                      <span data-notranslate className={'shrink-0 text-[17px] font-extrabold tabular-nums ' + (isIn ? 'text-emerald-700' : 'text-rose-700')}>
-                        {isIn ? '+ ' : '\u2212 '}{pts(r.amount_paise || 0)}
-                      </span>
-                    </div>
-                    <DescriptionNote text={r.description} truncate={false} className="mt-1" />
-                    {r.source === 'collection' && (r._eventInfo || r._receiptNo) && (function () {
+                    {/* A collection card led with the function TYPE ("WEDDING")
+                        and buried who/when/where in a second line below the
+                        description -- backwards for scanning a stack of these:
+                        the receipt, the date, the guest and the venue are what
+                        tell two "WEDDING"s apart, so those lead now, and the
+                        function type + free-text description (which already
+                        repeats the type half the time, e.g. "... -- WEDDING")
+                        move below as the detail. Non-collection rows (vendor/
+                        salary/expense) are unaffected -- there's no event to
+                        pull this from. */}
+                    {(function () {
+                      var isCollectionRow = r.source === 'collection'
                       var ei = r._eventInfo || {}
-                      var bits = [
+                      var topBits = isCollectionRow ? [
                         r._receiptNo ? '#' + r._receiptNo : null,
                         ei.function_date ? formatDate(ei.function_date) : null,
-                        ei.client_name, venueLabelWithCode(ei.venue_name), ei.location, ei.session,
-                      ].filter(Boolean)
-                      if (bits.length === 0) return null
-                      return <p className="mt-0.5 text-[11.5px] text-indigo-600 leading-snug break-words">{bits.join(' \u00b7 ')}</p>
+                        venueLabelWithCode(ei.venue_name), ei.location, ei.session,
+                      ].filter(Boolean) : []
+                      var headline = (isCollectionRow && ei.client_name) ? ei.client_name : r.party_name
+                      return (
+                        <>
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="min-w-0 font-display text-[15px] font-bold text-slate-900 leading-snug break-words">{headline}</p>
+                            <span data-notranslate className={'shrink-0 text-[17px] font-extrabold tabular-nums ' + (isIn ? 'text-emerald-700' : 'text-rose-700')}>
+                              {isIn ? '+ ' : '\u2212 '}{pts(r.amount_paise || 0)}
+                            </span>
+                          </div>
+                          {topBits.length > 0 && (
+                            <p className="mt-0.5 text-[11.5px] text-indigo-600 leading-snug break-words">{topBits.join(' \u00b7 ')}</p>
+                          )}
+                          {isCollectionRow && r.party_name && (
+                            <p className="mt-1.5 text-[12.5px] font-bold text-slate-600">{r.party_name}</p>
+                          )}
+                          <DescriptionNote text={r.description} truncate={false} className="mt-0.5" />
+                        </>
+                      )
                     })()}
                     <div className="mt-2 flex flex-wrap items-center gap-1">
                       <span className={CHIP_SM + src.tone}><Icon name={src.icon} size={11} className="shrink-0" />{src.label}</span>
@@ -1187,25 +1207,34 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
                             Capped, the slack becomes the gutter before the
                             chips rather than a hole inside the sentence. */}
                         <div className="min-w-0">
-                          <p className="font-display text-[13px] font-bold text-slate-900 leading-snug break-words">{r.party_name}</p>
-                          <DescriptionNote text={r.description} truncate={false} className="mt-1" />
-                          {/* Event Collection / Extra Plate Collection rows: the
-                              event name alone (already the row's headline) doesn't
-                              say who the guest was, when the function actually
-                              ran, or where — a reader had to open the row to find
-                              any of that. */}
-                          {r.source === 'collection' && (r._eventInfo || r._receiptNo) && (function () {
+                          {/* Same lead-with-who/when/where swap as the phone
+                              card above: the function type ("WEDDING") and
+                              description move below the receipt/date/guest/
+                              venue line, since those are what actually tell
+                              two same-named functions apart in a scanned list. */}
+                          {(function () {
+                            var isCollectionRow = r.source === 'collection'
                             var ei = r._eventInfo || {}
-                            var bits = [
+                            var topBits = isCollectionRow ? [
                               r._receiptNo ? '#' + r._receiptNo : null,
                               ei.function_date ? formatDate(ei.function_date) : null,
-                              ei.client_name,
                               venueLabelWithCode(ei.venue_name),
                               ei.location,
                               ei.session,
-                            ].filter(Boolean)
-                            if (bits.length === 0) return null
-                            return <p className="mt-0.5 text-[11.5px] text-indigo-600 leading-snug break-words">{bits.join(' · ')}</p>
+                            ].filter(Boolean) : []
+                            var headline = (isCollectionRow && ei.client_name) ? ei.client_name : r.party_name
+                            return (
+                              <>
+                                <p className="font-display text-[13px] font-bold text-slate-900 leading-snug break-words">{headline}</p>
+                                {topBits.length > 0 && (
+                                  <p className="mt-0.5 text-[11.5px] text-indigo-600 leading-snug break-words">{topBits.join(' · ')}</p>
+                                )}
+                                {isCollectionRow && r.party_name && (
+                                  <p className="mt-1 text-[12px] font-bold text-slate-600">{r.party_name}</p>
+                                )}
+                                <DescriptionNote text={r.description} truncate={false} className="mt-0.5" />
+                              </>
+                            )
                           })()}
                           {r.source === 'collection' && r._imgUrl && (
                             r._imgIsVoice ? (
