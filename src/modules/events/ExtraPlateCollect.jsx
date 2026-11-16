@@ -260,6 +260,22 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
       .order('created_at', { ascending: false })
     var iData = iRes.data || []
     var cData = cRes.data || []
+
+    // Creator name resolution -- same as loadRecent's own below. Without it
+    // every row but the viewer's own fell back to blank ("—" in the By
+    // column), because RLS on `profiles` only lets a user read their own
+    // row; fn_profile_names is the one path around that for everyone else's.
+    var userIds = []
+    iData.forEach(function (r) { if (r.issued_by && userIds.indexOf(r.issued_by) === -1) userIds.push(r.issued_by) })
+    cData.forEach(function (r) { if (r.collected_by && userIds.indexOf(r.collected_by) === -1) userIds.push(r.collected_by) })
+    if (userIds.length > 0) {
+      var { data: profRows } = await supabase.rpc('fn_profile_names', { p_ids: userIds })
+      var nameById = {}
+      ;(profRows || []).forEach(function (p) { nameById[p.id] = p.name || null })
+      iData = iData.map(function (r) { return Object.assign({}, r, { _creatorName: nameById[r.issued_by] || null }) })
+      cData = cData.map(function (r) { return Object.assign({}, r, { _creatorName: nameById[r.collected_by] || null }) })
+    }
+
     setIssues(iData)
     setCollections(cData)
 
@@ -939,7 +955,7 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
                 )}
                 <button type="button" onClick={clearFunctionSelection}
                   className="h-10 px-3.5 rounded-xl border border-slate-300 bg-white text-[13.5px] font-bold text-slate-800 hover:bg-slate-50 inline-flex items-center gap-2">
-                  <Icon name="edit" size={15} />Change
+                  <Icon name="arrowLeft" size={15} />Back
                 </button>
                 {isAdmin && hasManualRate && (
                   <button type="button" onClick={clearManualRate} disabled={manualRateSaving} title="Clear the manual rate"
@@ -1330,7 +1346,7 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
                   </p>
                 </div>
                 <button type="button" onClick={clearFunctionSelection}
-                  className="shrink-0 h-7 px-2.5 rounded-lg border border-slate-200 text-[12.5px] font-bold text-indigo-600 hover:bg-indigo-50">Change</button>
+                  className="shrink-0 h-7 px-2.5 rounded-lg border border-slate-200 text-[12.5px] font-bold text-indigo-600 hover:bg-indigo-50">Back</button>
               </div>
               <div className="mt-2 flex items-center justify-between gap-2 text-[11.5px]">
                 <span className="font-medium text-slate-500 truncate">{paidPax} pax + {complementary} comp = <span className="font-bold text-slate-800">{quota}</span></span>

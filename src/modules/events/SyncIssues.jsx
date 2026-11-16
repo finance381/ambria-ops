@@ -1,8 +1,113 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatDate } from '../../lib/format'
+import { formatDate, formatDateTime } from '../../lib/format'
 import Icon from '../../components/ui/Icon'
 import { appConfirm } from '../../components/ui/AppDialog'
+
+// Rule 6 of LMS_SYNC_SAFETY_PATTERNS.md: a sync needs somewhere a human will
+// actually see what happened, not just a console.log that rolls off. One row
+// per sync-events run (lms_sync_runs), newest first -- collapsed by default
+// since on a healthy day there's nothing here worth a second look, but the
+// moment a run comes back with real errors (or the cron stops running
+// entirely) it opens itself.
+//
+// Two gaps a plain "last 15 runs" list would have, both closed below:
+// 1. The cron fires every 15 min (sync-events-15min) -- 15 rows is under 4
+//    hours, so a 2am failure scrolls off by the time anyone looks. A second
+//    query pulls any non-ok run from the last 3 days regardless of rank.
+// 2. A dead cron (rotated secret, function timing out before it can even
+//    reach logRun) produces NO row at all, which a "did anything fail"
+//    check can't see -- so this also flags when the newest run itself is
+//    older than a few missed cycles.
+var STALE_AFTER_MIN = 45
+function SyncRuns() {
+  var [runs, setRuns] = useState([])
+  var [loading, setLoading] = useState(true)
+  var [open, setOpen] = useState(false)
+  var [expandedId, setExpandedId] = useState(null)
+
+  useEffect(function () {
+    var threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
+    Promise.all([
+      supabase.from('lms_sync_runs').select('*').order('started_at', { ascending: false }).limit(20),
+      supabase.from('lms_sync_runs').select('*').neq('status', 'ok').gte('started_at', threeDaysAgo)
+        .order('started_at', { ascending: false }).limit(20),
+    ]).then(function (res) {
+      var byId = {}
+      ;(res[0].data || []).concat(res[1].data || []).forEach(function (r) { byId[r.id] = r })
+      var merged = Object.keys(byId).map(function (k) { return byId[k] })
+        .sort(function (a, b) { return new Date(b.started_at) - new Date(a.started_at) })
+      setRuns(merged)
+      setLoading(false)
+      if (merged.some(function (r) { return r.status !== 'ok' })) setOpen(true)
+    })
+  }, [])
+
+  if (loading) return null
+  var newest = runs[0]
+  var isStale = !newest || (Date.now() - new Date(newest.started_at).getTime()) > STALE_AFTER_MIN * 60 * 1000
+  var lastBad = runs.find(function (r) { return r.status !== 'ok' })
+  var flagged = isStale || !!lastBad
+
+  if (runs.length === 0 && !isStale) return null
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+      <button type="button" onClick={function () { setOpen(!open) }}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50">
+        <p className="flex items-center gap-2 text-[13.5px] font-bold text-slate-900">
+          <Icon name="refresh" size={15} className={flagged ? 'text-rose-500' : 'text-emerald-600'} />
+          Recent sync runs
+          {isStale && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">No sync in a while</span>}
+          {!isStale && lastBad && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">Check this</span>}
+        </p>
+        <Icon name={open ? 'chevronUp' : 'chevronDown'} size={15} className="text-slate-400" />
+      </button>
+      {open && (
+        <div className="divide-y divide-slate-100 border-t border-slate-100">
+          {isStale && (
+            <p className="px-4 py-2.5 text-[12.5px] text-rose-700 bg-rose-50">
+              {newest ? 'Last sync was ' + formatDateTime(newest.started_at) + ' -- the scheduled sync runs every 15 minutes, so this is overdue. Check the cron job and the function logs.'
+                : 'No sync has ever run. Check the cron job (sync-events-15min) is set up.'}
+            </p>
+          )}
+          {runs.map(function (r) {
+            var expanded = expandedId === r.id
+            var hasErrors = r.errors && r.errors.length > 0
+            return (
+              <div key={r.id} className="px-4 py-2.5">
+                <button type="button" onClick={function () { setExpandedId(expanded ? null : r.id) }}
+                  disabled={!hasErrors}
+                  className="w-full flex items-center justify-between gap-3 text-left disabled:cursor-default">
+                  <div className="min-w-0 flex items-center gap-2">
+                    <span className={'shrink-0 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ' +
+                      (r.status === 'ok' ? 'bg-emerald-50 text-emerald-700' : r.status === 'error' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700')}>
+                      {r.status === 'ok' ? 'OK' : r.status === 'error' ? 'Failed' : 'Errors'}
+                    </span>
+                    <span className="text-[12.5px] text-slate-600">{formatDateTime(r.started_at)}</span>
+                    <span className="text-[11px] text-slate-400">{r.trigger_source === 'cron' ? 'scheduled' : 'manual'}</span>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-3 text-[11.5px] text-slate-500 tabular-nums">
+                    {r.total_fetched != null && <span>{r.total_synced}/{r.total_fetched} synced</span>}
+                    {!!r.total_stale && <span className="text-amber-700 font-semibold">{r.total_stale} stale</span>}
+                    {hasErrors && <Icon name={expanded ? 'chevronUp' : 'chevronDown'} size={13} className="text-slate-400" />}
+                  </div>
+                </button>
+                {expanded && hasErrors && (
+                  <div className="mt-1.5 ml-1 space-y-1">
+                    {r.errors.map(function (e, i) {
+                      return <p key={i} className="text-[11.5px] text-rose-600">{e}</p>
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // Every contract that went missing from LMS's own list this sync, flagged
 // here instead of being auto-hidden -- absence alone can't tell a genuine
@@ -64,6 +169,11 @@ function SyncIssues() {
             really is gone — that's the one action that hides it here too.
           </p>
         </div>
+      </div>
+
+      <SyncRuns />
+
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <button type="button" onClick={function () { setShowResolved(!showResolved) }}
           className={'shrink-0 h-9 px-3.5 rounded-xl text-[12.5px] font-bold border transition-colors ' +
             (showResolved ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300')}>
