@@ -398,8 +398,8 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
     } else {
       if (!collectMode) { alert('Select Cash or Bank'); return }
       if (collectMode === 'bank' && !collectSubMode) { alert('Select the bank payment method'); return }
-      if (!collectImage) { alert('Payment photo required'); return }
     }
+    if (!collectImage) { alert('Photo of the returned plates required'); return }
 
     var discRupees = Number(collectDiscount || 0)
     if (!wasteOnly) {
@@ -412,21 +412,18 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
     setCollectSaving(true)
     setCollectMsg('')
 
-    var path = null
-    if (!wasteOnly) {
-      var cF
-      try { cF = await prepUpload(collectImage, 100) } catch (e) { alert('Image prep failed'); setCollectSaving(false); return }
-      var ext = (cF.name && cF.name.indexOf('.') !== -1) ? cF.name.split('.').pop() : 'jpg'
-      path = profile.id + '/extra_plate_collect_' + Date.now() + '.' + ext
-      var { error: upErr } = await supabase.storage.from('receipts').upload(path, cF, { upsert: true })
-      if (upErr) { alert('Upload failed: ' + upErr.message); setCollectSaving(false); return }
-    }
+    var cF
+    try { cF = await prepUpload(collectImage, 100) } catch (e) { alert('Image prep failed'); setCollectSaving(false); return }
+    var ext = (cF.name && cF.name.indexOf('.') !== -1) ? cF.name.split('.').pop() : 'jpg'
+    var path = profile.id + '/extra_plate_collect_' + Date.now() + '.' + ext
+    var { error: upErr } = await supabase.storage.from('receipts').upload(path, cF, { upsert: true })
+    if (upErr) { alert('Upload failed: ' + upErr.message); setCollectSaving(false); return }
 
     var { data, error } = await supabase.rpc('fn_extra_plate_collect', {
       p_event_id: Number(eventId),
       p_plates: n,
       p_payment_mode: wasteOnly ? null : collectMode,
-      p_receipt_path: wasteOnly ? null : path,
+      p_receipt_path: path,
       p_notes: collectNotes.trim() || null,
       p_discount_paise: discPaise,
       p_plates_returned: r,
@@ -594,8 +591,8 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
   var returnable = Math.max(0, totalIssued - priorReturned)
   var overReturned = thisReturned > returnable
   var subModeOk = collectMode !== 'bank' || !!collectSubMode
-  var canCollect = eventDetail && !collectSaving && !overReturned && (
-    (isCollection && ratePaise > 0 && collectMode && subModeOk && collectImage && discountValid) ||
+  var canCollect = eventDetail && !collectSaving && !overReturned && collectImage && (
+    (isCollection && ratePaise > 0 && collectMode && subModeOk && discountValid) ||
     (isWasteOnly)
   )
 
@@ -819,9 +816,13 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
         <div className={'grid gap-2 ' + (isCollection ? 'grid-cols-2' : 'grid-cols-1')}>
           <div className="min-w-0">
             {desk && <label htmlFor="epc-returned" className="block text-[13.5px] font-bold text-slate-700 mb-1.5">Returned{returnable > 0 ? ' (max ' + returnable + ')' : ''}</label>}
-            <input id="epc-returned" type="number" min="0" step="1" inputMode="numeric" value={collectReturned}
-              onChange={function (e) { setCollectReturned(e.target.value) }}
-              aria-label="Plates returned" placeholder={desk ? 'e.g. 20' : (returnable > 0 ? 'Returned (max ' + returnable + ')' : 'Plates returned')} className={overReturned && thisReturned > 0 ? INPUT_BAD : INPUT} />
+            <div className="flex gap-2">
+              <input id="epc-returned" type="number" min="0" step="1" inputMode="numeric" value={collectReturned}
+                onChange={function (e) { setCollectReturned(e.target.value) }}
+                aria-label="Plates returned" placeholder={desk ? 'e.g. 20' : (returnable > 0 ? 'Returned (max ' + returnable + ')' : 'Plates returned')}
+                className={(overReturned && thisReturned > 0 ? INPUT_BAD : INPUT) + ' flex-1'} />
+              {photoButton(collectImage, collectPreview, function () { setCameraFor('collect') }, function () { setCollectImage(null) })}
+            </div>
           </div>
           {isCollection && (
             <div className="min-w-0">
@@ -832,6 +833,14 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
             </div>
           )}
         </div>
+        {/* One photo covers whatever this submission is -- a return, a
+            payment, or both -- so it sits on the Returned field rather than
+            only appearing once there is money to collect. Log returns used
+            to need no photo at all, which is the gap: plates went back with
+            nothing to show for it. */}
+        <p className="-mt-1 text-[11.5px] text-slate-500">
+          {!isCollection ? 'Photo of the returned plates required.' : 'Photo of the returned plates / payment required.'}
+        </p>
 
         {isCollection && (
           <>
@@ -847,7 +856,6 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
                   </button>
                 )
               })}
-              {photoButton(collectImage, collectPreview, function () { setCameraFor('collect') }, function () { setCollectImage(null) })}
             </div>
             {collectMode === 'bank' && (
               <div className="flex flex-wrap gap-1.5">
@@ -863,7 +871,7 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
                 })}
               </div>
             )}
-            <p className="-mt-1 text-[11.5px] text-slate-500">{collectMode === 'bank' && !collectSubMode ? 'Pick the bank method. ' : ''}Photo of the payment required.</p>
+            {collectMode === 'bank' && !collectSubMode && <p className="-mt-1 text-[11.5px] text-slate-500">Pick the bank method.</p>}
           </>
         )}
 
@@ -1387,8 +1395,9 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
                 </div>
               )}
               {manualRateMsg && <p className="mt-1.5 text-[12.5px] font-semibold text-red-600">{manualRateMsg}</p>}
-              <div className="mt-2 grid grid-cols-4 gap-1.5">
+              <div className="mt-2 grid grid-cols-5 gap-1.5">
                 {[['Issued', totalIssued, 'bg-slate-50 text-slate-900'],
+                  ['Returned', priorReturned, 'bg-amber-50/70 text-amber-900'],
                   ['Extras', extras, 'bg-indigo-50/70 text-indigo-950'],
                   ['Collected', totalCollectedExtras, 'bg-emerald-50/70 text-emerald-900'],
                   ['Due', remaining > 0 ? remaining : '✓', remaining > 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700']].map(function (t) {
