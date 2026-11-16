@@ -413,7 +413,13 @@ function CostTransfers({ profile, inAdmin }) {
 
   function partyMeta(row, side) {
     if (row[side + '_party_type'] !== 'expense') return null
-    var meta = row[side + '_meta'] || {}
+    // cost_transfers has one `metadata` jsonb column holding {from_meta,
+    // to_meta} -- there is no from_meta/to_meta column of its own for
+    // select('*') to return, so reading row[side + '_meta'] directly always
+    // came back undefined. Every event tag, Vehicle No., Vendor Name, etc.
+    // that fn_create_cost_transfer stored was invisible everywhere this was
+    // called -- the list, the desktop table, and Edit.
+    var meta = (row.metadata && row.metadata[side + '_meta']) || {}
     var items = []
     if (meta._event_name) items.push({ label: 'Event', value: '🎯 ' + meta._event_name })
     var subId = row[side + '_expense_sub_type_id']
@@ -695,9 +701,15 @@ function CostTransfers({ profile, inAdmin }) {
   function openEdit(r) {
     setEditError('')
     setEditTarget(r)
+    // Carried over from r.metadata so ExpenseTypeFields' own dynamic fields
+    // (Vehicle No., Vendor Name, ...) and the function tag (meta._event_name)
+    // open already filled in, instead of blank -- see partyMeta's own note
+    // on why row.from_meta/row.to_meta themselves are never populated.
+    var fromMeta = (r.metadata && r.metadata.from_meta) || {}
+    var toMeta = (r.metadata && r.metadata.to_meta) || {}
     setEditForm({
-      from: { expense_type_id: String(r.from_expense_type_id || ''), expense_sub_type_id: String(r.from_expense_sub_type_id || '') },
-      to: { expense_type_id: String(r.to_expense_type_id || ''), expense_sub_type_id: String(r.to_expense_sub_type_id || '') },
+      from: { expense_type_id: String(r.from_expense_type_id || ''), expense_sub_type_id: String(r.from_expense_sub_type_id || ''), meta: fromMeta },
+      to: { expense_type_id: String(r.to_expense_type_id || ''), expense_sub_type_id: String(r.to_expense_sub_type_id || ''), meta: toMeta },
       amount_pts: r.amount_paise != null ? (r.amount_paise / 100).toString() : '',
       description: r.description || '',
       effective_date: r.effective_date || '',
@@ -706,6 +718,19 @@ function CostTransfers({ profile, inAdmin }) {
     setEditProofFile(null)
     editProofRec.remove()
     setEditRemoveReceipt(false)
+  }
+
+  // ExpenseTypeFields resets meta to {} whenever its type or sub-type
+  // dropdown changes (meta is tied to the sub-type's own extra_fields, which
+  // a new sub-type may not share) -- but the function tag isn't one of
+  // those fields, so a type change during Edit would otherwise silently
+  // drop a transfer's "For a function" tag along with it.
+  function mergeEditPatch(prevSide, patch) {
+    if (!patch.meta) return Object.assign({}, prevSide, patch)
+    var tag = {}
+    if (prevSide.meta && prevSide.meta._event_id != null) tag._event_id = prevSide.meta._event_id
+    if (prevSide.meta && prevSide.meta._event_name) tag._event_name = prevSide.meta._event_name
+    return Object.assign({}, prevSide, patch, { meta: Object.assign({}, tag, patch.meta) })
   }
 
   async function handleEditSave() {
@@ -729,6 +754,8 @@ function CostTransfers({ profile, inAdmin }) {
         p_effective_date: editForm.effective_date || null,
         p_receipt_path: newReceiptPath,
         p_remove_receipt: !newReceiptPath && editRemoveReceipt,
+        p_from_meta: editForm.from.meta || {},
+        p_to_meta: editForm.to.meta || {},
       })
       if (res.error) throw res.error
       try { logActivity('COST_TRANSFER_EDIT', '#' + editTarget.id) } catch (_) {}
@@ -1644,16 +1671,26 @@ function CostTransfers({ profile, inAdmin }) {
       <Modal open={!!editTarget} onClose={function () { setEditTarget(null); setEditForm(null) }} title={'Edit Transfer' + (editTarget ? ' #' + editTarget.id : '')}>
         {editForm && (
           <div className="space-y-4">
+            {(function () {
+              var tagName = (editForm.from.meta && editForm.from.meta._event_name) || (editForm.to.meta && editForm.to.meta._event_name)
+              if (!tagName) return null
+              return (
+                <div className="flex items-center gap-2 rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-2 text-[12.5px] font-semibold text-indigo-800">
+                  <Icon name="calendar" size={14} />
+                  For function: {tagName}
+                </div>
+              )
+            })()}
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">From</label>
               <ExpenseTypeFields value={editForm.from}
-                onChange={function (patch) { setEditForm(function (p) { return Object.assign({}, p, { from: Object.assign({}, p.from, patch) }) }) }}
+                onChange={function (patch) { setEditForm(function (p) { return Object.assign({}, p, { from: mergeEditPatch(p.from, patch) }) }) }}
                 expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} staff={staff} />
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">To</label>
               <ExpenseTypeFields value={editForm.to}
-                onChange={function (patch) { setEditForm(function (p) { return Object.assign({}, p, { to: Object.assign({}, p.to, patch) }) }) }}
+                onChange={function (patch) { setEditForm(function (p) { return Object.assign({}, p, { to: mergeEditPatch(p.to, patch) }) }) }}
                 expTypes={expTypes} expSubTypes={expSubTypes} vendors={vendors} venues={venues} employees={employees} staff={staff} />
             </div>
             <div>
