@@ -19,8 +19,7 @@ import { fetchContractBalancesBatch, fetchLmsCollected } from '../../lib/contrac
 // Cash is stored one zero less than the real amount; bank and expense are
 // full. By default collected cash is used as stored and bank and expense in
 // full -- totals and profit are worked out that way. "Show real amount"
-// turns collected cash into the real figure (x 10). The package is always
-// shown in full (its cash x 10), toggle or not.
+// turns package cash and collected cash into the real figure (x 10).
 //
 // Profit = collected - expense.
 
@@ -182,7 +181,7 @@ function GroupPnL({ functions }) {
 
   function moneyItems(m) {
     return [
-      ['Package', rs(m.agreedCash * 10 + m.agreedBank)],
+      ['Package', rs(m.agreedCash * cashMul + m.agreedBank)],
       ['Collected', rs(m.collCash * cashMul + m.collBank)],
       ['Expense', rs(m.spent)],
     ]
@@ -258,7 +257,7 @@ function GroupPnL({ functions }) {
           ) : (
             <>
               <div className="rounded-lg border border-slate-200 bg-slate-200 overflow-hidden" style={statGrid}>
-                {stat('Package', rs(money.agreedCash * 10 + money.agreedBank), split(money.agreedCash * 10, money.agreedBank))}
+                {stat('Package', rs(money.agreedCash * cashMul + money.agreedBank), split(money.agreedCash * cashMul, money.agreedBank))}
                 {stat('Collected', rs(money.collCash * cashMul + money.collBank), (
                   <>
                     {split(money.collCash * cashMul, money.collBank)}
@@ -271,7 +270,7 @@ function GroupPnL({ functions }) {
 
               <p className="-mt-1.5 flex items-start gap-1.5 text-[11.5px] text-slate-500">
                 <Icon name="info" size={13} className="shrink-0 mt-px text-slate-400" />
-                <span>{realCash ? 'Showing real amounts — collected cash × 10.' : 'Collected cash is one zero less than the real amount. Package, bank and expense are full amounts.'}</span>
+                <span>{realCash ? 'Showing real amounts — package and collected cash × 10.' : 'Package and collected cash are one zero less than the real amount. Bank and expense are full amounts.'}</span>
               </p>
               {failed > 0 && (
                 <p className="text-[11.5px] text-amber-700">{failed} contract{failed !== 1 ? 's' : ''} could not be loaded — totals leave {failed !== 1 ? 'them' : 'it'} out.</p>
