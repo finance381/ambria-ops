@@ -258,6 +258,16 @@ function EventLedger(props) {
   // and its accent are for the phone screen only, so the admin console keeps the plain page it shares
   // with its seven neighbours.
   var inAdmin = !!(props && props.inAdmin)
+  // ContractList.jsx's consolidated card: the matched Decor/Entertainment
+  // contracts' own event ids, folded into this screen's Financials and
+  // Transactions pooling alongside the primary (Venue) contract. Overview's
+  // own department chips/Contracts card and Documents end up reflecting the
+  // same union too, since they all read off the one group.contracts/
+  // all_contracts the pooling effect extends -- only eventDetail (what
+  // Overview's own top info panel describes) stays the primary Venue row.
+  // Plates pools the same full union, which is harmless: Decor/Entertainment
+  // departments carry no plate data of their own.
+  var extraEventIds = (props && props.extraEventIds) || []
   var isAdmin = hasPerm(profile?.permsNew, 'finance.ledgers.event')
   var isSysAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
   var canMarkChecked = hasPerm(profile?.permsNew, 'finance.wallet.mark_checked')
@@ -293,6 +303,10 @@ function EventLedger(props) {
   var [contractGroup, setContractGroup] = useState(null)
   var [balance, setBalance] = useState(null)
   var [balanceLoading, setBalanceLoading] = useState(false)
+  // Set only when extraEventIds pulled in other contracts -- the per-contract
+  // breakdown behind the combined `balance` figures above, so a reader can
+  // still see Venue vs Decor vs Entertainment's own share of it.
+  var [balanceByContractList, setBalanceByContractList] = useState(null)
   var [entries, setEntries] = useState([])
   var [entriesLoading, setEntriesLoading] = useState(false)
   var [plateEvents, setPlateEvents] = useState([])
@@ -460,15 +474,69 @@ function EventLedger(props) {
         resetTxnView()
         setEventId(String(group.event_ids[0]))
         setEventDetail(group.contracts[0])
-        setCurrentEventIds(group.event_ids)
-        setContractGroup(group)
         var lmsRows = await fetchLmsPayments(primary.contract_no, primary.department)
-        // Not loadBalance(group.event_ids) — see loadContractBalance for why
-        // a plain per-id sum over resync duplicates would triple-count the
-        // Agreed targets instead of just recovering their collected money.
-        loadContractBalance(pool, lmsRows)
-        loadEntries(group.event_ids).then(function () {
-          if (lmsRows.length > 0) setEntries(function (prev) { return prev.concat(lmsRows) })
+
+        // extraEventIds: the matched Decor/Entertainment contracts folded
+        // into a consolidated card (see ContractList.jsx). Each is its own
+        // contract — own contract_no, own pool, own LMS payment history —
+        // so it's reconciled the same way the primary is, not merged into
+        // one pool (see reconcileContractPool's own note on why that would
+        // silently drop money).
+        var extraPools = []
+        if (extraEventIds.length > 0) {
+          var extraRowsRes = await supabase.from('events').select(EVT_COLS).in('id', extraEventIds.map(Number))
+          var extraPrimaries = extraRowsRes.data || []
+          extraPools = await Promise.all(extraPrimaries.map(async function (ep) {
+            var epPool = [ep]
+            if (ep.contract_no) {
+              var epSame = await supabase.from('events').select(EVT_COLS)
+                .eq('contract_no', ep.contract_no).eq('department', ep.department).is('merged_into_id', null)
+              if (epSame.data && epSame.data.length > 0) epPool = epSame.data
+            }
+            var epLms = await fetchLmsPayments(ep.contract_no, ep.department)
+            return { pool: epPool, lmsRows: epLms }
+          }))
+        }
+
+        var allEntryIds = group.event_ids.slice()
+        var allContracts = group.all_contracts.slice()
+        var allCanonical = group.contracts.slice()
+        var allLmsRows = lmsRows.slice()
+        extraPools.forEach(function (ep) {
+          var epCanonicalByKey = _pickCanonical(ep.pool)
+          Object.keys(epCanonicalByKey).forEach(function (k) { allCanonical.push(epCanonicalByKey[k]) })
+          ep.pool.forEach(function (e) {
+            if (allEntryIds.indexOf(e.id) === -1) { allEntryIds.push(e.id); allContracts.push(e) }
+          })
+          allLmsRows = allLmsRows.concat(ep.lmsRows)
+        })
+        // contractByEventId (department chips in Transactions, the contract
+        // printReceipt resolves) reads group.all_contracts -- extend it with
+        // every add-on row too, or a Decor/Ent collection's receipt would
+        // print with the Venue contract's own number/billing name instead of
+        // its own. group.contracts (not just all_contracts) needs the same
+        // addition: multiContract (which gates whether a department chip
+        // renders at all in Transactions) is `contracts.length > 1`, and a
+        // Venue contract with a single function plus a folded-in Decor/Ent
+        // add-on otherwise still reads as "1 contract" and never shows a
+        // chip for either. currentEventIds also has to be the full union:
+        // it's what a later reload (e.g. after editing a linked expense)
+        // re-fetches Transactions with, and a primary-only list would make
+        // every add-on row vanish again until the card is reopened.
+        group = Object.assign({}, group, { contracts: allCanonical, all_contracts: allContracts, event_ids: allEntryIds })
+        setCurrentEventIds(allEntryIds)
+        setContractGroup(group)
+
+        if (extraPools.length > 0) {
+          loadConsolidatedBalance([{ pool: pool, lmsRows: lmsRows }].concat(extraPools))
+        } else {
+          // Not loadBalance(group.event_ids) — see loadContractBalance for why
+          // a plain per-id sum over resync duplicates would triple-count the
+          // Agreed targets instead of just recovering their collected money.
+          loadContractBalance(pool, lmsRows)
+        }
+        loadEntries(allEntryIds).then(function () {
+          if (allLmsRows.length > 0) setEntries(function (prev) { return prev.concat(allLmsRows) })
         })
         loadPlateEvents(group.event_ids)
         window.requestAnimationFrame(function () { window.scrollTo(0, 0) })
@@ -477,7 +545,7 @@ function EventLedger(props) {
         selectGroup(_buildGroups(pool)[0])
       }
     })()
-  }, [propEventId])
+  }, [propEventId, extraEventIds.join(',')])
 
   // Agreed targets are restated identically on every resync duplicate of the
   // same function (see fn_event_group_balance), so they must be taken from
@@ -487,16 +555,19 @@ function EventLedger(props) {
   // money actually exists, regardless of which duplicate it's attached to.
   // Pending is then recomputed here from those corrected totals, mirroring
   // fn_event_group_balance's own formulas exactly.
-  async function loadContractBalance(pool, lmsRows) {
-    var allIds = pool.map(function (e) { return e.id })
-    if (allIds.length === 0) { setBalance(null); setBalancesByContract({}); return }
-    setBalanceLoading(true)
-    var { data, error } = await supabase.rpc('fn_event_group_balance', { p_event_ids: allIds.map(Number) })
-    if (error || !data) { setBalance(null); setBalancesByContract({}); setBalanceLoading(false); return }
-    var byId = {}
-    data.forEach(function (row) { byId[row.event_id] = row })
-    setBalancesByContract(byId)
-
+  //
+  // _pickCanonical's own groupKey deliberately leaves department out (see
+  // _groupKey's own callers -- _buildGroups needs exactly that to bundle a
+  // function's Venue/Decor/Entertainment contracts into one calendar card),
+  // so this must only ever run on a single-department pool: a Venue Haldi
+  // Lunch and a Decor Haldi Lunch for the same wedding can otherwise share
+  // one groupKey, and _pickCanonical would keep only the higher-id row
+  // between the two -- silently dropping one department's whole Agreed
+  // target, not just de-duplicating a real resync repeat. The consolidated,
+  // cross-department case below (loadConsolidatedBalance) reconciles each
+  // contract's own pool separately through this same function and only sums
+  // the already-reconciled results, never a merged pool.
+  function reconcileContractPool(pool, byId, lmsRows) {
     var canonicalByKey = _pickCanonical(pool)
     var agreedCash = 0, agreedBank = 0, tax = 0
     Object.keys(canonicalByKey).forEach(function (k) {
@@ -508,7 +579,9 @@ function EventLedger(props) {
       }
     })
     var collCash = 0, collBank = 0, spent = 0
-    data.forEach(function (row) {
+    pool.forEach(function (e) {
+      var row = byId[e.id]
+      if (!row) return
       collCash += Number(row.collected_cash_paise || 0)
       collBank += Number(row.collected_bank_paise || 0)
       spent += Number(row.spent_paise || 0)
@@ -536,14 +609,69 @@ function EventLedger(props) {
     var bankExcessHidden = Math.round(bankExcess / 10)
     var cashShortfall = agreedCash - collCash
     var leftoverForTax = Math.max(0, bankExcessHidden - Math.max(0, cashShortfall)) * 10
-    setBalance({
+    return {
       agreed_cash_paise: agreedCash, agreed_bank_paise: agreedBank, tax_amount_paise: tax,
       collected_cash_paise: collCash, collected_bank_paise: collBank,
       pending_cash_paise: cashShortfall - bankExcessHidden,
       pending_bank_paise: Math.max(0, agreedBank - collBank),
       pending_tax_paise: Math.max(0, tax - leftoverForTax),
       spent_paise: spent,
+    }
+  }
+
+  async function loadContractBalance(pool, lmsRows) {
+    var allIds = pool.map(function (e) { return e.id })
+    if (allIds.length === 0) { setBalance(null); setBalancesByContract({}); return }
+    setBalanceLoading(true)
+    var { data, error } = await supabase.rpc('fn_event_group_balance', { p_event_ids: allIds.map(Number) })
+    if (error || !data) { setBalance(null); setBalancesByContract({}); setBalanceLoading(false); return }
+    var byId = {}
+    data.forEach(function (row) { byId[row.event_id] = row })
+    setBalancesByContract(byId)
+    setBalance(reconcileContractPool(pool, byId, lmsRows))
+    setBalanceByContractList(null)
+    setBalanceLoading(false)
+  }
+
+  // Cross-department version, for a consolidated card's Financials tab:
+  // pools: [{ pool, lmsRows }], one entry per contract (Venue + any matched
+  // Decor/Entertainment). Each contract is reconciled on its own (see
+  // reconcileContractPool's note on why), then the results are summed --
+  // balanceByContractList keeps the per-contract breakdown the UI shows
+  // alongside the combined figure.
+  async function loadConsolidatedBalance(pools) {
+    var allIds = []
+    pools.forEach(function (p) { p.pool.forEach(function (e) { if (allIds.indexOf(e.id) === -1) allIds.push(e.id) }) })
+    if (allIds.length === 0) { setBalance(null); setBalancesByContract({}); setBalanceByContractList(null); return }
+    setBalanceLoading(true)
+    var { data, error } = await supabase.rpc('fn_event_group_balance', { p_event_ids: allIds.map(Number) })
+    if (error || !data) { setBalance(null); setBalancesByContract({}); setBalanceByContractList(null); setBalanceLoading(false); return }
+    var byId = {}
+    data.forEach(function (row) { byId[row.event_id] = row })
+    setBalancesByContract(byId)
+    var perContract = pools.map(function (p) {
+      var anchor = p.pool[0] || {}
+      return { department: anchor.department, contract_no: anchor.contract_no, balance: reconcileContractPool(p.pool, byId, p.lmsRows) }
     })
+    var keys = ['agreed_cash_paise', 'agreed_bank_paise', 'tax_amount_paise', 'collected_cash_paise',
+      'collected_bank_paise', 'pending_cash_paise', 'pending_bank_paise', 'pending_tax_paise', 'spent_paise']
+    var pendingKeys = ['pending_cash_paise', 'pending_bank_paise', 'pending_tax_paise']
+    var total = {}
+    keys.forEach(function (k) { total[k] = 0 })
+    // Each contract's own pending figure can go negative (over-collected --
+    // see reconcileContractPool) -- real for that one contract, but summed
+    // raw across contracts it would let one department's over-collection
+    // cancel out another's shortfall (a Decor contract paid ahead erasing a
+    // real Venue due). Clamped at zero here so the combined Pending can
+    // only ever mean "what's still owed, across all of them".
+    perContract.forEach(function (c) {
+      keys.forEach(function (k) {
+        var v = Number(c.balance[k] || 0)
+        total[k] += pendingKeys.indexOf(k) !== -1 ? Math.max(0, v) : v
+      })
+    })
+    setBalance(total)
+    setBalanceByContractList(perContract)
     setBalanceLoading(false)
   }
 
@@ -1808,6 +1936,23 @@ function EventLedger(props) {
 
       {tab === 'financials' && (
         <div className="space-y-4">
+          {balanceByContractList && balanceByContractList.length > 1 && (
+            <div className="rounded-xl bg-indigo-50 border border-indigo-100 px-3.5 py-2.5">
+              <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-indigo-600">
+                Pooled across {balanceByContractList.length} contracts
+              </p>
+              <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-indigo-900">
+                {balanceByContractList.map(function (c) {
+                  var collected = Number(c.balance.collected_cash_paise || 0) + Number(c.balance.collected_bank_paise || 0)
+                  return (
+                    <span key={c.department + c.contract_no} data-notranslate>
+                      {c.department} #{c.contract_no} &middot; {formatPoints(collected)} collected
+                    </span>
+                  )
+                })}
+              </p>
+            </div>
+          )}
           <div className="grid gap-3 grid-cols-2 @3xl:grid-cols-5">
             <MoneyTile
               label={<>Agreed Cash<button type="button" title={cashX10 ? 'Showing true cash amount — click to hide' : 'Show true cash amount'}

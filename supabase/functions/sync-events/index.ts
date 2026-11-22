@@ -27,6 +27,11 @@ const DEPARTMENTS = [
     venueValue: "fiscd_venue_value",
     decorLumpsum: "fiscd_decoration_lumpsum",
     entertainLumpsum: "fiscd_entertainment_lumpsum",
+    // "Venue + Menu" -- confirmed directly against the live API (contract
+    // #00568): fiscd_menu_value = 1132500, matching LMS's own UI exactly
+    // under Catering Type "Venue + Menu" / Value. Distinct from
+    // fiscd_menu_rate (the per-plate rate, already mapped above).
+    menuValue: "fiscd_menu_value",
   },
   {
     name: "Catering",
@@ -41,7 +46,7 @@ const DEPARTMENTS = [
     pax: "chcd_pax",
     freePax: "chcd_freepax",
     extraPlate: "chcd_extra_plate",
-    menuRate: null, venueValue: null, decorLumpsum: null, entertainLumpsum: null,
+    menuRate: null, venueValue: null, decorLumpsum: null, entertainLumpsum: null, menuValue: null,
   },
   {
     name: "Decor",
@@ -56,7 +61,7 @@ const DEPARTMENTS = [
     pax: null,
     freePax: null,
     extraPlate: null,
-    menuRate: null, venueValue: null, decorLumpsum: null, entertainLumpsum: null,
+    menuRate: null, venueValue: null, decorLumpsum: null, entertainLumpsum: null, menuValue: null,
   },
   {
     name: "Entertainment",
@@ -71,7 +76,7 @@ const DEPARTMENTS = [
     pax: null,
     freePax: null,
     extraPlate: null,
-    menuRate: null, venueValue: null, decorLumpsum: null, entertainLumpsum: null,
+    menuRate: null, venueValue: null, decorLumpsum: null, entertainLumpsum: null, menuValue: null,
   },
 ]
 
@@ -141,16 +146,17 @@ function safePaise(val: any): number {
   return isNaN(n) ? 0 : Math.round(n * 100)
 }
 
-// LMS records package/pricing figures (total/net package value, and the
-// Venue contract's menu rate / venue rental / decor / entertainment split)
-// at half their real value — the same halving lms-push deliberately applies
-// when it writes a deal INTO LMS (paiseToHalfRupees there: "stores half the
-// real figure"). Applies across every department, not just Venue. Payment-
-// tracking fields (balance, advance, tax, cash/cheque split) are real money
-// actually received and are NOT halved — safePaise as-is for those.
-function safePackagePaise(val: any): number {
-  return safePaise(val) * 2
-}
+// Package/pricing figures (total/net package value, and the Venue
+// contract's menu rate / venue rental / decor / entertainment split) used to
+// run through safePackagePaise, which doubled safePaise's result on the
+// theory that LMS stores these at half their real value (mirroring
+// lms-push's own paiseToHalfRupees on the way in). Confirmed live against
+// LMS's own Venue contract listing that this is wrong: LMS's own UI shows
+// Decoration/Entertainment amounts (225000 / 17500) that already match what
+// safePaise alone produces -- the halving assumption never held for these
+// fields (if it ever held anywhere), and safePackagePaise was silently
+// doubling every one of them. Removed; every package/pricing field below
+// now goes through plain safePaise, same as everything else.
 
 const FETCH_TIMEOUT_MS = 10000
 
@@ -258,14 +264,28 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
     priority: e[h + "priority"] || null,
     address: e[h + "address"] || null,
     function_date: e[dep.functionDate] || null,
-    total_amount_paise: safePackagePaise(e[h + "total_amt"] || 0),
-    net_amount_paise: safePackagePaise(e[h + "net_amt"] || 0),
+    total_amount_paise: safePaise(e[h + "total_amt"] || 0),
+    net_amount_paise: safePaise(e[h + "net_amt"] || 0),
     // LMS-computed, Venue contracts only (see migration 00094) — null for
     // every other department, same convention as pax/freePax/extraPlate above.
-    menu_rate_paise: dep.menuRate ? safePackagePaise(e[dep.menuRate] || 0) : null,
-    venue_rental_paise: dep.venueValue ? safePackagePaise(e[dep.venueValue] || 0) : null,
-    decor_amount_paise: dep.decorLumpsum ? safePackagePaise(e[dep.decorLumpsum] || 0) : null,
-    entertainment_amount_paise: dep.entertainLumpsum ? safePackagePaise(e[dep.entertainLumpsum] || 0) : null,
+    menu_rate_paise: dep.menuRate ? safePaise(e[dep.menuRate] || 0) : null,
+    venue_rental_paise: dep.venueValue ? safePaise(e[dep.venueValue] || 0) : null,
+    decor_amount_paise: dep.decorLumpsum ? safePaise(e[dep.decorLumpsum] || 0) : null,
+    entertainment_amount_paise: dep.entertainLumpsum ? safePaise(e[dep.entertainLumpsum] || 0) : null,
+    // Confirmed directly against the live API (contract #00568):
+    // fiscd_menu_value = 1132500, matching LMS's own UI exactly.
+    venue_menu_paise: dep.menuValue ? safePaise(e[dep.menuValue] || 0) : null,
+    // TODO(itemized addons): LMS's Venue contract UI shows an "Addons"
+    // column (e.g. "L.L. (25000.0)"), but it isn't in this list endpoint's
+    // own response -- checked live: fisc_addon exists as a field but was
+    // empty on the one contract confirmed to have a real addon in the UI,
+    // and a scan of ~190 other live contracts found zero non-empty values
+    // either. The real data must come from a different LMS endpoint (a
+    // per-contract detail/addon-items call, not this bulk list) that hasn't
+    // been identified yet. addons_json (migration 00198) stays null until
+    // that's found -- do not guess, a wrong guess would silently store the
+    // wrong money under the wrong label.
+    addons_json: null,
     lms_head_id: safeInt(e.headid || e.id || 0) || null,
     // Any row LMS actively returns (uncancelled) this run is, by definition,
     // not cancelled -- clears a flag a previous run may have set if LMS

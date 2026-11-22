@@ -4,8 +4,17 @@ import { supabase } from './supabase'
 // LMS resync mints a new event row for the same function rather than
 // updating the old one, marking the old one lms_cancelled_at, so one real
 // function can appear as several rows sharing a contract_no.
+//
+// department is part of the key (not just a convenience -- see
+// fetchConsolidatedContractBalance below): a Venue contract's own Haldi
+// Lunch and a Decor contract's own Haldi Lunch for the exact same wedding
+// can otherwise share an identical client+date+venue+session, and without
+// department splitting them apart, pickCanonical would keep only the
+// higher-id row between the two -- silently dropping one department's
+// entire Agreed-target row out of the total, not just de-duplicating a
+// real resync repeat.
 function groupKey(f) {
-  return (f.client_name || '') + '|' + (f.function_date || '') + '|' + (f.venue_name || '') + '|' + (f.session || '')
+  return (f.client_name || '') + '|' + (f.function_date || '') + '|' + (f.venue_name || '') + '|' + (f.session || '') + '|' + (f.department || '')
 }
 
 function pickCanonical(rows) {
@@ -101,23 +110,12 @@ export async function fetchContractBalancesBatch(contracts) {
   })
 }
 
-// Pools every event sharing this contract's contract_no, sums Collected/Spent
-// across all of them (each one's event_ledger rows are real, disjoint money —
-// see EventLedger's loadContractBalance), takes Agreed targets from one
-// canonical row per distinct function only (never summed across resync
-// duplicates, which would multiply the target instead of just recovering
-// money attached to a superseded id), and folds in LMS's own payment history
-// for collections made outside Ambria Ops' wallet entirely.
-//
-// This is a standalone copy of the same math EventLedger.jsx's
-// loadContractBalance/fetchLmsPayments already do internally — kept separate
-// so a caller can get just the numbers without mounting that whole component.
-// Change one, check the other.
-export async function fetchContractBalanceSummary(eventId) {
-  var primaryRes = await supabase.from('events').select(EVT_COLS).eq('id', Number(eventId)).maybeSingle()
-  if (!primaryRes.data) return null
-  var primary = primaryRes.data
-
+// The pool for one contract (every event row sharing its contract_no +
+// department, resync duplicates included) plus the raw per-id balance rows
+// and LMS's own payment history for it -- everything fetchOneContractBalance
+// needs, split out so fetchConsolidatedContractBalance can fetch several of
+// these in parallel instead of one at a time.
+async function loadContractPool(primary) {
   var pool = [primary]
   if (primary.contract_no) {
     // department IS part of the key: LMS numbers each department's contracts
@@ -130,13 +128,23 @@ export async function fetchContractBalanceSummary(eventId) {
     if (sameContract.data && sameContract.data.length > 0) pool = sameContract.data
   }
   var allIds = pool.map(function (e) { return e.id })
+  var balRes = await supabase.rpc('fn_event_group_balance', { p_event_ids: allIds.map(Number) })
+  var lms = primary.contract_no ? await fetchLmsCollected(primary.contract_no, primary.department) : null
+  return { pool: pool, balanceRows: (balRes.data || []), balanceError: balRes.error, lms: lms }
+}
 
-  var { data, error } = await supabase.rpc('fn_event_group_balance', { p_event_ids: allIds.map(Number) })
-  if (error || !data) return null
+// One contract's reconciled balance, given its already-loaded pool + balance
+// rows + LMS payments (see loadContractPool). Agreed targets come from one
+// canonical row per distinct function only (never summed across resync
+// duplicates, which would multiply the target instead of just recovering
+// money attached to a superseded id); Collected/Spent sum across every row
+// in the pool, since each one's event_ledger rows are real, disjoint money.
+function reconcileOneContract(loaded) {
+  if (loaded.balanceError || loaded.balanceRows.length === 0) return null
   var byId = {}
-  data.forEach(function (row) { byId[row.event_id] = row })
+  loaded.balanceRows.forEach(function (row) { byId[row.event_id] = row })
 
-  var canonicalByKey = pickCanonical(pool)
+  var canonicalByKey = pickCanonical(loaded.pool)
   var agreedCash = 0, agreedBank = 0, tax = 0
   Object.keys(canonicalByKey).forEach(function (k) {
     var row = byId[canonicalByKey[k].id]
@@ -147,16 +155,12 @@ export async function fetchContractBalanceSummary(eventId) {
     }
   })
   var collCash = 0, collBank = 0, spent = 0
-  data.forEach(function (row) {
+  loaded.balanceRows.forEach(function (row) {
     collCash += Number(row.collected_cash_paise || 0)
     collBank += Number(row.collected_bank_paise || 0)
     spent += Number(row.spent_paise || 0)
   })
-
-  if (primary.contract_no) {
-    var lms = await fetchLmsCollected(primary.contract_no, primary.department)
-    if (lms) { collCash += lms.cash; collBank += lms.bank }
-  }
+  if (loaded.lms) { collCash += loaded.lms.cash; collBank += loaded.lms.bank }
 
   // See EventLedger.jsx's loadContractBalance for why bank surplus pays down
   // cash shortfall before any of it reduces tax pending, and why bankExcess
@@ -175,4 +179,66 @@ export async function fetchContractBalanceSummary(eventId) {
     pending_tax_paise: Math.max(0, tax - leftoverForTax),
     spent_paise: spent,
   }
+}
+
+var PENDING_KEYS = ['pending_cash_paise', 'pending_bank_paise', 'pending_tax_paise']
+
+function sumBalances(list) {
+  var keys = ['agreed_cash_paise', 'agreed_bank_paise', 'tax_amount_paise', 'collected_cash_paise',
+    'collected_bank_paise', 'pending_cash_paise', 'pending_bank_paise', 'pending_tax_paise', 'spent_paise']
+  var out = {}
+  keys.forEach(function (k) { out[k] = 0 })
+  list.forEach(function (b) {
+    if (!b) return
+    keys.forEach(function (k) {
+      // Each contract's own pending figure can go negative (over-collected,
+      // see reconcileOneContract) -- real and worth showing for that one
+      // contract on its own, but summed across contracts it would let one
+      // department's over-collection cancel out another's shortfall, e.g. a
+      // Decor contract paid ahead erasing a Venue contract's real due. Each
+      // department owes LMS its own balance; clamped at zero here so the
+      // combined Pending can only ever be "what's still owed, across all of
+      // them", never a net that hides one of them being short.
+      var v = Number(b[k] || 0)
+      out[k] += PENDING_KEYS.indexOf(k) !== -1 ? Math.max(0, v) : v
+    })
+  })
+  return out
+}
+
+// Pools every event sharing this contract's contract_no, sums Collected/Spent
+// across all of them (each one's event_ledger rows are real, disjoint money —
+// see EventLedger's loadContractBalance), takes Agreed targets from one
+// canonical row per distinct function only (never summed across resync
+// duplicates, which would multiply the target instead of just recovering
+// money attached to a superseded id), and folds in LMS's own payment history
+// for collections made outside Ambria Ops' wallet entirely.
+//
+// This is a standalone copy of the same math EventLedger.jsx's
+// loadContractBalance/fetchLmsPayments already do internally — kept separate
+// so a caller can get just the numbers without mounting that whole component.
+// Change one, check the other.
+export async function fetchContractBalanceSummary(eventId) {
+  var primaryRes = await supabase.from('events').select(EVT_COLS).eq('id', Number(eventId)).maybeSingle()
+  if (!primaryRes.data) return null
+  var loaded = await loadContractPool(primaryRes.data)
+  return reconcileOneContract(loaded)
+}
+
+// The consolidated-card version: several contracts behind one guest+function
+// (Venue + Decor + Entertainment, each its own contract_no/department) pooled
+// into one combined balance, plus a per-contract breakdown so the combined
+// figure never hides where it came from. primaries: the anchor `events` row
+// for each contract (any row in that contract's own pool works — it's
+// re-pooled here the same way fetchContractBalanceSummary does for one).
+// Returns { total, byContract: [{ department, contract_no, balance }] }, or
+// null if none of the contracts had a readable balance.
+export async function fetchConsolidatedContractBalance(primaries) {
+  var loadedList = await Promise.all((primaries || []).filter(Boolean).map(loadContractPool))
+  var reconciled = loadedList.map(reconcileOneContract)
+  var byContract = primaries.map(function (p, i) {
+    return { department: p.department, contract_no: p.contract_no, balance: reconciled[i] }
+  }).filter(function (c) { return c.balance })
+  if (byContract.length === 0) return null
+  return { total: sumBalances(reconciled), byContract: byContract }
 }
