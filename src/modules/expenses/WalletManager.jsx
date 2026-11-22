@@ -215,20 +215,26 @@ function mergeExpenseWalletRows(txns) {
     if (rows.length === 1) { out.push(rows[0]); return }
     var first = rows[0]
     var last = rows[rows.length - 1]
-    rows.slice(1).forEach(function (r) { trailingEdits.push(r) })
-    var net = rows.reduce(function (s, r) { return s + (r.type === 'credit' ? -(r.amount_paise || 0) : (r.amount_paise || 0)) }, 0)
-    // A straight delete (debit, then its exact-matching refund, nothing
-    // since) nets to zero by construction, and amount_paise/type below stay
-    // net-based -- CSV/PDF export totals and the Balance line both depend on
-    // that staying true. But "0 pts" on screen erases the one thing this
-    // specific card exists to show: that a refund happened. Flagged
-    // separately, display-only, and scoped tight (exactly the debit + its
-    // one matching expense_refund credit, nothing else in the group) so a
-    // longer flag/reinstate/edit cycle that happens to net to zero isn't
-    // forced through this same reading, which wouldn't actually be true for it.
-    var isPlainDeleteRefund = net === 0 && rows.length === 2 &&
+    // A debit followed by its one exact-matching refund (nothing since --
+    // a delete, or a flag that hasn't been resubmitted yet) used to be
+    // folded into one net-zero card with a "+refund" annotation -- but the
+    // refund is its own real event, not an adjustment to the original
+    // spend, and a single "0 pts" card (however annotated) read as one
+    // occurrence where there were actually two. Left unmerged, both of
+    // their own untouched rows show on screen, and a newest-first sort
+    // naturally places the refund credit above the debit it reverses.
+    // Scoped tight (exactly the debit + its one matching expense_refund
+    // credit, nothing else in the group) so a longer cycle -- flag then
+    // resubmit then delete, a deduct, an edit-down -- that happens to net
+    // to zero isn't forced through this same reading, which wouldn't
+    // actually be true for it (those don't refund the exact same amount
+    // back in one single credit, or they're a group of more than two rows).
+    var isPlainDeleteRefund = rows.length === 2 &&
       first.type !== 'credit' && last.type === 'credit' && last.reference_type === 'expense_refund' &&
       (last.amount_paise || 0) === (first.amount_paise || 0) && (first.amount_paise || 0) > 0
+    if (isPlainDeleteRefund) { out.push(first); out.push(last); return }
+    rows.slice(1).forEach(function (r) { trailingEdits.push(r) })
+    var net = rows.reduce(function (s, r) { return s + (r.type === 'credit' ? -(r.amount_paise || 0) : (r.amount_paise || 0)) }, 0)
     // The balance right before this GROUP started (i.e. before its original,
     // first transaction) -- the one stable anchor, since later edits can
     // land after other unrelated transactions and latest.balance_after_paise
@@ -240,12 +246,13 @@ function mergeExpenseWalletRows(txns) {
     out.push(Object.assign({}, first, {
       amount_paise: Math.abs(net),
       type: net < 0 ? 'credit' : 'debit',
-      // Display-only: the amount actually refunded, for a card whose net
-      // (and therefore balance effect) is zero -- the two render sites pick
-      // this up to show "+refund amount" instead of "0 pts", without
-      // touching amount_paise/type/balance_after_paise, which every export
-      // and the gap-check both still need reconciling to net.
-      _zeroNetRefundPaise: isPlainDeleteRefund ? last.amount_paise : null,
+      // Always null here now -- the one case that ever set this (a plain
+      // delete + its matching refund) returns above before reaching this
+      // merge. Left in place, rather than removed along with its two
+      // render-site readers, since a net-zero merge of some other kind
+      // (a longer flag/reinstate/edit cycle) is exactly the case this was
+      // never meant to cover, and still correctly falls back to "0 pts".
+      _zeroNetRefundPaise: null,
       // The balance as if this row's full (merged) effect happened in one
       // atomic step right here -- what actually reconciles against whatever
       // sits above/below it in the list, not the literal post-edit balance,
