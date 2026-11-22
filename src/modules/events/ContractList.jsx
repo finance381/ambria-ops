@@ -67,6 +67,14 @@ function ContractList({ profile, deepLinkContractId }) {
   // group (see the consolidation pass above), or null for a standalone
   // contract / a non-Venue selection. { Decor: [group,...], Entertainment: [group,...] }
   var [selectedAddons, setSelectedAddons] = useState(null)
+  // LMS's own Decor/Entertainment "Total Deal Amount" (total_amount_paise)
+  // is entered at half the real value as a matter of habit (confirmed
+  // live: contract #00374's Deal Amount 95000 vs. its own true 190000) --
+  // same "store the hidden figure, reveal on request" treatment as the
+  // cashX10 toggle elsewhere (EventLedger.jsx, GroupPnL.jsx), not a blanket
+  // correction baked into the sync, since it's an opt-in reveal rather
+  // than an assumed-universal fix.
+  var [pkgX2, setPkgX2] = useState(false)
   var [showFinancials, setShowFinancials] = useState(false)
   var [liveBalance, setLiveBalance] = useState(null)
   var [liveBalanceLoading, setLiveBalanceLoading] = useState(false)
@@ -882,7 +890,16 @@ function ContractList({ profile, deepLinkContractId }) {
             {hasAddons && ['Decor', 'Entertainment'].map(function (dept) {
               return (selectedAddons[dept] || []).map(function (g) {
                 var a = g.rows[0]
-                var pkg = a.net_amount_paise > 0 ? a.net_amount_paise : a.total_amount_paise
+                // total_amount_paise is the "Total Deal Amount" LMS itself
+                // shows for this contract -- preferred whenever it's set.
+                // net_amount_paise is only a fallback for the rare contract
+                // where total_amount_paise is genuinely 0 (no Deal Amount
+                // entered at all); it's LMS's own cash+bank+tax composite,
+                // already mixing a hidden-scale cash figure with full-scale
+                // ones, so it isn't eligible for the ×2 reveal below.
+                var pkgFromTotal = a.total_amount_paise > 0
+                var pkgRaw = pkgFromTotal ? a.total_amount_paise : a.net_amount_paise
+                var pkg = pkgFromTotal && pkgX2 ? pkgRaw * 2 : pkgRaw
                 return (
                   <div key={dept + a.id} className="rounded-lg border border-slate-200 overflow-hidden">
                     <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-50 border-b border-slate-200">
@@ -910,10 +927,15 @@ function ContractList({ profile, deepLinkContractId }) {
                         ['Venue type', venueTypeLabel(a.contract_type)],
                         ['Priority', a.priority],
                         ['Created by (LMS)', a.created_user_name],
-                        ['Package', pkg > 0 ? formatPaise(pkg) : null],
-                      ].filter(function (row) { return row[1] != null && row[1] !== '' }).map(function (row) {
+                        [pkgFromTotal ? (
+                          <>Package<button type="button"
+                            title={pkgX2 ? 'Showing true package amount — click to hide' : 'Show true package amount'}
+                            onClick={function (e) { e.stopPropagation(); setPkgX2(function (v) { return !v }) }}
+                            className={'ml-1.5 inline-block w-2 h-2 align-middle rounded-full transition-colors ' + (pkgX2 ? 'bg-amber-400' : 'bg-slate-200 opacity-25 hover:opacity-50')} /></>
+                        ) : 'Package', pkg > 0 ? formatPaise(pkg) : null],
+                      ].filter(function (row) { return row[1] != null && row[1] !== '' }).map(function (row, ri) {
                         return (
-                          <div key={row[0]} className="flex justify-between gap-3 text-xs">
+                          <div key={ri} className="flex justify-between gap-3 text-xs">
                             <span className="text-gray-500">{row[0]}</span>
                             <span className="font-medium text-gray-800 text-right">{row[1]}</span>
                           </div>
