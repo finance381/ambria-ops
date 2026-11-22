@@ -238,7 +238,14 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
     billing_name: e[h + "billing_name"] || null,
     billing_address: e[h + "billing_address"] || null,
     session: e[d + "session"] || null,
-    catering: e[d + "catering"] || e[d + "menu"] || null,
+    // Venue contracts carry only a numeric fiscd_menu code (e.g. "8") with
+    // no fiscd_catering text field at all -- the actual menu name comes back
+    // as a separate, already-resolved top-level "menuname" (confirmed live,
+    // contract #00568: fiscd_menu "8" / menuname "Luxury Veg"). Catering
+    // contracts have no menuname field, but chcd_catering is already real
+    // text ("Veg"/"Non-veg") on that endpoint, so the existing fallback
+    // chain still covers them.
+    catering: e.menuname || e[d + "catering"] || e[d + "menu"] || null,
     // total_plates is the free quota (Extra Plate Collect charges only past
     // it) — confirmed the paying pax and free pax are additive on the
     // contract (150 pax + 10 free = 160 covered), not 10 carved out of 150.

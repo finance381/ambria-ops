@@ -750,8 +750,14 @@ function ContractList({ profile, deepLinkContractId }) {
                 ['Session', selected.session],
                 ['Catering', selected.catering],
                 ['Total plates', selected.total_plates],
-                ['Pax', selected.pax],
-                ['Complimentary plates', selected.complementary_plates],
+                // selected.pax is only ever set on a manually-created
+                // tentative contract (no LMS data yet) -- every synced LMS
+                // contract leaves it null, so the paying count is derived
+                // here instead: total_plates already includes the free/extra
+                // quota (see sync-events' mapRow), so subtracting it back out
+                // recovers the base Pax LMS itself shows for the contract.
+                ['Pax', selected.pax != null ? selected.pax : (selected.total_plates != null && selected.complementary_plates != null ? selected.total_plates - selected.complementary_plates : null)],
+                ['Extra', selected.complementary_plates],
                 ['Extra plates charge', selected.extra_plates_charge > 0 ? formatPaise(selected.extra_plates_charge) : null],
                 ['Menu rate', selected.menu_rate_paise > 0 ? formatPaise(selected.menu_rate_paise) : null],
                 ['Venue rental', selected.venue_rental_paise != null ? formatPaise(selected.venue_rental_paise) : null],
@@ -797,6 +803,93 @@ function ContractList({ profile, deepLinkContractId }) {
                 </div>
               </div>
             )}
+
+            {/* Add-on Decor / Add-on Ent — the matched standalone Decor and/or
+                Entertainment contract(s) for this same guest+venue (see the
+                consolidation pass above), folded in here rather than shown as
+                their own separate top-level rows. Package is read from each
+                contract's OWN total — independently of this Venue contract's
+                own Decor amount/Entertainment amount fields above, which are
+                a different, earlier-set split field on this contract, not a
+                mirror of the standalone one. They should normally agree (same
+                real booking); showing both lets a mismatch actually surface
+                instead of silently overwriting one with the other. Placed
+                before the Balance box so the add-on contracts themselves are
+                visible before the pooled numbers that fold them in. */}
+            {hasAddons && ['Decor', 'Entertainment'].map(function (dept) {
+              return (selectedAddons[dept] || []).map(function (g) {
+                var a = g.rows[0]
+                // total_amount_paise is the "Total Deal Amount" LMS itself
+                // shows for this contract -- preferred whenever it's set.
+                // net_amount_paise is only a fallback for the rare contract
+                // where total_amount_paise is genuinely 0 (no Deal Amount
+                // entered at all); it's LMS's own cash+bank+tax composite,
+                // already mixing a hidden-scale cash figure with full-scale
+                // ones, so it isn't eligible for the ×2 reveal below.
+                var pkgFromTotal = a.total_amount_paise > 0
+                var pkgRaw = pkgFromTotal ? a.total_amount_paise : a.net_amount_paise
+                var pkg = pkgFromTotal && pkgX2 ? pkgRaw * 2 : pkgRaw
+                return (
+                  <div key={dept + a.id} className="rounded-lg border border-slate-200 overflow-hidden">
+                    <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-50 border-b border-slate-200">
+                      <span className="inline-flex items-center gap-2">
+                        <Badge color={dept === 'Decor' ? 'purple' : 'pink'}>Add-on &middot; {dept === 'Entertainment' ? 'Ent' : dept}</Badge>
+                        <span className="font-mono text-xs text-slate-600">#{a.contract_no}</span>
+                      </span>
+                      {(a.tally_entered_by || canMarkEntered) && (
+                        <EnteredMark
+                          entered={!!a.tally_entered_by}
+                          enteredByName={enteredNames[a.tally_entered_by]}
+                          enteredAt={a.tally_entered_at}
+                          canToggle={canMarkEntered}
+                          canUnenter={a.tally_entered_by === profile.id || isSysAdmin}
+                          busy={enteringId === a.id}
+                          onToggle={function () { toggleContractEntered(a.id) }}
+                        />
+                      )}
+                    </div>
+                    <div className="px-3 py-2.5 space-y-1">
+                      {[
+                        ['Contract date', a.contract_date ? formatDate(a.contract_date) : null],
+                        ['Function date', a.function_date ? formatDate(a.function_date) : null],
+                        ['Session', a.session],
+                        ['Venue type', venueTypeLabel(a.contract_type)],
+                        ['Priority', a.priority],
+                        ['Created by (LMS)', a.created_user_name],
+                        [pkgFromTotal ? (
+                          <>Package<button type="button"
+                            title={pkgX2 ? 'Showing true package amount — click to hide' : 'Show true package amount'}
+                            onClick={function (e) { e.stopPropagation(); setPkgX2(function (v) { return !v }) }}
+                            className={'ml-1.5 inline-block w-2 h-2 align-middle rounded-full transition-colors ' + (pkgX2 ? 'bg-amber-400' : 'bg-slate-200 opacity-25 hover:opacity-50')} /></>
+                        ) : 'Package', pkg > 0 ? formatPaise(pkg) : null],
+                      ].filter(function (row) { return row[1] != null && row[1] !== '' }).map(function (row, ri) {
+                        return (
+                          <div key={ri} className="flex justify-between gap-3 text-xs">
+                            <span className="text-gray-500">{row[0]}</span>
+                            <span className="font-medium text-gray-800 text-right">{row[1]}</span>
+                          </div>
+                        )
+                      })}
+                      {isAdmin && (
+                        <div className="flex justify-between gap-3 text-xs pt-1 border-t border-gray-100">
+                          <span className="text-gray-500">Balance</span>
+                          {a.balance_amount ? (
+                            <span className={'font-bold ' + (a.balance_amount < 0 ? 'text-red-600' : 'text-emerald-600')}>
+                              {formatPaise(Math.abs(a.balance_amount))} <span className="font-semibold opacity-80">{a.balance_amount < 0 ? 'due' : 'adv'}</span>
+                            </span>
+                          ) : <span className="text-gray-300">—</span>}
+                        </div>
+                      )}
+                      {a.pdf_link && (
+                        <div className="pt-1">
+                          <a href={a.pdf_link} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">View contract PDF ↗</a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })
+            })}
 
             {/* The real, reconciled balance — every function under this
                 contract pooled together and LMS's own payment history
@@ -876,91 +969,6 @@ function ContractList({ profile, deepLinkContractId }) {
                 {selected.ppt_link && <a href={selected.ppt_link} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">View PPT ↗</a>}
               </div>
             )}
-
-            {/* Add-on Decor / Add-on Ent — the matched standalone Decor and/or
-                Entertainment contract(s) for this same guest+venue (see the
-                consolidation pass above), folded in here rather than shown as
-                their own separate top-level rows. Package is read from each
-                contract's OWN total — independently of this Venue contract's
-                own Decor amount/Entertainment amount fields above, which are
-                a different, earlier-set split field on this contract, not a
-                mirror of the standalone one. They should normally agree (same
-                real booking); showing both lets a mismatch actually surface
-                instead of silently overwriting one with the other. */}
-            {hasAddons && ['Decor', 'Entertainment'].map(function (dept) {
-              return (selectedAddons[dept] || []).map(function (g) {
-                var a = g.rows[0]
-                // total_amount_paise is the "Total Deal Amount" LMS itself
-                // shows for this contract -- preferred whenever it's set.
-                // net_amount_paise is only a fallback for the rare contract
-                // where total_amount_paise is genuinely 0 (no Deal Amount
-                // entered at all); it's LMS's own cash+bank+tax composite,
-                // already mixing a hidden-scale cash figure with full-scale
-                // ones, so it isn't eligible for the ×2 reveal below.
-                var pkgFromTotal = a.total_amount_paise > 0
-                var pkgRaw = pkgFromTotal ? a.total_amount_paise : a.net_amount_paise
-                var pkg = pkgFromTotal && pkgX2 ? pkgRaw * 2 : pkgRaw
-                return (
-                  <div key={dept + a.id} className="rounded-lg border border-slate-200 overflow-hidden">
-                    <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-50 border-b border-slate-200">
-                      <span className="inline-flex items-center gap-2">
-                        <Badge color={dept === 'Decor' ? 'purple' : 'pink'}>Add-on &middot; {dept === 'Entertainment' ? 'Ent' : dept}</Badge>
-                        <span className="font-mono text-xs text-slate-600">#{a.contract_no}</span>
-                      </span>
-                      {(a.tally_entered_by || canMarkEntered) && (
-                        <EnteredMark
-                          entered={!!a.tally_entered_by}
-                          enteredByName={enteredNames[a.tally_entered_by]}
-                          enteredAt={a.tally_entered_at}
-                          canToggle={canMarkEntered}
-                          canUnenter={a.tally_entered_by === profile.id || isSysAdmin}
-                          busy={enteringId === a.id}
-                          onToggle={function () { toggleContractEntered(a.id) }}
-                        />
-                      )}
-                    </div>
-                    <div className="px-3 py-2.5 space-y-1">
-                      {[
-                        ['Contract date', a.contract_date ? formatDate(a.contract_date) : null],
-                        ['Function date', a.function_date ? formatDate(a.function_date) : null],
-                        ['Session', a.session],
-                        ['Venue type', venueTypeLabel(a.contract_type)],
-                        ['Priority', a.priority],
-                        ['Created by (LMS)', a.created_user_name],
-                        [pkgFromTotal ? (
-                          <>Package<button type="button"
-                            title={pkgX2 ? 'Showing true package amount — click to hide' : 'Show true package amount'}
-                            onClick={function (e) { e.stopPropagation(); setPkgX2(function (v) { return !v }) }}
-                            className={'ml-1.5 inline-block w-2 h-2 align-middle rounded-full transition-colors ' + (pkgX2 ? 'bg-amber-400' : 'bg-slate-200 opacity-25 hover:opacity-50')} /></>
-                        ) : 'Package', pkg > 0 ? formatPaise(pkg) : null],
-                      ].filter(function (row) { return row[1] != null && row[1] !== '' }).map(function (row, ri) {
-                        return (
-                          <div key={ri} className="flex justify-between gap-3 text-xs">
-                            <span className="text-gray-500">{row[0]}</span>
-                            <span className="font-medium text-gray-800 text-right">{row[1]}</span>
-                          </div>
-                        )
-                      })}
-                      {isAdmin && (
-                        <div className="flex justify-between gap-3 text-xs pt-1 border-t border-gray-100">
-                          <span className="text-gray-500">Balance</span>
-                          {a.balance_amount ? (
-                            <span className={'font-bold ' + (a.balance_amount < 0 ? 'text-red-600' : 'text-emerald-600')}>
-                              {formatPaise(Math.abs(a.balance_amount))} <span className="font-semibold opacity-80">{a.balance_amount < 0 ? 'due' : 'adv'}</span>
-                            </span>
-                          ) : <span className="text-gray-300">—</span>}
-                        </div>
-                      )}
-                      {a.pdf_link && (
-                        <div className="pt-1">
-                          <a href={a.pdf_link} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">View contract PDF ↗</a>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })
-            })}
           </div>
           )
         })()}
