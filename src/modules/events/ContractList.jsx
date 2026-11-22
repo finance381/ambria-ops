@@ -804,6 +804,17 @@ function ContractList({ profile, deepLinkContractId }) {
               </div>
             )}
 
+            {(selected.pdf_link || selected.ppt_link) && (
+              <div className="flex gap-3">
+                {selected.pdf_link && (
+                  <a href={selected.pdf_link} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">
+                    {selected.department === 'Catering' ? 'View menu PDF' : 'View contract PDF'} ↗
+                  </a>
+                )}
+                {selected.ppt_link && <a href={selected.ppt_link} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">View PPT ↗</a>}
+              </div>
+            )}
+
             {/* Add-on Decor / Add-on Ent — the matched standalone Decor and/or
                 Entertainment contract(s) for this same guest+venue (see the
                 consolidation pass above), folded in here rather than shown as
@@ -956,17 +967,6 @@ function ContractList({ profile, deepLinkContractId }) {
                   busy={enteringId === selected.id}
                   onToggle={function () { toggleContractEntered(selected.id) }}
                 />
-              </div>
-            )}
-
-            {(selected.pdf_link || selected.ppt_link) && (
-              <div className="flex gap-3">
-                {selected.pdf_link && (
-                  <a href={selected.pdf_link} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">
-                    {selected.department === 'Catering' ? 'View menu PDF' : 'View contract PDF'} ↗
-                  </a>
-                )}
-                {selected.ppt_link && <a href={selected.ppt_link} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">View PPT ↗</a>}
               </div>
             )}
           </div>
