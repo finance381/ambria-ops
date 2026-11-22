@@ -804,6 +804,21 @@ function ContractList({ profile, deepLinkContractId }) {
               </div>
             )}
 
+            {(selected.tally_entered_by || canMarkEntered) && (
+              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                <span className="text-xs font-semibold text-gray-500">Entered in Tally</span>
+                <EnteredMark
+                  entered={!!selected.tally_entered_by}
+                  enteredByName={enteredNames[selected.tally_entered_by]}
+                  enteredAt={selected.tally_entered_at}
+                  canToggle={canMarkEntered}
+                  canUnenter={selected.tally_entered_by === profile.id || isSysAdmin}
+                  busy={enteringId === selected.id}
+                  onToggle={function () { toggleContractEntered(selected.id) }}
+                />
+              </div>
+            )}
+
             {(selected.pdf_link || selected.ppt_link) && (
               <div className="flex gap-3">
                 {selected.pdf_link && (
@@ -955,20 +970,6 @@ function ContractList({ profile, deepLinkContractId }) {
               </div>
             )}
 
-            {(selected.tally_entered_by || canMarkEntered) && (
-              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                <span className="text-xs font-semibold text-gray-500">Entered in Tally</span>
-                <EnteredMark
-                  entered={!!selected.tally_entered_by}
-                  enteredByName={enteredNames[selected.tally_entered_by]}
-                  enteredAt={selected.tally_entered_at}
-                  canToggle={canMarkEntered}
-                  canUnenter={selected.tally_entered_by === profile.id || isSysAdmin}
-                  busy={enteringId === selected.id}
-                  onToggle={function () { toggleContractEntered(selected.id) }}
-                />
-              </div>
-            )}
           </div>
           )
         })()}
