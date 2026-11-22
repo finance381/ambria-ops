@@ -339,7 +339,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
       var fullRows = []
       while (true) {
         var q = supabase.from('expenses')
-          .select('id, user_id, amount_paise, tax_paise, description, status, expense_date, created_at, deleted_at, vendor_name, metadata, expense_type_id, expense_sub_type_id, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), ' + allocEmbed)
+          .select('id, user_id, amount_paise, tax_paise, description, status, expense_date, created_at, deleted_at, deleted_by, delete_reason, payment_cash_paise, payment_credit_paise, vendor_name, metadata, expense_type_id, expense_sub_type_id, expense_types(name, extra_fields), expense_sub_types(name, extra_fields), ' + allocEmbed)
           .order('expense_date', { ascending: true, nullsFirst: false })
           .order('id', { ascending: true })
           .range(fromIdx, fromIdx + CHUNK - 1)
@@ -369,11 +369,46 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
 
       // ─ Fetch user names in one RPC ─
       var uIds = []
-      fullRows.forEach(function (r) { if (r.user_id && uIds.indexOf(r.user_id) === -1) uIds.push(r.user_id) })
+      fullRows.forEach(function (r) {
+        if (r.user_id && uIds.indexOf(r.user_id) === -1) uIds.push(r.user_id)
+        if (r.deleted_by && uIds.indexOf(r.deleted_by) === -1) uIds.push(r.deleted_by)
+      })
       var nameMap = {}
       if (uIds.length > 0) {
         var { data: nm } = await supabase.rpc('get_profile_names', { p_ids: uIds })
         ;(nm || []).forEach(function (x) { nameMap[x.id] = x.name })
+      }
+
+      // ─ Fetch the actual delete-time refund for each deleted expense ─
+      // walletExposure (payment_cash_paise, or the full amount with no
+      // credit split) is what a FIRST delete refunds -- but
+      // fn_refund_expense_debit (00194) actually refunds whatever is still
+      // out of the wallet at delete time: every completed debit minus every
+      // completed expense_refund credit already posted for it. Send back
+      // (flag), Deduct and an edit-down all write that same credit type, so
+      // an expense flagged (refunded in full) and then deleted refunds 0 a
+      // second time, and one deducted or edited down before deletion only
+      // refunds the remainder -- exposure alone would overstate both.
+      // Reading the real wallet_transactions row sidesteps recomputing that
+      // whole history: it's inserted in the same DB transaction as
+      // deleted_at is set, so its created_at is byte-for-byte that same
+      // value (one now() per transaction) -- an exact join key, not a
+      // timestamp-proximity guess.
+      var deletedIds = fullRows.filter(function (r) { return !!r.deleted_at }).map(function (r) { return String(r.id) })
+      var refundRowsByExpId = {}
+      if (deletedIds.length > 0) {
+        var CHUNK_R = 500
+        for (var ri = 0; ri < deletedIds.length; ri += CHUNK_R) {
+          var idChunk = deletedIds.slice(ri, ri + CHUNK_R)
+          var { data: rf } = await supabase.from('wallet_transactions')
+            .select('reference_id, amount_paise, created_at')
+            .eq('type', 'credit').eq('reference_type', 'expense_refund')
+            .in('reference_id', idChunk)
+          ;(rf || []).forEach(function (r) {
+            if (!refundRowsByExpId[r.reference_id]) refundRowsByExpId[r.reference_id] = []
+            refundRowsByExpId[r.reference_id].push(r)
+          })
+        }
       }
 
       // ─ Fetch vendor names for any lookup-type extra field sourced from vendors ─
@@ -454,10 +489,23 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
       var particularsMeta = []
 
       fullRows.forEach(function (e) {
-        var isRefund = e.status === 'deleted' || e.status === 'rejected' || !!e.deleted_at
+        // A soft-deleted expense used to collapse onto its OWN row: the
+        // spend's own debit replaced by the refund credit, as if deleting an
+        // expense turned it into a credit rather than also producing one.
+        // That's one row standing in for two real, separately-dated events
+        // -- the spend, and later, separately, its reversal. Below, the
+        // expense keeps its own ordinary Debit row (the spend happened,
+        // deleted or not) and, only when deleting it actually refunded the
+        // wallet, a second Credit row is added for the deletion itself,
+        // dated to when that refund posted rather than to the expense.
+        //
+        // status === 'deleted'/'rejected' with no deleted_at is a separate,
+        // older convention this file already had (no soft-delete timestamp
+        // to split a second row from) -- left exactly as it was.
+        var legacyRefund = !e.deleted_at && (e.status === 'deleted' || e.status === 'rejected')
         var amt = e.amount_paise || 0
-        var debit = isRefund ? 0 : amt
-        var credit = isRefund ? amt : 0
+        var debit = legacyRefund ? 0 : amt
+        var credit = legacyRefund ? amt : 0
         totalDebit += debit
         totalCredit += credit
 
@@ -503,6 +551,48 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
         }
 
         if (e.status && e.status !== 'recorded') pLines.push({ kind: 'status', text: e.status })
+        // e.status doesn't change when an expense is deleted (deleted_at is
+        // its own, separate marker) — without this, the expense's own row
+        // reads as any ordinary live one, with nothing on it pointing at
+        // the credit row now sitting just above it. Skipped when status is
+        // already literally 'deleted' (the legacy, deleted_at-less path
+        // just above), which already pushed the same word a line up.
+        if (e.deleted_at && e.status !== 'deleted') pLines.push({ kind: 'status', text: 'deleted' })
+
+        // The deletion's own row, printed above the expense it reverses
+        // (pushed first — rows below are already in expense_date order, and
+        // within one date this is simply earlier in iteration order). Only
+        // when there was actually something to refund.
+        if (!legacyRefund && e.deleted_at) {
+          // The real delete-time refund, found by its exact join key
+          // (see the fetch above) — falls back to the walletExposure
+          // estimate only if that row can't be found for some reason
+          // (shouldn't happen; kept as a safety net, not the normal path).
+          var refundRow = (refundRowsByExpId[String(e.id)] || []).filter(function (r) { return r.created_at === e.deleted_at })[0]
+          var exposure = refundRow ? (refundRow.amount_paise || 0)
+            : ((e.payment_credit_paise || 0) > 0 ? (e.payment_cash_paise || 0) : amt)
+          if (exposure > 0) {
+            var delPLines = [{ kind: 'header', text: 'Deleted expense' }]
+            delPLines.push({ kind: 'desc', text: 'Refund for #' + e.id + ' (' + fmtAmt(amt) + ' on ' + (e.expense_date ? formatDate(e.expense_date) : '—') + ')' })
+            if (e.delete_reason) delPLines.push({ kind: 'chip', text: 'Reason: ' + e.delete_reason })
+            if (e.deleted_by) delPLines.push({ kind: 'chip', text: 'By: ' + (nameMap[e.deleted_by] || '—') })
+            particularsMeta.push(delPLines)
+            var delDm = {
+              top: formatDate(e.deleted_at),
+              bottom: formatDateTime(e.deleted_at),
+            }
+            dateMeta.push(delDm)
+            totalCredit += exposure
+            body.push([
+              plainDateLines(delDm, 'Entered '),
+              '#' + e.id,
+              nameMap[e.user_id] || '—',
+              plainParticularsLines(delPLines).join('\n'),
+              '',
+              fmtAmt(exposure),
+            ])
+          }
+        }
 
         particularsMeta.push(pLines)
         var dm = {

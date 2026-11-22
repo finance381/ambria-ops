@@ -215,20 +215,26 @@ function mergeExpenseWalletRows(txns) {
     if (rows.length === 1) { out.push(rows[0]); return }
     var first = rows[0]
     var last = rows[rows.length - 1]
-    rows.slice(1).forEach(function (r) { trailingEdits.push(r) })
-    var net = rows.reduce(function (s, r) { return s + (r.type === 'credit' ? -(r.amount_paise || 0) : (r.amount_paise || 0)) }, 0)
-    // A straight delete (debit, then its exact-matching refund, nothing
-    // since) nets to zero by construction, and amount_paise/type below stay
-    // net-based -- CSV/PDF export totals and the Balance line both depend on
-    // that staying true. But "0 pts" on screen erases the one thing this
-    // specific card exists to show: that a refund happened. Flagged
-    // separately, display-only, and scoped tight (exactly the debit + its
-    // one matching expense_refund credit, nothing else in the group) so a
-    // longer flag/reinstate/edit cycle that happens to net to zero isn't
-    // forced through this same reading, which wouldn't actually be true for it.
-    var isPlainDeleteRefund = net === 0 && rows.length === 2 &&
+    // A debit followed by its one exact-matching refund (nothing since --
+    // a delete, or a flag that hasn't been resubmitted yet) used to be
+    // folded into one net-zero card with a "+refund" annotation -- but the
+    // refund is its own real event, not an adjustment to the original
+    // spend, and a single "0 pts" card (however annotated) read as one
+    // occurrence where there were actually two. Left unmerged, both of
+    // their own untouched rows show on screen, and a newest-first sort
+    // naturally places the refund credit above the debit it reverses.
+    // Scoped tight (exactly the debit + its one matching expense_refund
+    // credit, nothing else in the group) so a longer cycle -- flag then
+    // resubmit then delete, a deduct, an edit-down -- that happens to net
+    // to zero isn't forced through this same reading, which wouldn't
+    // actually be true for it (those don't refund the exact same amount
+    // back in one single credit, or they're a group of more than two rows).
+    var isPlainDeleteRefund = rows.length === 2 &&
       first.type !== 'credit' && last.type === 'credit' && last.reference_type === 'expense_refund' &&
       (last.amount_paise || 0) === (first.amount_paise || 0) && (first.amount_paise || 0) > 0
+    if (isPlainDeleteRefund) { out.push(first); out.push(last); return }
+    rows.slice(1).forEach(function (r) { trailingEdits.push(r) })
+    var net = rows.reduce(function (s, r) { return s + (r.type === 'credit' ? -(r.amount_paise || 0) : (r.amount_paise || 0)) }, 0)
     // The balance right before this GROUP started (i.e. before its original,
     // first transaction) -- the one stable anchor, since later edits can
     // land after other unrelated transactions and latest.balance_after_paise
@@ -240,12 +246,13 @@ function mergeExpenseWalletRows(txns) {
     out.push(Object.assign({}, first, {
       amount_paise: Math.abs(net),
       type: net < 0 ? 'credit' : 'debit',
-      // Display-only: the amount actually refunded, for a card whose net
-      // (and therefore balance effect) is zero -- the two render sites pick
-      // this up to show "+refund amount" instead of "0 pts", without
-      // touching amount_paise/type/balance_after_paise, which every export
-      // and the gap-check both still need reconciling to net.
-      _zeroNetRefundPaise: isPlainDeleteRefund ? last.amount_paise : null,
+      // Always null here now -- the one case that ever set this (a plain
+      // delete + its matching refund) returns above before reaching this
+      // merge. Left in place, rather than removed along with its two
+      // render-site readers, since a net-zero merge of some other kind
+      // (a longer flag/reinstate/edit cycle) is exactly the case this was
+      // never meant to cover, and still correctly falls back to "0 pts".
+      _zeroNetRefundPaise: null,
       // The balance as if this row's full (merged) effect happened in one
       // atomic step right here -- what actually reconciles against whatever
       // sits above/below it in the list, not the literal post-edit balance,
@@ -963,7 +970,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           : none,
         expIdsNum.length > 0
           ? supabase.from('expenses')
-              .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, flag_reason, reviewed_by, reviewed_at, checked_by, checked_at, tally_entered_by, tally_entered_at, acknowledged_by, acknowledged_at, deleted_at, receipt_path, receipt_paths, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+              .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, flag_reason, reviewed_by, reviewed_at, checked_by, checked_at, tally_entered_by, tally_entered_at, acknowledged_by, acknowledged_at, deleted_at, deleted_by, delete_reason, receipt_path, receipt_paths, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
               .in('id', expIdsNum)
           : none,
         // Matched on ref_id, not id — see openPaymentDetail for why.
@@ -1012,6 +1019,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         if (e.tally_entered_by) cpIds[e.tally_entered_by] = true
         if (e.acknowledged_by) cpIds[e.acknowledged_by] = true
         if (e.reviewed_by) cpIds[e.reviewed_by] = true
+        if (e.deleted_by) cpIds[e.deleted_by] = true
       })
       setExpenseRefs(eMap)
       if (eData && eData.length > 0) resolveExpenseLookups(eMap)
@@ -4440,46 +4448,6 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     var hasZeroNetRefund = t._zeroNetRefundPaise != null
     var displayCredit = hasZeroNetRefund ? true : isCredit
     var displayAmountPaise = hasZeroNetRefund ? t._zeroNetRefundPaise : Math.abs(t.amount_paise)
-    // Whatever this row's own balance implies happened right before it,
-    // compared with what the next OLDER row in the list actually shows —
-    // a gap means something moved the balance in between that isn't in this
-    // list right now: a type filter, a different page, or (the one that
-    // actually caused this) "Show deleted expenses" being off, which hides
-    // a deleted expense's debit AND the refund that reverses it together,
-    // since both carry that same now-deleted expense's reference_id. Only
-    // meaningful in chronological order — 'amount' sort has no "before".
-    var gapNote = null
-    // A merged (edited) row sits at its ORIGINAL transaction's position but
-    // shows the balance after its LATEST sub-part, which can legitimately
-    // span other unrelated transactions in between -- its own amount/balance
-    // pair was never one atomic step, so it can't be checked this way, and
-    // neither can whichever row ends up positioned beside it.
-    if (txnSort !== 'amount' && !t._isMerged) {
-      var _selfIdx = sortedTxns.indexOf(t)
-      var _olderNeighbor = txnSort === 'oldest' ? sortedTxns[_selfIdx - 1] : sortedTxns[_selfIdx + 1]
-      if (_selfIdx !== -1 && _olderNeighbor && !_olderNeighbor._isMerged) {
-        var _impliedBefore = isCredit ? (t.balance_after_paise - t.amount_paise) : (t.balance_after_paise + t.amount_paise)
-        var _gap = _impliedBefore - (_olderNeighbor.balance_after_paise || 0)
-        if (Math.abs(_gap) >= 100) {
-          // An edit elsewhere can land, by its own real timestamp, strictly
-          // between these two neighbors even though its card now sits
-          // somewhere else entirely (anchored to its own original
-          // transaction) -- that's a known, accounted-for amount, not a
-          // missing one. Only whatever's left unexplained after subtracting
-          // it is a real gap worth a look.
-          var _tTime = new Date(t._sortAt || t.created_at).getTime()
-          var _nTime = new Date(_olderNeighbor._sortAt || _olderNeighbor.created_at).getTime()
-          var _lo = Math.min(_tTime, _nTime), _hi = Math.max(_tTime, _nTime)
-          var _explained = (sortedTxns._trailingEdits || []).reduce(function (s, e) {
-            var et = new Date(e.created_at).getTime()
-            if (et <= _lo || et >= _hi) return s
-            return s + (e.type === 'credit' ? (e.amount_paise || 0) : -(e.amount_paise || 0))
-          }, 0)
-          var _residual = _gap - _explained
-          if (Math.abs(_residual) >= 100) gapNote = _residual
-        }
-      }
-    }
     var issuedPath = t.issued_image_path || null
     var receivedPath = t.received_image_path || null
     var transferRow = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
@@ -4641,6 +4609,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               <p className="text-[11px] text-slate-500 mt-0.5">
                 Acknowledged by <span className="font-semibold text-slate-700">{walletProfiles[expenseRefs[t.reference_id].acknowledged_by]?.name || '—'}</span>
                 {expenseRefs[t.reference_id].acknowledged_at ? ' · ' + formatDate(expenseRefs[t.reference_id].acknowledged_at) : ''}
+              </p>
+            )}
+            {isDeletedExp && expenseRefs[t.reference_id].deleted_by && (
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Deleted by <span className="font-semibold text-slate-700">{walletProfiles[expenseRefs[t.reference_id].deleted_by]?.name || '—'}</span>
+                {expenseRefs[t.reference_id].deleted_at ? ' · ' + formatDate(expenseRefs[t.reference_id].deleted_at) : ''}
+                {expenseRefs[t.reference_id].delete_reason ? ' — ' + expenseRefs[t.reference_id].delete_reason : ''}
               </p>
             )}
             {/* The whole reason this needs a fix — shown right here, not only
@@ -4938,12 +4913,6 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </p>
             {hasZeroNetRefund && (
               <p className="text-[10px] font-semibold text-slate-400">Refunded, balance unchanged</p>
-            )}
-            {gapNote != null && (
-              <p className={"mt-0.5 text-[10.5px] font-bold tabular-nums " + (gapNote > 0 ? "text-emerald-600" : "text-red-500")}
-                title="The balance moved by more than this row's own amount since the row above it — something not in this list changed it in between (a filter, another page, or a deleted expense's hidden refund). Turn on &quot;Show deleted expenses&quot; to check.">
-                {gapNote > 0 ? '+' : '−'}{formatPoints(Math.abs(gapNote))} not shown here
-              </p>
             )}
             {/* The finance check belongs under the figure it is a check on.
                 Up in the title row it sat among the status chips, where
