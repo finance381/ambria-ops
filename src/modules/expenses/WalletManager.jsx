@@ -970,7 +970,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           : none,
         expIdsNum.length > 0
           ? supabase.from('expenses')
-              .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, flag_reason, reviewed_by, reviewed_at, checked_by, checked_at, tally_entered_by, tally_entered_at, acknowledged_by, acknowledged_at, deleted_at, receipt_path, receipt_paths, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
+              .select('id, description, amount_paise, expense_date, event_id, vendor_name, metadata, status, flag_reason, reviewed_by, reviewed_at, checked_by, checked_at, tally_entered_by, tally_entered_at, acknowledged_by, acknowledged_at, deleted_at, deleted_by, delete_reason, receipt_path, receipt_paths, payment_cash_paise, payment_credit_paise, payment_credit_cash_paise, payment_credit_bank_paise, cash_due_date, bank_due_date, expense_types(name, icon), expense_sub_types(name, extra_fields), expense_allocations(department, amount_paise, expense_types(name), expense_sub_types(name))')
               .in('id', expIdsNum)
           : none,
         // Matched on ref_id, not id — see openPaymentDetail for why.
@@ -1019,6 +1019,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
         if (e.tally_entered_by) cpIds[e.tally_entered_by] = true
         if (e.acknowledged_by) cpIds[e.acknowledged_by] = true
         if (e.reviewed_by) cpIds[e.reviewed_by] = true
+        if (e.deleted_by) cpIds[e.deleted_by] = true
       })
       setExpenseRefs(eMap)
       if (eData && eData.length > 0) resolveExpenseLookups(eMap)
@@ -4608,6 +4609,13 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               <p className="text-[11px] text-slate-500 mt-0.5">
                 Acknowledged by <span className="font-semibold text-slate-700">{walletProfiles[expenseRefs[t.reference_id].acknowledged_by]?.name || '—'}</span>
                 {expenseRefs[t.reference_id].acknowledged_at ? ' · ' + formatDate(expenseRefs[t.reference_id].acknowledged_at) : ''}
+              </p>
+            )}
+            {isDeletedExp && expenseRefs[t.reference_id].deleted_by && (
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Deleted by <span className="font-semibold text-slate-700">{walletProfiles[expenseRefs[t.reference_id].deleted_by]?.name || '—'}</span>
+                {expenseRefs[t.reference_id].deleted_at ? ' · ' + formatDate(expenseRefs[t.reference_id].deleted_at) : ''}
+                {expenseRefs[t.reference_id].delete_reason ? ' — ' + expenseRefs[t.reference_id].delete_reason : ''}
               </p>
             )}
             {/* The whole reason this needs a fix — shown right here, not only
