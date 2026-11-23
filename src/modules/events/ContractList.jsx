@@ -28,7 +28,7 @@ var CONTRACT_SELECT = 'id, lms_event_id, contract_no, contract_date, function_da
   'balance_amount, status, synced_at, created_user_name, ppt_link, pdf_link, enquiry_mode, priority, address, ' +
   'is_tentative, pax, function_type, merged_into_id, tally_entered_by, tally_entered_at, ' +
   'menu_rate_paise, venue_rental_paise, decor_amount_paise, entertainment_amount_paise, tentative_created_at, ' +
-  'venue_menu_paise, addons_json, total_amount_paise, net_amount_paise'
+  'venue_menu_paise, addons_json, total_amount_paise, net_amount_paise, tax_amount_paise'
 
 // LMS's own indoor/outdoor flag — confirmed directly against the live API:
 // every department returns a `lead_type` field, "I" (one of Ambria's own
@@ -758,7 +758,11 @@ function ContractList({ profile, deepLinkContractId }) {
                 // recovers the base Pax LMS itself shows for the contract.
                 ['Pax', selected.pax != null ? selected.pax : (selected.total_plates != null && selected.complementary_plates != null ? selected.total_plates - selected.complementary_plates : null)],
                 ['Extra', selected.complementary_plates],
-                ['Extra plates charge', selected.extra_plates_charge > 0 ? formatPaise(selected.extra_plates_charge) : null],
+                // extra_plates_charge is LMS's per-plate RATE, not what was
+                // actually charged -- the real figure is rate × how many
+                // extra plates were served (complementary_plates, despite
+                // its name -- see the Pax/Extra relabeling above).
+                ['Extra plates charge', (selected.extra_plates_charge > 0 && selected.complementary_plates > 0) ? formatPaise(selected.extra_plates_charge * selected.complementary_plates) : null],
                 ['Menu rate', selected.menu_rate_paise > 0 ? formatPaise(selected.menu_rate_paise) : null],
                 ['Venue rental', selected.venue_rental_paise != null ? formatPaise(selected.venue_rental_paise) : null],
                 ['Venue + Menu', selected.venue_menu_paise != null ? formatPaise(selected.venue_menu_paise) : null],
@@ -943,24 +947,48 @@ function ContractList({ profile, deepLinkContractId }) {
                   // Decor/Entertainment add-ons matched this Venue contract. pkgX2
                   // shared with the Add-on cards' own reveal toggle so the two stay
                   // in sync rather than needing a second click to line up.
-                  function addonPkgTotal(dept) {
+                  // tax only folded in when the package itself came from
+                  // total_amount_paise -- net_amount_paise is already LMS's
+                  // own cash+bank+tax composite (see the Add-on card above),
+                  // so adding tax_amount_paise on top of that would double it.
+                  function addonPkgTax(dept) {
                     var list = (selectedAddons && selectedAddons[dept]) || []
-                    var sum = 0
+                    var pkg = 0, tax = 0
                     list.forEach(function (g) {
                       var a = g.rows[0]
                       var pkgFromTotal = a.total_amount_paise > 0
                       var pkgRaw = pkgFromTotal ? a.total_amount_paise : (a.net_amount_paise || 0)
-                      sum += pkgFromTotal && pkgX2 ? pkgRaw * 2 : pkgRaw
+                      pkg += pkgFromTotal && pkgX2 ? pkgRaw * 2 : pkgRaw
+                      if (pkgFromTotal) tax += Number(a.tax_amount_paise || 0)
                     })
-                    return sum
+                    return { pkg: pkg, tax: tax }
                   }
                   var venuePkg = Number(selected.total_amount_paise || 0)
-                  var decorPkg = addonPkgTotal('Decor')
-                  var entPkg = addonPkgTotal('Entertainment')
+                  var venueTax = Number(selected.tax_amount_paise || 0)
+                  var decor = addonPkgTax('Decor')
+                  var ent = addonPkgTax('Entertainment')
                   var hasDecorAddon = ((selectedAddons && selectedAddons.Decor) || []).length > 0
                   var hasEntAddon = ((selectedAddons && selectedAddons.Entertainment) || []).length > 0
                   var pendingCash = Number(liveBalance.pending_cash_paise || 0)
-                  var pendingBank = Number(liveBalance.pending_bank_paise || 0)
+                  // Tax is an agreed-bank item, not its own collection channel
+                  // -- clubbed into Pending bank here rather than shown as a
+                  // separate Pending tax line (effective agreed bank = agreed
+                  // bank + agreed tax, per the user's own framing).
+                  var pendingBank = Number(liveBalance.pending_bank_paise || 0) + Number(liveBalance.pending_tax_paise || 0)
+                  // extra_plates_charge is LMS's per-plate RATE -- see the
+                  // same fix in the main field list above.
+                  var extraPlatesActual = (selected.extra_plates_charge > 0 && selected.complementary_plates > 0)
+                    ? selected.extra_plates_charge * selected.complementary_plates : 0
+                  function pkgCell(pkg, tax) {
+                    if (tax > 0) {
+                      return (
+                        <span className="font-medium text-gray-800 text-right">
+                          {formatPaise(pkg)} <span className="text-gray-400 font-normal">+</span> {formatPaise(tax)}<span className="text-gray-400 font-normal text-[11px]"> tax</span> <span className="text-gray-400 font-normal">=</span> <span className="font-bold text-gray-900">{formatPaise(pkg + tax)}</span>
+                        </span>
+                      )
+                    }
+                    return <span className="font-medium text-gray-800">{formatPaise(pkg)}</span>
+                  }
                   return (
                     <>
                       {/* "Venue Contract package" by name only when this really
@@ -969,23 +997,23 @@ function ContractList({ profile, deepLinkContractId }) {
                           but this same box also renders for a standalone
                           Decor/Entertainment/Catering contract opened directly,
                           where that label would be wrong. */}
-                      <div className="flex justify-between"><span className="text-gray-500">{selected.department === 'Venue' ? 'Venue Contract package' : selected.department + ' Contract package'}</span><span className="font-medium text-gray-800">{formatPaise(venuePkg)}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">{selected.department === 'Venue' ? 'Venue Contract package' : selected.department + ' Contract package'}</span>{pkgCell(venuePkg, venueTax)}</div>
                       {hasDecorAddon && (
-                        <div className="flex justify-between"><span className="text-gray-500">Add-on Decor package</span><span className="font-medium text-gray-800">{formatPaise(decorPkg)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">Add-on Decor package</span>{pkgCell(decor.pkg, decor.tax)}</div>
                       )}
                       {hasEntAddon && (
-                        <div className="flex justify-between"><span className="text-gray-500">Add-on Entertainment package</span><span className="font-medium text-gray-800">{formatPaise(entPkg)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">Add-on Entertainment package</span>{pkgCell(ent.pkg, ent.tax)}</div>
                       )}
                       {(hasDecorAddon || hasEntAddon) && (
                         <div className="flex justify-between pt-1 border-t border-gray-200">
                           <span className="text-gray-700 font-semibold">Total Deal</span>
-                          <span className="font-bold text-gray-900">{formatPaise(venuePkg + decorPkg + entPkg)}</span>
+                          <span className="font-bold text-gray-900">{formatPaise(venuePkg + venueTax + decor.pkg + decor.tax + ent.pkg + ent.tax)}</span>
                         </div>
                       )}
                       <div className="flex justify-between pt-1 border-t border-gray-200"><span className="text-gray-500">Advance received — cash</span><span className="font-medium text-gray-800">{formatPaise(liveBalance.collected_cash_paise)}</span></div>
                       <div className="flex justify-between"><span className="text-gray-500">Advance received — bank</span><span className="font-medium text-gray-800">{formatPaise(liveBalance.collected_bank_paise)}</span></div>
-                      {selected.extra_plates_charge > 0 && (
-                        <div className="flex justify-between"><span className="text-gray-500">Extra plates charge</span><span className="font-medium text-gray-800">{formatPaise(selected.extra_plates_charge)}</span></div>
+                      {extraPlatesActual > 0 && (
+                        <div className="flex justify-between"><span className="text-gray-500">Extra plates charge</span><span className="font-medium text-gray-800">{formatPaise(extraPlatesActual)}</span></div>
                       )}
                       <div className="flex justify-between pt-1 border-t border-gray-200">
                         <span className="text-gray-500">Pending — cash</span>
