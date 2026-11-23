@@ -120,31 +120,33 @@ export function buildDeptContractBuckets(rows) {
 
 // An LMS resync mints a new event row for the same function rather than
 // updating the old one in place, marking the old one lms_cancelled_at — so
-// one real function can appear as several rows sharing a contract_no. This
-// picks the one row per distinct function that should represent it: the
-// live (not cancelled) one, or among equally-(non-)cancelled rows the
-// highest id, since ids increase with sync order here. (Mirrors
-// EventLedger.jsx's _pickCanonical — kept as its own copy rather than a
-// shared import since the two screens' balance math must each be verified
-// against its own call site; change one, check the other still matches.)
-function pickCanonicalByFuncKey(rows) {
-  var byKey = {}
+// one real function can appear as several rows sharing a contract_no. pool
+// is always scoped to one contract_no + department already (see this
+// function's own callers), so this just picks the one row that should
+// represent the whole contract: the live (not cancelled) one, or among
+// equally-(non-)cancelled rows the highest id, since ids increase with sync
+// order here. (Mirrors contractBalance.js's pickOneCanonical — kept as its
+// own copy rather than a shared import since the two screens' balance math
+// must each be verified against its own call site; change one, check the
+// other still matches.)
+function pickOneCanonical(rows) {
+  var best = null
   rows.forEach(function (e) {
-    var k = funcKeyOf(e)
-    var cur = byKey[k]
     var eLive = !e.lms_cancelled_at
-    var curLive = cur && !cur.lms_cancelled_at
-    if (!cur || (eLive && !curLive) || (eLive === curLive && Number(e.id) > Number(cur.id))) byKey[k] = e
+    var bestLive = best && !best.lms_cancelled_at
+    if (!best || (eLive && !bestLive) || (eLive === bestLive && Number(e.id) > Number(best.id))) best = e
   })
-  return byKey
+  return best
 }
 
-// Agreed targets are restated identically on every resync duplicate of the
-// same function, so they must be taken from one canonical row per distinct
-// function — never summed across duplicates. Collected/spent are safe to
-// sum across every id in the pool: each id's own ledger rows are disjoint,
-// so the total is just whatever money actually exists, regardless of which
-// duplicate it's attached to. Pending is then recomputed from those
+// agreed_cash_paise/agreed_bank_paise/tax_amount_paise are LMS's own
+// contract-level fields, restated identically on every function-detail row
+// of the same contract -- taken from exactly ONE row for the whole contract
+// (see pickOneCanonical), never summed across its functions, which would
+// multiply that contract-level figure by its function count. Collected/spent
+// are safe to sum across every id in the pool: each id's own ledger rows are
+// disjoint, so the total is just whatever money actually exists, regardless
+// of which row it's attached to. Pending is then recomputed from those
 // corrected totals. (Mirrors EventLedger.jsx's loadContractBalance.)
 export async function computeContractBalance(pool, lmsRows) {
   var allIds = pool.map(function (e) { return e.id })
@@ -154,16 +156,11 @@ export async function computeContractBalance(pool, lmsRows) {
   var byId = {}
   data.forEach(function (row) { byId[row.event_id] = row })
 
-  var canonicalByKey = pickCanonicalByFuncKey(pool)
-  var agreedCash = 0, agreedBank = 0, tax = 0
-  Object.keys(canonicalByKey).forEach(function (k) {
-    var row = byId[canonicalByKey[k].id]
-    if (row) {
-      agreedCash += Number(row.agreed_cash_paise || 0)
-      agreedBank += Number(row.agreed_bank_paise || 0)
-      tax += Number(row.tax_amount_paise || 0)
-    }
-  })
+  var canonical = pickOneCanonical(pool)
+  var canonicalRow = canonical ? byId[canonical.id] : null
+  var agreedCash = canonicalRow ? Number(canonicalRow.agreed_cash_paise || 0) : 0
+  var agreedBank = canonicalRow ? Number(canonicalRow.agreed_bank_paise || 0) : 0
+  var tax = canonicalRow ? Number(canonicalRow.tax_amount_paise || 0) : 0
   var collCash = 0, collBank = 0, spent = 0
   data.forEach(function (row) {
     collCash += Number(row.collected_cash_paise || 0)

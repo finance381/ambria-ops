@@ -1,32 +1,28 @@
 import { supabase } from './supabase'
 
-// Same grouping key as EventLedger.jsx's own _groupKey/_pickCanonical — an
-// LMS resync mints a new event row for the same function rather than
+// An LMS resync mints a new event row for the same function rather than
 // updating the old one, marking the old one lms_cancelled_at, so one real
-// function can appear as several rows sharing a contract_no.
+// function can appear as several rows sharing a contract_no. Every pool this
+// is called on (loadContractPool / fetchContractBalancesBatch) is already
+// scoped to one contract_no + department, so no grouping key is needed here
+// -- just the live-over-cancelled, highest-id-among-equals tie-break.
 //
-// department is part of the key (not just a convenience -- see
-// fetchConsolidatedContractBalance below): a Venue contract's own Haldi
-// Lunch and a Decor contract's own Haldi Lunch for the exact same wedding
-// can otherwise share an identical client+date+venue+session, and without
-// department splitting them apart, pickCanonical would keep only the
-// higher-id row between the two -- silently dropping one department's
-// entire Agreed-target row out of the total, not just de-duplicating a
-// real resync repeat.
-function groupKey(f) {
-  return (f.client_name || '') + '|' + (f.function_date || '') + '|' + (f.venue_name || '') + '|' + (f.session || '') + '|' + (f.department || '')
-}
-
-function pickCanonical(rows) {
-  var byKey = {}
+// agreed_cash_paise/agreed_bank_paise/tax_amount_paise (LMS's own header-
+// level fields -- h + "cash_part"/"cheque"/"tax_amt" in sync-events) are
+// restated IDENTICALLY on every function-detail row of the same contract,
+// not split per function -- confirmed live: a 3-function Decor contract
+// (#00144) carried the same 30,000/2,00,000 on all 3 of its rows. An earlier
+// version of this picked one row per distinct FUNCTION and summed those,
+// which multiplied that contract-level figure by its function count. This
+// picks exactly ONE row for the whole pool instead.
+function pickOneCanonical(rows) {
+  var best = null
   rows.forEach(function (e) {
-    var k = groupKey(e)
-    var cur = byKey[k]
     var eLive = !e.lms_cancelled_at
-    var curLive = cur && !cur.lms_cancelled_at
-    if (!cur || (eLive && !curLive) || (eLive === curLive && Number(e.id) > Number(cur.id))) byKey[k] = e
+    var bestLive = best && !best.lms_cancelled_at
+    if (!best || (eLive && !bestLive) || (eLive === bestLive && Number(e.id) > Number(best.id))) best = e
   })
-  return byKey
+  return best
 }
 
 var EVT_COLS = 'id, event_name, function_date, venue_name, location, client_name, session, department, contract_no, lms_cancelled_at'
@@ -92,16 +88,11 @@ export async function fetchContractBalancesBatch(contracts) {
 
   return pools.map(function (pool) {
     if (!pool) return null
-    var canonicalByKey = pickCanonical(pool)
-    var agreedCash = 0, agreedBank = 0, tax = 0
-    Object.keys(canonicalByKey).forEach(function (k) {
-      var row = byId[canonicalByKey[k].id]
-      if (row) {
-        agreedCash += Number(row.agreed_cash_paise || 0)
-        agreedBank += Number(row.agreed_bank_paise || 0)
-        tax += Number(row.tax_amount_paise || 0)
-      }
-    })
+    var canonical = pickOneCanonical(pool)
+    var canonicalRow = canonical ? byId[canonical.id] : null
+    var agreedCash = canonicalRow ? Number(canonicalRow.agreed_cash_paise || 0) : 0
+    var agreedBank = canonicalRow ? Number(canonicalRow.agreed_bank_paise || 0) : 0
+    var tax = canonicalRow ? Number(canonicalRow.tax_amount_paise || 0) : 0
     var collCash = 0, collBank = 0, spent = 0
     pool.forEach(function (e) {
       var row = byId[e.id]
@@ -154,26 +145,21 @@ async function loadContractPool(primary) {
 }
 
 // One contract's reconciled balance, given its already-loaded pool + balance
-// rows + LMS payments (see loadContractPool). Agreed targets come from one
-// canonical row per distinct function only (never summed across resync
-// duplicates, which would multiply the target instead of just recovering
-// money attached to a superseded id); Collected/Spent sum across every row
+// rows + LMS payments (see loadContractPool). Agreed targets come from
+// exactly ONE row for the whole contract (see pickOneCanonical -- LMS
+// restates the same contract-level figure on every function row, so summing
+// one per function would multiply it); Collected/Spent sum across every row
 // in the pool, since each one's event_ledger rows are real, disjoint money.
 function reconcileOneContract(loaded) {
   if (loaded.balanceError || loaded.balanceRows.length === 0) return null
   var byId = {}
   loaded.balanceRows.forEach(function (row) { byId[row.event_id] = row })
 
-  var canonicalByKey = pickCanonical(loaded.pool)
-  var agreedCash = 0, agreedBank = 0, tax = 0
-  Object.keys(canonicalByKey).forEach(function (k) {
-    var row = byId[canonicalByKey[k].id]
-    if (row) {
-      agreedCash += Number(row.agreed_cash_paise || 0)
-      agreedBank += Number(row.agreed_bank_paise || 0)
-      tax += Number(row.tax_amount_paise || 0)
-    }
-  })
+  var canonical = pickOneCanonical(loaded.pool)
+  var canonicalRow = canonical ? byId[canonical.id] : null
+  var agreedCash = canonicalRow ? Number(canonicalRow.agreed_cash_paise || 0) : 0
+  var agreedBank = canonicalRow ? Number(canonicalRow.agreed_bank_paise || 0) : 0
+  var tax = canonicalRow ? Number(canonicalRow.tax_amount_paise || 0) : 0
   var collCash = 0, collBank = 0, spent = 0
   loaded.balanceRows.forEach(function (row) {
     collCash += Number(row.collected_cash_paise || 0)
@@ -236,11 +222,10 @@ function sumBalances(list) {
 
 // Pools every event sharing this contract's contract_no, sums Collected/Spent
 // across all of them (each one's event_ledger rows are real, disjoint money —
-// see EventLedger's loadContractBalance), takes Agreed targets from one
-// canonical row per distinct function only (never summed across resync
-// duplicates, which would multiply the target instead of just recovering
-// money attached to a superseded id), and folds in LMS's own payment history
-// for collections made outside Ambria Ops' wallet entirely.
+// see EventLedger's loadContractBalance), takes Agreed targets from exactly
+// one row for the whole contract (see pickOneCanonical), and folds in LMS's
+// own payment history for collections made outside Ambria Ops' wallet
+// entirely.
 //
 // This is a standalone copy of the same math EventLedger.jsx's
 // loadContractBalance/fetchLmsPayments already do internally — kept separate

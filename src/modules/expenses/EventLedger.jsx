@@ -171,6 +171,26 @@ function _pickCanonical(rows) {
   return byKey
 }
 
+// Same tie-break as _pickCanonical, but collapsed to ONE row for the whole
+// pool instead of one per distinct function -- for agreed_cash_paise/
+// agreed_bank_paise/tax_amount_paise specifically, which are LMS's own
+// contract-level fields restated identically on every function-detail row of
+// the same contract (confirmed live: a 3-function Decor contract carried the
+// same agreed cash/bank on all 3 of its rows). Summing _pickCanonical's
+// one-row-per-function picks -- which reconcileContractPool used to do --
+// multiplied that contract-level figure by its function count. Only ever
+// called on a pool already scoped to one contract_no + department, so no
+// grouping key is needed here.
+function _pickOneCanonical(rows) {
+  var best = null
+  rows.forEach(function (e) {
+    var eLive = !e.lms_cancelled_at
+    var bestLive = best && !best.lms_cancelled_at
+    if (!best || (eLive && !bestLive) || (eLive === bestLive && Number(e.id) > Number(best.id))) best = e
+  })
+  return best
+}
+
 // _buildGroups buckets by exact date+venue+session — right for the month
 // browser, where Haldi lunch and Wedding dinner are genuinely different
 // calendar cells, even under the same contract. But money is tracked per
@@ -547,37 +567,28 @@ function EventLedger(props) {
     })()
   }, [propEventId, extraEventIds.join(',')])
 
-  // Agreed targets are restated identically on every resync duplicate of the
-  // same function (see fn_event_group_balance), so they must be taken from
-  // one canonical row per distinct function — never summed across
-  // duplicates. Collected/spent are safe to sum across every id in the pool:
+  // Agreed cash/bank/tax are LMS's own contract-level fields, restated
+  // identically on every function-detail row of the same contract (and on
+  // every resync duplicate of the same function too) -- taken from exactly
+  // ONE row via _pickOneCanonical, never summed across the pool, which would
+  // multiply that contract-level figure by however many functions/duplicates
+  // are in it. Collected/spent are safe to sum across every id in the pool:
   // each id's event_ledger rows are disjoint, so the total is just whatever
-  // money actually exists, regardless of which duplicate it's attached to.
-  // Pending is then recomputed here from those corrected totals, mirroring
+  // money actually exists, regardless of which row it's attached to. Pending
+  // is then recomputed here from those corrected totals, mirroring
   // fn_event_group_balance's own formulas exactly.
   //
-  // _pickCanonical's own groupKey deliberately leaves department out (see
-  // _groupKey's own callers -- _buildGroups needs exactly that to bundle a
-  // function's Venue/Decor/Entertainment contracts into one calendar card),
-  // so this must only ever run on a single-department pool: a Venue Haldi
-  // Lunch and a Decor Haldi Lunch for the same wedding can otherwise share
-  // one groupKey, and _pickCanonical would keep only the higher-id row
-  // between the two -- silently dropping one department's whole Agreed
-  // target, not just de-duplicating a real resync repeat. The consolidated,
-  // cross-department case below (loadConsolidatedBalance) reconciles each
-  // contract's own pool separately through this same function and only sums
-  // the already-reconciled results, never a merged pool.
+  // This must only ever run on a single-contract (contract_no + department)
+  // pool -- the consolidated, cross-department case below
+  // (loadConsolidatedBalance) reconciles each contract's own pool separately
+  // through this same function and only sums the already-reconciled results,
+  // never a merged pool.
   function reconcileContractPool(pool, byId, lmsRows) {
-    var canonicalByKey = _pickCanonical(pool)
-    var agreedCash = 0, agreedBank = 0, tax = 0
-    Object.keys(canonicalByKey).forEach(function (k) {
-      var row = byId[canonicalByKey[k].id]
-      if (row) {
-        agreedCash += Number(row.agreed_cash_paise || 0)
-        agreedBank += Number(row.agreed_bank_paise || 0)
-        tax += Number(row.tax_amount_paise || 0)
-      }
-    })
+    var canonical = _pickOneCanonical(pool)
+    var canonicalRow = canonical ? byId[canonical.id] : null
+    var agreedCash = canonicalRow ? Number(canonicalRow.agreed_cash_paise || 0) : 0
+    var agreedBank = canonicalRow ? Number(canonicalRow.agreed_bank_paise || 0) : 0
+    var tax = canonicalRow ? Number(canonicalRow.tax_amount_paise || 0) : 0
     var collCash = 0, collBank = 0, spent = 0
     pool.forEach(function (e) {
       var row = byId[e.id]
@@ -626,15 +637,22 @@ function EventLedger(props) {
 
   async function loadContractBalance(pool, lmsRows) {
     var allIds = pool.map(function (e) { return e.id })
-    if (allIds.length === 0) { setBalance(null); setBalancesByContract({}); return }
+    if (allIds.length === 0) { setBalance(null); setBalancesByContract({}); setBalanceByContractList(null); return }
     setBalanceLoading(true)
     var { data, error } = await supabase.rpc('fn_event_group_balance', { p_event_ids: allIds.map(Number) })
-    if (error || !data) { setBalance(null); setBalancesByContract({}); setBalanceLoading(false); return }
+    if (error || !data) { setBalance(null); setBalancesByContract({}); setBalanceByContractList(null); setBalanceLoading(false); return }
     var byId = {}
     data.forEach(function (row) { byId[row.event_id] = row })
     setBalancesByContract(byId)
-    setBalance(reconcileContractPool(pool, byId, lmsRows))
-    setBalanceByContractList(null)
+    var reconciled = reconcileContractPool(pool, byId, lmsRows)
+    setBalance(reconciled)
+    // One real contract here (pool is always one contract_no + department --
+    // see reconcileContractPool's own note), so the per-contract breakdown
+    // the Financials tab shows is just this one reconciled result, not one
+    // row per function in the pool (see the Per-Contract Breakdown section's
+    // own note on why it reads this list instead of the raw pool).
+    var anchor = pool[0] || {}
+    setBalanceByContractList([{ department: anchor.department, contract_no: anchor.contract_no, balance: reconciled }])
     setBalanceLoading(false)
   }
 
@@ -681,6 +699,11 @@ function EventLedger(props) {
   }
 
   async function loadBalance(ids) {
+    // Not reconciled through reconcileContractPool (see loadContractBalance's
+    // own note on why the main flow uses that instead) -- stale otherwise,
+    // this at least keeps the Per-Contract Breakdown from showing a
+    // previous selection's rows under a new one.
+    setBalanceByContractList(null)
     if (!ids || ids.length === 0) { setBalance(null); setBalancesByContract({}); return }
     setBalanceLoading(true)
     var { data, error } = await supabase.rpc('fn_event_group_balance', { p_event_ids: ids.map(function (id) { return Number(id) }) })
@@ -1995,25 +2018,34 @@ function EventLedger(props) {
               sub={<p className="mt-2 text-[12px] text-slate-500">Expenses booked to this event</p>} />
           </div>
 
-          {multiContract && (
+          {multiContract && balanceByContractList && (
             <SectionCard title="Per-Contract Breakdown" icon="chart">
+              {/* One row per REAL contract (contract_no + department), not
+                  one per function -- balanceByContractList is already
+                  reconciled that way (see loadContractBalance/
+                  loadConsolidatedBalance), unlike the raw `contracts` list
+                  used elsewhere in this file for display/dept-chip purposes,
+                  which is one row per distinct function and would otherwise
+                  show e.g. a single 3-function Decor contract as 3 "contracts"
+                  each carrying that contract's whole agreed cash/bank. */}
               {/* A phone gets one block per contract rather than the table.
                   Seven columns in 358px scrolled sideways and put the one
                   number anyone opens this for — what is still pending — off
                   the edge. Here each contract is three rows by two columns,
                   cash beside bank, and nothing is out of sight. */}
               <div className="@3xl:hidden divide-y divide-slate-100">
-                {contracts.map(function (c) {
-                  var b = balancesByContract[c.id] || {}
+                {balanceByContractList.map(function (c) {
+                  var b = c.balance || {}
                   var cashMul = cashX10 ? 10 : 1
                   var pcash = Number(b.pending_cash_paise || 0) * cashMul
                   var pbank = Number(b.pending_bank_paise || 0)
+                  var createdName = (contracts.find(function (r) { return r.contract_no === c.contract_no && r.department === c.department }) || {}).created_user_name
                   var rows = [
                     { k: 'Agreed', cash: Number(b.agreed_cash_paise || 0) * cashMul, bank: Number(b.agreed_bank_paise || 0), cls: 'text-slate-800' },
                     { k: 'Collected', cash: Number(b.collected_cash_paise || 0) * cashMul, bank: Number(b.collected_bank_paise || 0), cls: 'text-slate-600' },
                   ]
                   return (
-                    <div key={c.id} className="px-4 py-3.5">
+                    <div key={c.department + c.contract_no} className="px-4 py-3.5">
                       {/* Fixed tracks, not auto: auto sized each block's
                           columns to its own numbers, so Cash and Bank stood
                           in a different place under every contract and the
@@ -2028,7 +2060,7 @@ function EventLedger(props) {
                             <span aria-hidden="true" className="shrink-0 w-2 h-2 rounded-full" style={{ background: deptHex(c.department) }} />
                             <span className="truncate">{c.department || 'Contract'}</span>
                           </span>
-                          {c.created_user_name && <span className="block pl-3.5 truncate text-[11px] text-slate-400">by {c.created_user_name}</span>}
+                          {createdName && <span className="block pl-3.5 truncate text-[11px] text-slate-400">by {createdName}</span>}
                         </span>
                         <span className="self-end text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Cash</span>
                         <span className="self-end text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Bank</span>
@@ -2060,17 +2092,18 @@ function EventLedger(props) {
                     </tr>
                   </thead>
                   <tbody>
-                    {contracts.map(function (c) {
-                      var b = balancesByContract[c.id] || {}
+                    {balanceByContractList.map(function (c) {
+                      var b = c.balance || {}
                       var cashMul = cashX10 ? 10 : 1
                       var pcash = Number(b.pending_cash_paise || 0) * cashMul
                       var pbank = Number(b.pending_bank_paise || 0)
+                      var createdName = (contracts.find(function (r) { return r.contract_no === c.contract_no && r.department === c.department }) || {}).created_user_name
                       return (
-                        <tr key={c.id} className="border-b border-slate-100 last:border-b-0">
+                        <tr key={c.department + c.contract_no} className="border-b border-slate-100 last:border-b-0">
                           <td className="px-3 py-2.5">
                             <div className="flex flex-wrap items-center gap-2">
                               <DeptChip name={c.department} />
-                              {c.created_user_name && <span className="text-[11px] text-slate-400">by {c.created_user_name}</span>}
+                              {createdName && <span className="text-[11px] text-slate-400">by {createdName}</span>}
                             </div>
                           </td>
                           <td className="px-3 py-2.5 text-right text-[13px] tabular-nums text-slate-800" data-notranslate>{formatPoints(Number(b.agreed_cash_paise || 0) * cashMul)}</td>
