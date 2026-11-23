@@ -887,7 +887,10 @@ function ContractList({ profile, deepLinkContractId }) {
                             title={pkgX2 ? 'Showing true package amount — click to hide' : 'Show true package amount'}
                             onClick={function (e) { e.stopPropagation(); setPkgX2(function (v) { return !v }) }}
                             className={'ml-1.5 inline-block w-2 h-2 align-middle rounded-full transition-colors ' + (pkgX2 ? 'bg-amber-400' : 'bg-slate-200 opacity-25 hover:opacity-50')} /></>
-                        ) : 'Package', pkg > 0 ? formatPaise(pkg) : null],
+                        // pkg itself can be a real, deliberate 0 (a contract
+                        // genuinely written up with no package value) -- only
+                        // hide the row when there's no figure at all to show.
+                        ) : 'Package', pkg != null ? formatPaise(pkg) : null],
                       ].filter(function (row) { return row[1] != null && row[1] !== '' }).map(function (row, ri) {
                         return (
                           <div key={ri} className="flex justify-between gap-3 text-xs">
@@ -899,10 +902,14 @@ function ContractList({ profile, deepLinkContractId }) {
                       {isAdmin && (
                         <div className="flex justify-between gap-3 text-xs pt-1 border-t border-gray-100">
                           <span className="text-gray-500">Balance</span>
-                          {a.balance_amount ? (
-                            <span className={'font-bold ' + (a.balance_amount < 0 ? 'text-red-600' : 'text-emerald-600')}>
-                              {formatPaise(Math.abs(a.balance_amount))} <span className="font-semibold opacity-80">{a.balance_amount < 0 ? 'due' : 'adv'}</span>
-                            </span>
+                          {a.balance_amount != null ? (
+                            a.balance_amount === 0 ? (
+                              <span className="font-bold text-emerald-600">{formatPaise(0)} <span className="font-semibold opacity-80">settled</span></span>
+                            ) : (
+                              <span className={'font-bold ' + (a.balance_amount < 0 ? 'text-red-600' : 'text-emerald-600')}>
+                                {formatPaise(Math.abs(a.balance_amount))} <span className="font-semibold opacity-80">{a.balance_amount < 0 ? 'due' : 'adv'}</span>
+                              </span>
+                            )
                           ) : <span className="text-gray-300">—</span>}
                         </div>
                       )}
