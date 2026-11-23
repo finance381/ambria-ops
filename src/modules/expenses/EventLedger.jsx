@@ -137,12 +137,32 @@ function _buildGroups(rows) {
   }
   var out = []
   Object.keys(byKey).forEach(function (k) {
-    var contracts = byKey[k].slice().sort(function (a, b) { return _deptOrder(a.department) - _deptOrder(b.department) })
+    var pool = byKey[k]
+    // Dedupe resync duplicates for DISPLAY only (department chips, contract
+    // numbers, creator names) -- an LMS resync mints a new row for the same
+    // function rather than updating the old one in place (marking the old
+    // one lms_cancelled_at), so without this a function resynced twice shows
+    // 2-3 identical department chips instead of one (confirmed live: a
+    // Decor function synced 3 times showed 3 "Decor" chips on one calendar
+    // card). One row per distinct department within this calendar cell: the
+    // live one, or among equally-(non-)cancelled rows the highest id.
+    // event_ids below keeps the full raw pool -- money can be attached to a
+    // superseded id too (see loadBalance), so dropping it there would
+    // silently lose real collections, not just dedupe a display artifact.
+    var byDept = {}
+    pool.forEach(function (e) {
+      var dk = e.department || ''
+      var cur = byDept[dk]
+      var eLive = !e.lms_cancelled_at
+      var curLive = cur && !cur.lms_cancelled_at
+      if (!cur || (eLive && !curLive) || (eLive === curLive && Number(e.id) > Number(cur.id))) byDept[dk] = e
+    })
+    var contracts = Object.keys(byDept).map(function (dk) { return byDept[dk] }).sort(function (a, b) { return _deptOrder(a.department) - _deptOrder(b.department) })
     var primary = contracts[0]
     out.push({
       key: k,
       contracts: contracts,
-      event_ids: contracts.map(function (c) { return c.id }),
+      event_ids: pool.map(function (c) { return c.id }),
       event_name: primary.event_name,
       client_name: primary.client_name,
       venue_name: primary.venue_name,
