@@ -757,15 +757,22 @@ function ContractList({ profile, deepLinkContractId }) {
                 ['Address', selected.address],
                 ['Session', selected.session],
                 ['Catering', selected.catering],
-                ['Total plates', selected.total_plates],
-                // selected.pax is only ever set on a manually-created
-                // tentative contract (no LMS data yet) -- every synced LMS
-                // contract leaves it null, so the paying count is derived
-                // here instead: total_plates already includes the free/extra
-                // quota (see sync-events' mapRow), so subtracting it back out
-                // recovers the base Pax LMS itself shows for the contract.
-                ['Pax', selected.pax != null ? selected.pax : (selected.total_plates != null && selected.complementary_plates != null ? selected.total_plates - selected.complementary_plates : null)],
-                ['Extra', selected.complementary_plates],
+                // Decor/Entertainment contracts carry no plate data at all in
+                // LMS (sync-events' dep.pax/freePax/extraPlate are null for
+                // both) -- total_plates/complementary_plates land as a bare 0
+                // rather than null, so without this department gate every
+                // Decor/Entertainment contract would show a false "0 Pax".
+                ...(selected.department === 'Venue' || selected.department === 'Catering' ? [
+                  ['Total plates', selected.total_plates],
+                  // selected.pax is only ever set on a manually-created
+                  // tentative contract (no LMS data yet) -- every synced LMS
+                  // contract leaves it null, so the paying count is derived
+                  // here instead: total_plates already includes the free/extra
+                  // quota (see sync-events' mapRow), so subtracting it back out
+                  // recovers the base Pax LMS itself shows for the contract.
+                  ['Pax', selected.pax != null ? selected.pax : (selected.total_plates != null && selected.complementary_plates != null ? selected.total_plates - selected.complementary_plates : null)],
+                  ['Extra', selected.complementary_plates],
+                ] : []),
                 // extra_plates_charge is LMS's per-plate RATE, not what was
                 // actually charged -- the real figure is rate × how many
                 // extra plates were served (complementary_plates, despite
