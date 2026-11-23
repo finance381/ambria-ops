@@ -571,18 +571,26 @@ function ContractList({ profile, deepLinkContractId }) {
                   )}
                 </div>
                 <span className="hidden sm:block text-right">
-                    {isAdmin && c.balance_amount ? (
-                      <span className={'text-[13px] font-bold tabular-nums ' + (c.balance_amount < 0 ? 'text-red-600' : 'text-emerald-600')}>
-                        {formatPaise(Math.abs(c.balance_amount))}
-                        <span className="ml-1 text-[11px] font-semibold opacity-80">{c.balance_amount < 0 ? 'due' : 'adv'}</span>
-                      </span>
+                    {isAdmin && c.balance_amount != null ? (
+                      c.balance_amount === 0 ? (
+                        <span className="inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
+                      ) : (
+                        <span className={'text-[13px] font-bold tabular-nums ' + (c.balance_amount < 0 ? 'text-red-600' : 'text-emerald-600')}>
+                          {formatPaise(Math.abs(c.balance_amount))}
+                          <span className="ml-1 text-[11px] font-semibold opacity-80">{c.balance_amount < 0 ? 'due' : 'adv'}</span>
+                        </span>
+                      )
                     ) : <span className="text-slate-300">—</span>}
                   </span>
                   <div className="mt-2 sm:mt-0 flex sm:justify-end items-center gap-3">
-                    {isAdmin && c.balance_amount ? (
-                      <span className={'sm:hidden text-[12.5px] font-bold tabular-nums ' + (c.balance_amount < 0 ? 'text-red-600' : 'text-emerald-600')}>
-                        {formatPaise(Math.abs(c.balance_amount))} {c.balance_amount < 0 ? 'due' : 'adv'}
-                      </span>
+                    {isAdmin && c.balance_amount != null ? (
+                      c.balance_amount === 0 ? (
+                        <span className="sm:hidden inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
+                      ) : (
+                        <span className={'sm:hidden text-[12.5px] font-bold tabular-nums ' + (c.balance_amount < 0 ? 'text-red-600' : 'text-emerald-600')}>
+                          {formatPaise(Math.abs(c.balance_amount))} {c.balance_amount < 0 ? 'due' : 'adv'}
+                        </span>
+                      )
                     ) : null}
                     {multi ? (
                       <span className="ml-auto sm:ml-0 text-[11px] font-bold text-slate-500 tabular-nums">{enteredCount}/{rows.length} entered</span>
@@ -937,7 +945,13 @@ function ContractList({ profile, deepLinkContractId }) {
                 collects straight into LMS. */}
             {isAdmin && (
               <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
-                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Balance</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Balance</p>
+                  {liveBalance && Number(liveBalance.pending_cash_paise || 0) === 0 &&
+                    (Number(liveBalance.pending_bank_paise || 0) + Number(liveBalance.pending_tax_paise || 0)) === 0 && (
+                    <span className="inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
+                  )}
+                </div>
                 {liveBalanceLoading || !liveBalance ? (
                   <p className="text-xs text-gray-400">{liveBalanceLoading ? 'Loading…' : 'Not available'}</p>
                 ) : (function () {
