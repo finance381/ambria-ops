@@ -2262,11 +2262,10 @@ function EventLedger(props) {
           )}
 
           <div ref={txnListRef} className={CARD + ' overflow-hidden scroll-mt-4'}>
-            {renderEntriesTable(pageRows)}
             {/* Totals across every filtered transaction (vis), not just the
                 current page -- rowAmount already applies the cash×10 reveal
                 toggle, so these stay in step with the In/Out column figures
-                above them. */}
+                below them. */}
             {vis.length > 0 && (function () {
               var totalIn = 0, totalOut = 0
               vis.forEach(function (e) {
@@ -2274,7 +2273,7 @@ function EventLedger(props) {
                 else totalOut += rowAmount(e)
               })
               return (
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 border-t border-slate-200 bg-slate-50/60">
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 border-b border-slate-200 bg-slate-50/60">
                   <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Total</span>
                   <span className="text-[12.5px] font-bold tabular-nums text-emerald-700" data-notranslate>In {formatPoints(totalIn)}</span>
                   <span className="text-[12.5px] font-bold tabular-nums text-rose-700" data-notranslate>Out {formatPoints(totalOut)}</span>
@@ -2282,6 +2281,7 @@ function EventLedger(props) {
                 </div>
               )
             })()}
+            {renderEntriesTable(pageRows)}
             {vis.length > 0 && (
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-200 bg-slate-50/60">
                 <p className="text-[12px] text-slate-500" data-notranslate>
