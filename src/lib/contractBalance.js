@@ -93,10 +93,14 @@ export async function fetchContractBalancesBatch(contracts) {
   return pools.map(function (pool) {
     if (!pool) return null
     var canonicalByKey = pickCanonical(pool)
-    var agreedCash = 0, agreedBank = 0
+    var agreedCash = 0, agreedBank = 0, tax = 0
     Object.keys(canonicalByKey).forEach(function (k) {
       var row = byId[canonicalByKey[k].id]
-      if (row) { agreedCash += Number(row.agreed_cash_paise || 0); agreedBank += Number(row.agreed_bank_paise || 0) }
+      if (row) {
+        agreedCash += Number(row.agreed_cash_paise || 0)
+        agreedBank += Number(row.agreed_bank_paise || 0)
+        tax += Number(row.tax_amount_paise || 0)
+      }
     })
     var collCash = 0, collBank = 0, spent = 0
     pool.forEach(function (e) {
@@ -106,7 +110,23 @@ export async function fetchContractBalancesBatch(contracts) {
       collBank += Number(row.collected_bank_paise || 0)
       spent += Number(row.spent_paise || 0)
     })
-    return { agreed_cash_paise: agreedCash, agreed_bank_paise: agreedBank, collected_cash_paise: collCash, collected_bank_paise: collBank, spent_paise: spent }
+    // Same netting as reconcileOneContract below (no LMS-only payments here
+    // though -- this batch path is Ambria Ops' own money only, see this
+    // function's own opening comment). Kept as its own copy rather than a
+    // shared helper -- same call as the other three copies of this formula.
+    var bankExcess = Math.max(0, collBank - agreedBank)
+    var bankExcessHidden = Math.round(bankExcess / 10)
+    var cashShortfall = agreedCash - collCash
+    var cashAppliedFromBank = Math.min(bankExcessHidden, Math.max(0, cashShortfall))
+    var leftoverForTax = (bankExcessHidden - cashAppliedFromBank) * 10
+    return {
+      agreed_cash_paise: agreedCash, agreed_bank_paise: agreedBank, tax_amount_paise: tax,
+      collected_cash_paise: collCash, collected_bank_paise: collBank,
+      pending_cash_paise: cashShortfall - cashAppliedFromBank,
+      pending_bank_paise: Math.max(0, agreedBank - collBank),
+      pending_tax_paise: Math.max(0, tax - leftoverForTax),
+      spent_paise: spent,
+    }
   })
 }
 

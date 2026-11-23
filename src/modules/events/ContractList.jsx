@@ -9,7 +9,7 @@ import EnteredMark from '../../components/ui/EnteredMark'
 import Icon from '../../components/ui/Icon'
 import EventLedger from '../expenses/EventLedger'
 import EventDatePicker from '../../components/ui/EventDatePicker'
-import { fetchContractBalanceSummary, fetchConsolidatedContractBalance } from '../../lib/contractBalance'
+import { fetchContractBalanceSummary, fetchConsolidatedContractBalance, fetchContractBalancesBatch } from '../../lib/contractBalance'
 
 // The list's columns from sm up: event, contract, date, venue, balance, Tally.
 var COLS = 'sm:grid-cols-[minmax(0,2.2fr)_140px_110px_minmax(0,1.5fr)_150px_120px]'
@@ -78,6 +78,15 @@ function ContractList({ profile, deepLinkContractId }) {
   var [showFinancials, setShowFinancials] = useState(false)
   var [liveBalance, setLiveBalance] = useState(null)
   var [liveBalanceLoading, setLiveBalanceLoading] = useState(false)
+  // Live reconciled balance for whatever page of rows is currently shown in
+  // the list (one batched RPC call, not one per row) -- keyed by the row's
+  // own primary contract id. Only ever used to upgrade a row to "Settled"
+  // once we know for certain it is; everything else still falls back to
+  // events.balance_amount (LMS's own, possibly-stale figure) exactly as
+  // before. See fetchContractBalancesBatch's own notes on why this doesn't
+  // fold in LMS-only payments or a Venue row's own Add-on contracts the way
+  // the detail panel's Balance box does.
+  var [listBalances, setListBalances] = useState({})
 
   // Reset the financials disclosure whenever a different contract is opened,
   // so it doesn't stay expanded (showing the previous contract's figures for
@@ -306,6 +315,23 @@ function ContractList({ profile, deepLinkContractId }) {
   var pagedGroups = groups.slice((page - 1) * perPage, page * perPage)
   var groupsToShow = filterId ? (pinnedContract ? [{ key: 'pinned', rows: [pinnedContract] }] : []) : pagedGroups
 
+  var listBalanceIdsKey = groupsToShow.map(function (g) { return g.rows[0].id }).join(',')
+  useEffect(function () {
+    if (!isAdmin || groupsToShow.length === 0) { setListBalances({}); return }
+    var cancelled = false
+    fetchContractBalancesBatch(groupsToShow.map(function (g) {
+      var p = g.rows[0]
+      return { id: p.id, contract_no: p.contract_no, department: p.department }
+    })).then(function (results) {
+      if (cancelled) return
+      var next = {}
+      results.forEach(function (b, i) { if (b) next[groupsToShow[i].rows[0].id] = b })
+      setListBalances(next)
+    })
+    return function () { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listBalanceIdsKey, isAdmin])
+
   if (loading) {
     return <p className="text-slate-500 text-[13px] text-center py-10">Loading contracts…</p>
   }
@@ -465,6 +491,14 @@ function ContractList({ profile, deepLinkContractId }) {
             var rows = g.rows
             var c = rows[0]
             var multi = rows.length > 1
+            // Only ever used to confirm a genuine settlement -- a live
+            // balance that ISN'T settled doesn't override the existing
+            // due/adv figure below (different scales/sources, see
+            // fetchContractBalancesBatch's own notes; not worth a cross-
+            // scale combined number for a case nobody asked to fix).
+            var lb = listBalances[c.id]
+            var liveSettled = isAdmin && lb && Number(lb.pending_cash_paise || 0) === 0 &&
+              (Number(lb.pending_bank_paise || 0) + Number(lb.pending_tax_paise || 0)) === 0
             var dates = rows.map(function (r) { return r.function_date || r.contract_date }).filter(Boolean).sort()
             var dateStart = dates[0], dateEnd = dates[dates.length - 1]
             var isTentative = rows.some(function (r) { return r.is_tentative })
@@ -571,7 +605,9 @@ function ContractList({ profile, deepLinkContractId }) {
                   )}
                 </div>
                 <span className="hidden sm:block text-right">
-                    {isAdmin && c.balance_amount != null ? (
+                    {liveSettled ? (
+                      <span className="inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
+                    ) : isAdmin && c.balance_amount != null ? (
                       c.balance_amount === 0 ? (
                         <span className="inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
                       ) : (
@@ -583,7 +619,9 @@ function ContractList({ profile, deepLinkContractId }) {
                     ) : <span className="text-slate-300">—</span>}
                   </span>
                   <div className="mt-2 sm:mt-0 flex sm:justify-end items-center gap-3">
-                    {isAdmin && c.balance_amount != null ? (
+                    {liveSettled ? (
+                      <span className="sm:hidden inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
+                    ) : isAdmin && c.balance_amount != null ? (
                       c.balance_amount === 0 ? (
                         <span className="sm:hidden inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
                       ) : (
