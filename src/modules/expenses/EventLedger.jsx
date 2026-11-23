@@ -608,11 +608,16 @@ function EventLedger(props) {
     var bankExcess = Math.max(0, collBank - agreedBank)
     var bankExcessHidden = Math.round(bankExcess / 10)
     var cashShortfall = agreedCash - collCash
-    var leftoverForTax = Math.max(0, bankExcessHidden - Math.max(0, cashShortfall)) * 10
+    // Capped at the real, positive shortfall -- otherwise excess beyond it
+    // both reduces tax below AND drags pending_cash negative, double-
+    // counting the same rupee of surplus against both buckets (see
+    // contractBalance.js's reconcileOneContract, fixed the same way).
+    var cashAppliedFromBank = Math.min(bankExcessHidden, Math.max(0, cashShortfall))
+    var leftoverForTax = (bankExcessHidden - cashAppliedFromBank) * 10
     return {
       agreed_cash_paise: agreedCash, agreed_bank_paise: agreedBank, tax_amount_paise: tax,
       collected_cash_paise: collCash, collected_bank_paise: collBank,
-      pending_cash_paise: cashShortfall - bankExcessHidden,
+      pending_cash_paise: cashShortfall - cashAppliedFromBank,
       pending_bank_paise: Math.max(0, agreedBank - collBank),
       pending_tax_paise: Math.max(0, tax - leftoverForTax),
       spent_paise: spent,
