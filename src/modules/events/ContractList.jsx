@@ -937,14 +937,63 @@ function ContractList({ profile, deepLinkContractId }) {
                 {liveBalanceLoading || !liveBalance ? (
                   <p className="text-xs text-gray-400">{liveBalanceLoading ? 'Loading…' : 'Not available'}</p>
                 ) : (function () {
-                  var pendingTotal = Number(liveBalance.pending_cash_paise || 0) + Number(liveBalance.pending_bank_paise || 0)
+                  // Same package figure as each Add-on card's own (total_amount_paise,
+                  // falling back to net_amount_paise only when total is genuinely 0 --
+                  // see the Add-on card above for why), summed across however many
+                  // Decor/Entertainment add-ons matched this Venue contract. pkgX2
+                  // shared with the Add-on cards' own reveal toggle so the two stay
+                  // in sync rather than needing a second click to line up.
+                  function addonPkgTotal(dept) {
+                    var list = (selectedAddons && selectedAddons[dept]) || []
+                    var sum = 0
+                    list.forEach(function (g) {
+                      var a = g.rows[0]
+                      var pkgFromTotal = a.total_amount_paise > 0
+                      var pkgRaw = pkgFromTotal ? a.total_amount_paise : (a.net_amount_paise || 0)
+                      sum += pkgFromTotal && pkgX2 ? pkgRaw * 2 : pkgRaw
+                    })
+                    return sum
+                  }
+                  var venuePkg = Number(selected.total_amount_paise || 0)
+                  var decorPkg = addonPkgTotal('Decor')
+                  var entPkg = addonPkgTotal('Entertainment')
+                  var hasDecorAddon = ((selectedAddons && selectedAddons.Decor) || []).length > 0
+                  var hasEntAddon = ((selectedAddons && selectedAddons.Entertainment) || []).length > 0
+                  var pendingCash = Number(liveBalance.pending_cash_paise || 0)
+                  var pendingBank = Number(liveBalance.pending_bank_paise || 0)
                   return (
                     <>
-                      <div className="flex justify-between"><span className="text-gray-500">Cash collected</span><span className="font-medium text-gray-800">{formatPaise(liveBalance.collected_cash_paise)}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">Bank collected</span><span className="font-medium text-gray-800">{formatPaise(liveBalance.collected_bank_paise)}</span></div>
+                      {/* "Venue Contract package" by name only when this really
+                          is one — hasDecorAddon/hasEntAddon can only be true on
+                          a Venue contract (see the consolidation pass above),
+                          but this same box also renders for a standalone
+                          Decor/Entertainment/Catering contract opened directly,
+                          where that label would be wrong. */}
+                      <div className="flex justify-between"><span className="text-gray-500">{selected.department === 'Venue' ? 'Venue Contract package' : selected.department + ' Contract package'}</span><span className="font-medium text-gray-800">{formatPaise(venuePkg)}</span></div>
+                      {hasDecorAddon && (
+                        <div className="flex justify-between"><span className="text-gray-500">Add-on Decor package</span><span className="font-medium text-gray-800">{formatPaise(decorPkg)}</span></div>
+                      )}
+                      {hasEntAddon && (
+                        <div className="flex justify-between"><span className="text-gray-500">Add-on Entertainment package</span><span className="font-medium text-gray-800">{formatPaise(entPkg)}</span></div>
+                      )}
+                      {(hasDecorAddon || hasEntAddon) && (
+                        <div className="flex justify-between pt-1 border-t border-gray-200">
+                          <span className="text-gray-700 font-semibold">Total Deal</span>
+                          <span className="font-bold text-gray-900">{formatPaise(venuePkg + decorPkg + entPkg)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between pt-1 border-t border-gray-200"><span className="text-gray-500">Advance received — cash</span><span className="font-medium text-gray-800">{formatPaise(liveBalance.collected_cash_paise)}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">Advance received — bank</span><span className="font-medium text-gray-800">{formatPaise(liveBalance.collected_bank_paise)}</span></div>
+                      {selected.extra_plates_charge > 0 && (
+                        <div className="flex justify-between"><span className="text-gray-500">Extra plates charge</span><span className="font-medium text-gray-800">{formatPaise(selected.extra_plates_charge)}</span></div>
+                      )}
+                      <div className="flex justify-between pt-1 border-t border-gray-200">
+                        <span className="text-gray-500">Pending — cash</span>
+                        <span className={"font-bold " + (pendingCash > 0 ? "text-red-600" : "text-green-600")}>{formatPaise(Math.abs(pendingCash))}</span>
+                      </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-500">{pendingTotal > 0 ? 'Pending' : 'Over-collected'}</span>
-                        <span className={"font-bold " + (pendingTotal > 0 ? "text-red-600" : "text-green-600")}>{formatPaise(Math.abs(pendingTotal))}</span>
+                        <span className="text-gray-500">Pending — bank</span>
+                        <span className={"font-bold " + (pendingBank > 0 ? "text-red-600" : "text-green-600")}>{formatPaise(Math.abs(pendingBank))}</span>
                       </div>
                     </>
                   )
