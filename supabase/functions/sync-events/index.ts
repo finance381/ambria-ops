@@ -219,6 +219,18 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
     ? (VENUE_LOCATION_NAMES[String(e.fiscd_location_id || "").trim()] || null)
     : (e[dep.d + "venue2"] ? ((e[dep.d + "venue2"] || "") + " " + (e[dep.d + "address2"] || "")).trim() || null : null)
 
+  const totalAmtP = safePaise(e[h + "total_amt"] || 0)
+  const venueMenuP = dep.menuValue ? safePaise(e[dep.menuValue] || 0) : null
+  const decorAmtP = dep.decorLumpsum ? safePaise(e[dep.decorLumpsum] || 0) : null
+  const entAmtP = dep.entertainLumpsum ? safePaise(e[dep.entertainLumpsum] || 0) : null
+  // Only meaningful on a Venue contract — the other three departments never
+  // populate venue_menu/decor/entertainment, so there's nothing to net
+  // total_amt against (subtracting zero would just reproduce total_amt
+  // itself, not a real addon figure).
+  const addonsTotalP = venueMenuP != null
+    ? totalAmtP - (venueMenuP + (decorAmtP || 0) + (entAmtP || 0))
+    : null
+
   return {
     // Dedup key: Dept_EntryNo_DetailId (unique per function within a contract)
     lms_event_id: dep.name + "_" + entryNo + "_" + detailId,
@@ -271,28 +283,33 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
     priority: e[h + "priority"] || null,
     address: e[h + "address"] || null,
     function_date: e[dep.functionDate] || null,
-    total_amount_paise: safePaise(e[h + "total_amt"] || 0),
+    total_amount_paise: totalAmtP,
     net_amount_paise: safePaise(e[h + "net_amt"] || 0),
     // LMS-computed, Venue contracts only (see migration 00094) — null for
     // every other department, same convention as pax/freePax/extraPlate above.
     menu_rate_paise: dep.menuRate ? safePaise(e[dep.menuRate] || 0) : null,
     venue_rental_paise: dep.venueValue ? safePaise(e[dep.venueValue] || 0) : null,
-    decor_amount_paise: dep.decorLumpsum ? safePaise(e[dep.decorLumpsum] || 0) : null,
-    entertainment_amount_paise: dep.entertainLumpsum ? safePaise(e[dep.entertainLumpsum] || 0) : null,
+    decor_amount_paise: decorAmtP,
+    entertainment_amount_paise: entAmtP,
     // Confirmed directly against the live API (contract #00568):
     // fiscd_menu_value = 1132500, matching LMS's own UI exactly.
-    venue_menu_paise: dep.menuValue ? safePaise(e[dep.menuValue] || 0) : null,
-    // TODO(itemized addons): LMS's Venue contract UI shows an "Addons"
-    // column (e.g. "L.L. (25000.0)"), but it isn't in this list endpoint's
-    // own response -- checked live: fisc_addon exists as a field but was
-    // empty on the one contract confirmed to have a real addon in the UI,
-    // and a scan of ~190 other live contracts found zero non-empty values
-    // either. The real data must come from a different LMS endpoint (a
-    // per-contract detail/addon-items call, not this bulk list) that hasn't
-    // been identified yet. addons_json (migration 00198) stays null until
-    // that's found -- do not guess, a wrong guess would silently store the
-    // wrong money under the wrong label.
-    addons_json: null,
+    venue_menu_paise: venueMenuP,
+    // LMS's Venue contract UI shows an "Addons" column (e.g. "L.L.
+    // (25000.0)"), but it isn't in this list endpoint's own response as a
+    // distinct field -- checked live: fisc_addon exists but was empty on
+    // the one contract confirmed to have a real addon in the UI, and a scan
+    // of ~190 other live contracts found zero non-empty values either. It
+    // IS recoverable as a residual though: confirmed live on that same
+    // contract (#00568) -- fisc_total_amt (1,400,000) minus (venue_menu
+    // 1,132,500 + decor 225,000 + entertainment 17,500) = exactly 25,000,
+    // matching the UI's own addon figure to the rupee. Not itemized (LMS
+    // doesn't expose individual addon lines/labels this way, only the
+    // combined effect on the grand total) -- surfaced as a single synthetic
+    // line so the UI's existing Add-ons section at least shows the right
+    // total instead of nothing.
+    addons_json: addonsTotalP != null && addonsTotalP > 0
+      ? [{ label: "Add-ons (LMS total, not itemized)", amount_paise: addonsTotalP }]
+      : null,
     lms_head_id: safeInt(e.headid || e.id || 0) || null,
     // Any row LMS actively returns (uncancelled) this run is, by definition,
     // not cancelled -- clears a flag a previous run may have set if LMS
