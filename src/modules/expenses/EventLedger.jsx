@@ -1381,7 +1381,7 @@ function EventLedger(props) {
                 return <th key={h} className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">{h}</th>
               })}
               <th className="px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap">Description</th>
-              <th className="px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap border-l border-slate-200">Added By</th>
+              <th className="sticky right-0 z-20 px-3 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 whitespace-nowrap bg-slate-50 border-l border-slate-200 shadow-[-4px_0_6px_-4px_rgba(15,23,42,0.12)]">Added By</th>
             </tr>
           </thead>
           <tbody>
@@ -1470,7 +1470,7 @@ function EventLedger(props) {
                       <p className="min-w-0 max-w-[620px] text-[13px] text-slate-700 leading-snug">{e.description || '—'}</p>
                     </div>
                   </td>
-                  <td className="px-3 py-2.5 align-top border-l border-slate-100">
+                  <td className="sticky right-0 px-3 py-2.5 align-top bg-white border-l border-slate-100 shadow-[-4px_0_6px_-4px_rgba(15,23,42,0.12)]">
                     {person ? (
                       <div className="flex items-center justify-end gap-2">
                         <span className="min-w-0 text-right">
