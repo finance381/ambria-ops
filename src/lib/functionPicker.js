@@ -139,6 +139,41 @@ function pickOneCanonical(rows) {
   return best
 }
 
+// Collected money doesn't arrive earmarked by channel -- a guest who was
+// agreed to pay bank + tax but paid the whole thing in cash still settled
+// the contract, even though cash/bank/tax are tracked as separate targets.
+// Pools everything collected into one hidden-cash-scale total (bank
+// converted down via /10, the same scale collCash/agreedCash already use)
+// and allocates it against agreed cash, then bank, then tax, in that order
+// -- confirmed live: a contract paid entirely in cash showed Agreed Bank and
+// Agreed Tax both still fully pending while cash showed a huge, confusing
+// over-collection, even though the whole deal was genuinely settled.
+// Whatever's left after all three targets are satisfied is real
+// over-collection beyond the whole deal, folded back into cash (negative =
+// over-collected), the same convention pending_cash_paise already had.
+// (Mirrors contractBalance.js's settleAcrossChannels -- kept as its own copy,
+// same reason as pickOneCanonical above.)
+function settleAcrossChannels(agreedCash, collCash, agreedBank, collBank, tax) {
+  var pool = collCash + Math.round(collBank / 10)
+
+  var cashApplied = Math.min(pool, Math.max(0, agreedCash))
+  pool -= cashApplied
+  var pendingCash = agreedCash - cashApplied
+
+  var bankNeedHidden = Math.round(agreedBank / 10)
+  var bankAppliedHidden = Math.min(pool, Math.max(0, bankNeedHidden))
+  pool -= bankAppliedHidden
+  var pendingBank = agreedBank - bankAppliedHidden * 10
+
+  var taxNeedHidden = Math.round(tax / 10)
+  var taxAppliedHidden = Math.min(pool, Math.max(0, taxNeedHidden))
+  pool -= taxAppliedHidden
+  var pendingTax = tax - taxAppliedHidden * 10
+
+  pendingCash -= pool
+  return { pending_cash_paise: pendingCash, pending_bank_paise: pendingBank, pending_tax_paise: pendingTax }
+}
+
 // agreed_cash_paise/agreed_bank_paise/tax_amount_paise are LMS's own
 // contract-level fields, restated identically on every function-detail row
 // of the same contract -- taken from exactly ONE row for the whole contract
@@ -174,26 +209,14 @@ export async function computeContractBalance(pool, lmsRows) {
     if (r.payment_mode === 'cash') collCash += Number(r.amount_paise || 0)
     else collBank += Number(r.amount_paise || 0)
   })
-  // A guest who pays the agreed cash amount through bank instead isn't
-  // actually short — the bank side just ran a surplus over what was agreed
-  // there. That surplus pays down the cash shortfall first, and only
-  // whatever's left over after that still reduces tax pending.
-  var bankExcess = Math.max(0, collBank - agreedBank)
-  var bankExcessHidden = Math.round(bankExcess / 10)
-  var cashShortfall = agreedCash - collCash
-  // Capped at the real, positive shortfall -- otherwise excess beyond it
-  // both reduces tax below AND drags pending_cash negative, double-
-  // counting the same rupee of surplus against both buckets (see
-  // contractBalance.js's reconcileOneContract, fixed the same way).
-  var cashAppliedFromBank = Math.min(bankExcessHidden, Math.max(0, cashShortfall))
-  var leftoverForTax = (bankExcessHidden - cashAppliedFromBank) * 10
+  var pending = settleAcrossChannels(agreedCash, collCash, agreedBank, collBank, tax)
   return {
     balance: {
       agreed_cash_paise: agreedCash, agreed_bank_paise: agreedBank, tax_amount_paise: tax,
       collected_cash_paise: collCash, collected_bank_paise: collBank,
-      pending_cash_paise: cashShortfall - cashAppliedFromBank,
-      pending_bank_paise: Math.max(0, agreedBank - collBank),
-      pending_tax_paise: Math.max(0, tax - leftoverForTax),
+      pending_cash_paise: pending.pending_cash_paise,
+      pending_bank_paise: pending.pending_bank_paise,
+      pending_tax_paise: pending.pending_tax_paise,
       spent_paise: spent,
     },
     balancesByEventId: byId,

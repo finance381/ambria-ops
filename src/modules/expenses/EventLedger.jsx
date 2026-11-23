@@ -191,6 +191,41 @@ function _pickOneCanonical(rows) {
   return best
 }
 
+// Collected money doesn't arrive earmarked by channel -- a guest who was
+// agreed to pay bank + tax but paid the whole thing in cash still settled
+// the contract, even though cash/bank/tax are tracked as separate targets.
+// Pools everything collected into one hidden-cash-scale total (bank
+// converted down via /10, the same scale collCash/agreedCash already use)
+// and allocates it against agreed cash, then bank, then tax, in that order
+// -- confirmed live: a contract paid entirely in cash showed Agreed Bank and
+// Agreed Tax both still fully pending while cash showed a huge, confusing
+// over-collection, even though the whole deal was genuinely settled.
+// Whatever's left after all three targets are satisfied is real
+// over-collection beyond the whole deal, folded back into cash (negative =
+// over-collected), the same convention pending_cash_paise already had.
+// (Mirrors contractBalance.js's settleAcrossChannels -- kept as its own copy,
+// same reason as _pickOneCanonical above.)
+function _settleAcrossChannels(agreedCash, collCash, agreedBank, collBank, tax) {
+  var pool = collCash + Math.round(collBank / 10)
+
+  var cashApplied = Math.min(pool, Math.max(0, agreedCash))
+  pool -= cashApplied
+  var pendingCash = agreedCash - cashApplied
+
+  var bankNeedHidden = Math.round(agreedBank / 10)
+  var bankAppliedHidden = Math.min(pool, Math.max(0, bankNeedHidden))
+  pool -= bankAppliedHidden
+  var pendingBank = agreedBank - bankAppliedHidden * 10
+
+  var taxNeedHidden = Math.round(tax / 10)
+  var taxAppliedHidden = Math.min(pool, Math.max(0, taxNeedHidden))
+  pool -= taxAppliedHidden
+  var pendingTax = tax - taxAppliedHidden * 10
+
+  pendingCash -= pool
+  return { pending_cash_paise: pendingCash, pending_bank_paise: pendingBank, pending_tax_paise: pendingTax }
+}
+
 // _buildGroups buckets by exact date+venue+session — right for the month
 // browser, where Haldi lunch and Wedding dinner are genuinely different
 // calendar cells, even under the same contract. But money is tracked per
@@ -332,7 +367,6 @@ function EventLedger(props) {
   var [plateEvents, setPlateEvents] = useState([])
   var [platesLoading, setPlatesLoading] = useState(false)
   var [filter, setFilter] = useState('all')
-  var [balancesByContract, setBalancesByContract] = useState({})
   var [tab, setTab] = useState('overview')
   // Agreed Cash shown ×10. Display only, and gone on reload.
   var [cashX10, setCashX10] = useState(false)
@@ -394,7 +428,6 @@ function EventLedger(props) {
     setEventId('')
     setEventDetail(null)
     setBalance(null)
-    setBalancesByContract({})
     setEntries([])
     setPlateEvents([])
   }
@@ -430,7 +463,7 @@ function EventLedger(props) {
 
   function selectGroup(g) {
     if (!g) {
-      setEventId(''); setEventDetail(null); setBalance(null); setBalancesByContract({}); setEntries([]); setPlateEvents([]); setCurrentEventIds([])
+      setEventId(''); setEventDetail(null); setBalance(null); setEntries([]); setPlateEvents([]); setCurrentEventIds([])
       return
     }
     setTab('overview')
@@ -604,46 +637,25 @@ function EventLedger(props) {
       if (r.payment_mode === 'cash') collCash += Number(r.amount_paise || 0)
       else collBank += Number(r.amount_paise || 0)
     })
-    // A guest who pays the agreed cash amount through bank instead isn't
-    // actually short — the bank side just ran a surplus over what was agreed
-    // there. That surplus pays down the cash shortfall first (what the guest
-    // would see as "settled"), and only whatever's left over after that still
-    // reduces tax pending, so the same rupee of surplus is never counted
-    // against both buckets at once.
-    //
-    // agreedCash/collCash (and the shortfall below) are in the hidden ÷10
-    // cash scale (see cashX10), but collBank/agreedBank are true rupee
-    // values -- bankExcess has to be converted down to that same hidden
-    // scale before it can be netted against a cash-scale shortfall, or the
-    // subtraction compares two different units and the result is off by 10x.
-    var bankExcess = Math.max(0, collBank - agreedBank)
-    var bankExcessHidden = Math.round(bankExcess / 10)
-    var cashShortfall = agreedCash - collCash
-    // Capped at the real, positive shortfall -- otherwise excess beyond it
-    // both reduces tax below AND drags pending_cash negative, double-
-    // counting the same rupee of surplus against both buckets (see
-    // contractBalance.js's reconcileOneContract, fixed the same way).
-    var cashAppliedFromBank = Math.min(bankExcessHidden, Math.max(0, cashShortfall))
-    var leftoverForTax = (bankExcessHidden - cashAppliedFromBank) * 10
+    var pending = _settleAcrossChannels(agreedCash, collCash, agreedBank, collBank, tax)
     return {
       agreed_cash_paise: agreedCash, agreed_bank_paise: agreedBank, tax_amount_paise: tax,
       collected_cash_paise: collCash, collected_bank_paise: collBank,
-      pending_cash_paise: cashShortfall - cashAppliedFromBank,
-      pending_bank_paise: Math.max(0, agreedBank - collBank),
-      pending_tax_paise: Math.max(0, tax - leftoverForTax),
+      pending_cash_paise: pending.pending_cash_paise,
+      pending_bank_paise: pending.pending_bank_paise,
+      pending_tax_paise: pending.pending_tax_paise,
       spent_paise: spent,
     }
   }
 
   async function loadContractBalance(pool, lmsRows) {
     var allIds = pool.map(function (e) { return e.id })
-    if (allIds.length === 0) { setBalance(null); setBalancesByContract({}); setBalanceByContractList(null); return }
+    if (allIds.length === 0) { setBalance(null); setBalanceByContractList(null); return }
     setBalanceLoading(true)
     var { data, error } = await supabase.rpc('fn_event_group_balance', { p_event_ids: allIds.map(Number) })
-    if (error || !data) { setBalance(null); setBalancesByContract({}); setBalanceByContractList(null); setBalanceLoading(false); return }
+    if (error || !data) { setBalance(null); setBalanceByContractList(null); setBalanceLoading(false); return }
     var byId = {}
     data.forEach(function (row) { byId[row.event_id] = row })
-    setBalancesByContract(byId)
     var reconciled = reconcileContractPool(pool, byId, lmsRows)
     setBalance(reconciled)
     // One real contract here (pool is always one contract_no + department --
@@ -665,13 +677,12 @@ function EventLedger(props) {
   async function loadConsolidatedBalance(pools) {
     var allIds = []
     pools.forEach(function (p) { p.pool.forEach(function (e) { if (allIds.indexOf(e.id) === -1) allIds.push(e.id) }) })
-    if (allIds.length === 0) { setBalance(null); setBalancesByContract({}); setBalanceByContractList(null); return }
+    if (allIds.length === 0) { setBalance(null); setBalanceByContractList(null); return }
     setBalanceLoading(true)
     var { data, error } = await supabase.rpc('fn_event_group_balance', { p_event_ids: allIds.map(Number) })
-    if (error || !data) { setBalance(null); setBalancesByContract({}); setBalanceByContractList(null); setBalanceLoading(false); return }
+    if (error || !data) { setBalance(null); setBalanceByContractList(null); setBalanceLoading(false); return }
     var byId = {}
     data.forEach(function (row) { byId[row.event_id] = row })
-    setBalancesByContract(byId)
     var perContract = pools.map(function (p) {
       var anchor = p.pool[0] || {}
       return { department: anchor.department, contract_no: anchor.contract_no, balance: reconcileContractPool(p.pool, byId, p.lmsRows) }
@@ -704,21 +715,18 @@ function EventLedger(props) {
     // this at least keeps the Per-Contract Breakdown from showing a
     // previous selection's rows under a new one.
     setBalanceByContractList(null)
-    if (!ids || ids.length === 0) { setBalance(null); setBalancesByContract({}); return }
+    if (!ids || ids.length === 0) { setBalance(null); return }
     setBalanceLoading(true)
     var { data, error } = await supabase.rpc('fn_event_group_balance', { p_event_ids: ids.map(function (id) { return Number(id) }) })
     var agg = { pending_cash_paise: 0, pending_bank_paise: 0, pending_tax_paise: 0, agreed_cash_paise: 0, agreed_bank_paise: 0, tax_amount_paise: 0, collected_cash_paise: 0, collected_bank_paise: 0, spent_paise: 0 }
-    var byId = {}
     var any = false
     if (!error && data) {
       data.forEach(function (row) {
         any = true
-        byId[row.event_id] = row
         Object.keys(agg).forEach(function (k) { agg[k] += Number(row[k] || 0) })
       })
     }
     setBalance(any ? agg : null)
-    setBalancesByContract(byId)
     setBalanceLoading(false)
   }
 
@@ -1936,29 +1944,50 @@ function EventLedger(props) {
             </div>
           </SectionCard>
 
-          <SectionCard title={'Contracts (' + contracts.length + ')'} icon="fileText" className="@3xl:col-span-5">
-            <div className="divide-y divide-slate-100">
-              {contracts.map(function (c) {
-                var b = balancesByContract[c.id] || {}
-                var pend = Number(b.pending_cash_paise || 0) + Number(b.pending_bank_paise || 0)
-                return (
-                  <div key={c.id} className="px-4 py-3 space-y-1.5">
-                    <div className="flex items-center justify-between gap-3">
-                      <DeptChip name={c.department} />
-                      {balance && (
-                        <span className={'text-[12px] font-bold tabular-nums ' + (pend > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>
-                          {pend > 0 ? formatPoints(pend) + ' due' : 'Settled'}
-                        </span>
-                      )}
-                    </div>
-                    {c.created_user_name && (
-                      <p className="text-[12px] text-slate-500">by {c.created_user_name}</p>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </SectionCard>
+          {/* contracts is one row per distinct FUNCTION (see _buildContractGroup's
+              own note) -- deduped here to one per real contract (contract_no +
+              department) so a single multi-function contract doesn't count and
+              list itself once per function. Pending comes from
+              balanceByContractList (already reconciled per real contract, see
+              loadContractBalance/loadConsolidatedBalance), matched back by
+              contract_no + department; shows "—" for the brief window before
+              that resolves rather than flashing a wrong per-function figure. */}
+          {(function () {
+            var seen = {}
+            var realContracts = []
+            contracts.forEach(function (c) {
+              var k = (c.contract_no || ('solo:' + c.id)) + '|' + (c.department || '')
+              if (!seen[k]) { seen[k] = true; realContracts.push(c) }
+            })
+            return (
+              <SectionCard title={'Contracts (' + realContracts.length + ')'} icon="fileText" className="@3xl:col-span-5">
+                <div className="divide-y divide-slate-100">
+                  {realContracts.map(function (c) {
+                    var bc = balanceByContractList && balanceByContractList.find(function (x) { return x.contract_no === c.contract_no && x.department === c.department })
+                    var b = bc ? bc.balance : null
+                    var pend = b ? Number(b.pending_cash_paise || 0) + Number(b.pending_bank_paise || 0) : null
+                    return (
+                      <div key={c.department + '|' + c.contract_no} className="px-4 py-3 space-y-1.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <DeptChip name={c.department} />
+                          {balance && (
+                            pend == null ? <span className="text-[12px] text-slate-400">—</span> : (
+                              <span className={'text-[12px] font-bold tabular-nums ' + (pend > 0 ? 'text-rose-600' : 'text-emerald-600')} data-notranslate>
+                                {pend > 0 ? formatPoints(pend) + ' due' : 'Settled'}
+                              </span>
+                            )
+                          )}
+                        </div>
+                        {c.created_user_name && (
+                          <p className="text-[12px] text-slate-500">by {c.created_user_name}</p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </SectionCard>
+            )
+          })()}
         </div>
       )}
 

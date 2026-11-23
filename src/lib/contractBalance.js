@@ -27,6 +27,39 @@ function pickOneCanonical(rows) {
 
 var EVT_COLS = 'id, event_name, function_date, venue_name, location, client_name, session, department, contract_no, lms_cancelled_at'
 
+// Collected money doesn't arrive earmarked by channel -- a guest who was
+// agreed to pay bank + tax but paid the whole thing in cash still settled
+// the contract, even though cash/bank/tax are tracked as separate targets.
+// Pools everything collected into one hidden-cash-scale total (bank
+// converted down via /10, the same scale collCash/agreedCash already use)
+// and allocates it against agreed cash, then bank, then tax, in that order
+// -- confirmed live: a contract paid entirely in cash showed Agreed Bank and
+// Agreed Tax both still fully pending while cash showed a huge, confusing
+// over-collection, even though the whole deal was genuinely settled.
+// Whatever's left after all three targets are satisfied is real
+// over-collection beyond the whole deal, folded back into cash (negative =
+// over-collected), the same convention pending_cash_paise already had.
+function settleAcrossChannels(agreedCash, collCash, agreedBank, collBank, tax) {
+  var pool = collCash + Math.round(collBank / 10)
+
+  var cashApplied = Math.min(pool, Math.max(0, agreedCash))
+  pool -= cashApplied
+  var pendingCash = agreedCash - cashApplied
+
+  var bankNeedHidden = Math.round(agreedBank / 10)
+  var bankAppliedHidden = Math.min(pool, Math.max(0, bankNeedHidden))
+  pool -= bankAppliedHidden
+  var pendingBank = agreedBank - bankAppliedHidden * 10
+
+  var taxNeedHidden = Math.round(tax / 10)
+  var taxAppliedHidden = Math.min(pool, Math.max(0, taxNeedHidden))
+  pool -= taxAppliedHidden
+  var pendingTax = tax - taxAppliedHidden * 10
+
+  pendingCash -= pool
+  return { pending_cash_paise: pendingCash, pending_bank_paise: pendingBank, pending_tax_paise: pendingTax }
+}
+
 // What LMS itself has collected on one contract (payments made outside
 // Ambria Ops' wallet). Cash comes back on the hidden ÷10 scale already (the
 // edge function converts it), bank in full. null when LMS can't be reached.
@@ -101,21 +134,16 @@ export async function fetchContractBalancesBatch(contracts) {
       collBank += Number(row.collected_bank_paise || 0)
       spent += Number(row.spent_paise || 0)
     })
-    // Same netting as reconcileOneContract below (no LMS-only payments here
-    // though -- this batch path is Ambria Ops' own money only, see this
-    // function's own opening comment). Kept as its own copy rather than a
-    // shared helper -- same call as the other three copies of this formula.
-    var bankExcess = Math.max(0, collBank - agreedBank)
-    var bankExcessHidden = Math.round(bankExcess / 10)
-    var cashShortfall = agreedCash - collCash
-    var cashAppliedFromBank = Math.min(bankExcessHidden, Math.max(0, cashShortfall))
-    var leftoverForTax = (bankExcessHidden - cashAppliedFromBank) * 10
+    // Same settlement as reconcileOneContract above (no LMS-only payments
+    // here though -- this batch path is Ambria Ops' own money only, see this
+    // function's own opening comment).
+    var pending = settleAcrossChannels(agreedCash, collCash, agreedBank, collBank, tax)
     return {
       agreed_cash_paise: agreedCash, agreed_bank_paise: agreedBank, tax_amount_paise: tax,
       collected_cash_paise: collCash, collected_bank_paise: collBank,
-      pending_cash_paise: cashShortfall - cashAppliedFromBank,
-      pending_bank_paise: Math.max(0, agreedBank - collBank),
-      pending_tax_paise: Math.max(0, tax - leftoverForTax),
+      pending_cash_paise: pending.pending_cash_paise,
+      pending_bank_paise: pending.pending_bank_paise,
+      pending_tax_paise: pending.pending_tax_paise,
       spent_paise: spent,
     }
   })
@@ -168,29 +196,13 @@ function reconcileOneContract(loaded) {
   })
   if (loaded.lms) { collCash += loaded.lms.cash; collBank += loaded.lms.bank }
 
-  // See EventLedger.jsx's loadContractBalance for why bank surplus pays down
-  // cash shortfall before any of it reduces tax pending, and why bankExcess
-  // must be converted to the hidden ÷10 cash scale first (agreedCash/collCash
-  // are hidden-scale, collBank/agreedBank are true rupee values) -- same
-  // math, kept in sync here.
-  var bankExcess = Math.max(0, collBank - agreedBank)
-  var bankExcessHidden = Math.round(bankExcess / 10)
-  var cashShortfall = agreedCash - collCash
-  // Bank excess only pays down a REAL, positive cash shortfall -- capped
-  // here so excess beyond that shortfall can't also drag pending_cash
-  // negative (a false "cash over-collected") on top of correctly reducing
-  // tax below. Without this cap the same rupee of surplus got counted
-  // against both buckets at once -- confirmed live: agreed cash fully met,
-  // bank over-collected by exactly the agreed tax, and pending_cash showed
-  // -11,500 instead of 0 even though cash was never over-collected.
-  var cashAppliedFromBank = Math.min(bankExcessHidden, Math.max(0, cashShortfall))
-  var leftoverForTax = (bankExcessHidden - cashAppliedFromBank) * 10
+  var pending = settleAcrossChannels(agreedCash, collCash, agreedBank, collBank, tax)
   return {
     agreed_cash_paise: agreedCash, agreed_bank_paise: agreedBank, tax_amount_paise: tax,
     collected_cash_paise: collCash, collected_bank_paise: collBank,
-    pending_cash_paise: cashShortfall - cashAppliedFromBank,
-    pending_bank_paise: Math.max(0, agreedBank - collBank),
-    pending_tax_paise: Math.max(0, tax - leftoverForTax),
+    pending_cash_paise: pending.pending_cash_paise,
+    pending_bank_paise: pending.pending_bank_paise,
+    pending_tax_paise: pending.pending_tax_paise,
     spent_paise: spent,
   }
 }

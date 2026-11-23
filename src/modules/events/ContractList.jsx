@@ -514,13 +514,10 @@ function ContractList({ profile, deepLinkContractId }) {
             var addonNotEntered = addonRows.filter(function (r) { return !r.tally_entered_by }).length
             return (
               <div key={g.key}
-                {...(!multi ? {
-                  role: 'button', tabIndex: 0,
-                  onClick: function () { setSelected(c); setSelectedAddons(g.addons || null) },
-                  onKeyDown: function (e) { if (e.key === 'Enter') { setSelected(c); setSelectedAddons(g.addons || null) } },
-                } : {})}
-                className={'group bg-white border border-slate-200 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] px-4 py-3.5 transition-colors sm:grid ' + COLS + ' sm:gap-3 sm:items-center ' +
-                  (multi ? '' : 'cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/40')}>
+                role="button" tabIndex={0}
+                onClick={function () { setSelected(c); setSelectedAddons(g.addons || null) }}
+                onKeyDown={function (e) { if (e.key === 'Enter') { setSelected(c); setSelectedAddons(g.addons || null) } }}
+                className={'group bg-white border border-slate-200 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] px-4 py-3.5 transition-colors sm:grid ' + COLS + ' sm:gap-3 sm:items-center cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/40'}>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className={'font-display text-[14px] font-bold tracking-[-0.01em] text-slate-900 truncate ' + (multi ? '' : 'group-hover:text-indigo-700')}>
@@ -653,8 +650,9 @@ function ContractList({ profile, deepLinkContractId }) {
                       tracked per function, not per contract (see fix() notes on
                       sync-events' composite dedup key — collapsing this back to
                       one shared mark would silently hide a not-yet-entered
-                      sibling function). Clicking a line opens that one function's
-                      full detail; the card itself is no longer one click target. */}
+                      sibling function). The card itself opens the contract's
+                      primary function (stopPropagation below so a click on one
+                      of these lines instead opens that specific function). */}
                   {multi ? (
                     <div className="sm:col-span-full mt-2 pt-2 border-t border-slate-100 space-y-1">
                       {rows.map(function (r) {
