@@ -912,11 +912,19 @@ function ContractList({ profile, deepLinkContractId }) {
                 ;(nameRes.data || []).forEach(function (p) { names[p.id] = p.name })
               }
 
+              // A cancelled original (status flipped on its own row) is void --
+              // it never happened, excluded from both In and Out. The
+              // separate 'collection_cancel' reversal row is a real,
+              // completed transaction in its own right (confirmed live: this
+              // contract carries both for the same cancellation) -- money
+              // that genuinely moved back out, so it's counted in Out, not
+              // folded invisibly into "nothing happened" alongside the
+              // original it reverses.
               var transactions = allRows.map(function (w) {
                 var isCancelLeg = w.reference_type === 'collection_cancel'
                 var original = isCancelLeg ? collById[String(w.reference_id)] : null
                 var mode = (original && original.payment_mode) || w.payment_mode
-                var cancelled = isCancelLeg || w.status === 'cancelled'
+                var voided = !isCancelLeg && w.status === 'cancelled'
                 var dt = new Date(w.created_at)
                 return {
                   date: formatDate(w.created_at),
@@ -925,9 +933,23 @@ function ContractList({ profile, deepLinkContractId }) {
                   mode: mode === 'bank' ? 'Bank' : 'Cash',
                   amountPaise: Math.abs((original && original.amount_paise) || w.amount_paise || 0),
                   handledBy: names[w.performed_by] || null,
-                  statusLabel: cancelled ? 'Cancelled' : 'Completed',
-                  cancelled: cancelled,
+                  statusLabel: voided ? 'Cancelled' : (isCancelLeg ? 'Reversed' : 'Completed'),
+                  voided: voided,
+                  isReversal: isCancelLeg,
                 }
+              })
+              // The table's own In/Out/Net, derived from exactly the rows it
+              // lists -- not from liveBalance's collected_cash/bank_paise,
+              // which (as of this writing) doesn't yet exclude a cancelled
+              // collection either, so the two can legitimately disagree
+              // until that's fixed. This page is the one that has to be
+              // right regardless, since every row behind the number is
+              // printed right above it.
+              var txInPaise = 0, txOutPaise = 0
+              transactions.forEach(function (t) {
+                if (t.voided) return
+                if (t.isReversal) txOutPaise += t.amountPaise
+                else txInPaise += t.amountPaise
               })
 
               await generateContractStatementPdf({
@@ -957,10 +979,7 @@ function ContractList({ profile, deepLinkContractId }) {
                 addonContracts: addonContracts,
                 missingAddonDepts: missingAddonDepts,
                 transactions: transactions,
-                // Out is always 0 here -- this statement only ever lists
-                // collections and their reversals, never an expense/payout
-                // line, so there is nothing to put in that column yet.
-                totals: { inPaise: totalCollectedPaise, outPaise: 0, netPaise: totalCollectedPaise },
+                totals: { inPaise: txInPaise, outPaise: txOutPaise, netPaise: txInPaise - txOutPaise },
               })
             } catch (e) {
               alert('Could not generate the statement: ' + e.message)

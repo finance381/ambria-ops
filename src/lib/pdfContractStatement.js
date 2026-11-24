@@ -217,7 +217,7 @@ async function drawTransactionsPage(doc, FONT, autoTable, d) {
       t.date + (t.time ? '\n' + t.time : ''),
       t.type + (t.note ? '\n' + t.note : ''),
       t.mode,
-      fmt(t.amountPaise),
+      (t.isReversal ? '-' : '') + fmt(t.amountPaise),
       t.handledBy || '—',
       t.statusLabel,
     ]
@@ -235,9 +235,12 @@ async function drawTransactionsPage(doc, FONT, autoTable, d) {
     didParseCell: function (data) {
       if (data.section !== 'body') return
       var t = d.transactions[data.row.index]
-      if (t && t.cancelled) {
+      if (!t) return
+      if (t.voided) {
         data.cell.styles.textColor = [183, 188, 196]
         if (data.column.index === 3) data.cell.styles.fontStyle = 'italic'
+      } else if (t.isReversal && (data.column.index === 3 || data.column.index === 5)) {
+        data.cell.styles.textColor = RED
       }
     },
   })
@@ -253,7 +256,8 @@ async function drawTransactionsPage(doc, FONT, autoTable, d) {
   doc.text('Net ' + fmt(d.totals.netPaise), PAGE_RIGHT - 4, afterY + 9, { align: 'right' })
 
   doc.setFont(FONT, 'normal'); doc.setFontSize(7.5); doc.setTextColor(MUTED[0], MUTED[1], MUTED[2])
-  doc.text('Net total matches the Balance box on page 1.', MARGIN, afterY + 20)
+  doc.text('In / Out / Net above are totalled from exactly the rows listed — a cancelled entry counts toward', MARGIN, afterY + 20)
+  doc.text('neither; its reversal (where one exists) counts toward Out.', MARGIN, afterY + 24)
 }
 
 export async function generateContractStatementPdf(d) {
