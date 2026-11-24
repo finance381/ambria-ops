@@ -1095,16 +1095,23 @@ function ContractList({ profile, deepLinkContractId }) {
               // contract_no, see groupsMap above) -- selected is only ever
               // one of those function rows, selectedGroupRows carries every
               // sibling. Just [selected] (nothing to list) on a single-
-              // function contract.
-              var functions = (selectedGroupRows && selectedGroupRows.length > 1) ? selectedGroupRows.map(function (r) {
-                return {
-                  name: r.event_name || '—',
-                  date: r.function_date ? formatDate(r.function_date) : '—',
-                  session: r.session || '—',
-                  venue: [r.venue_name ? (venueMap[r.venue_name] ? (venueMap[r.venue_name] + ' — ' + r.venue_name) : r.venue_name) : null, r.location].filter(Boolean).join(' · ') || '—',
-                  pax: (r.department === 'Venue' || r.department === 'Catering') && r.total_plates != null ? r.total_plates : null,
-                }
-              }) : []
+              // function contract. Same shape reused below for a multi-
+              // function ADD-ON contract (page 2) -- rows[0] alone would
+              // silently show only one of its own functions' date/session,
+              // same gap this was just added to close for the primary
+              // contract above.
+              function rowsToFunctions(rows) {
+                return (rows || []).map(function (r) {
+                  return {
+                    name: r.event_name || '—',
+                    date: r.function_date ? formatDate(r.function_date) : '—',
+                    session: r.session || '—',
+                    venue: [r.venue_name ? (venueMap[r.venue_name] ? (venueMap[r.venue_name] + ' — ' + r.venue_name) : r.venue_name) : null, r.location].filter(Boolean).join(' · ') || '—',
+                    pax: (r.department === 'Venue' || r.department === 'Catering') && r.total_plates != null ? r.total_plates : null,
+                  }
+                })
+              }
+              var functions = (selectedGroupRows && selectedGroupRows.length > 1) ? rowsToFunctions(selectedGroupRows) : []
 
               // LMS's own itemized Addons list on this Venue contract (e.g.
               // "L.L. ₹25,000") -- the same addons_json the on-screen detail
@@ -1128,6 +1135,11 @@ function ContractList({ profile, deepLinkContractId }) {
                     session: a.session || '—',
                     pkgPaise: pkgRaw * 2,
                     taxPaise: pkgFromTotal ? Number(a.tax_amount_paise || 0) : 0,
+                    // Multi-function add-on (e.g. a Decor contract covering
+                    // its own Wedding+Haldi+Sangeet) -- functionDate/session
+                    // above are only ever rows[0]'s, same gap just fixed for
+                    // the primary contract's own Functions table.
+                    functions: g.rows.length > 1 ? rowsToFunctions(g.rows) : null,
                   })
                 })
               })

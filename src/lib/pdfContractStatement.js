@@ -218,8 +218,26 @@ function drawAddonsPage(doc, FONT, d) {
     y += 14
     y = row(doc, FONT, y, a.department + ' contract #', a.contractNo)
     y = row(doc, FONT, y, 'Linked Venue contract', '#' + d.contractNo)
-    y = row(doc, FONT, y, 'Function date', a.functionDate)
-    y = row(doc, FONT, y, 'Session', a.session)
+    // A multi-function add-on (its own Wedding+Haldi+Sangeet, say) has no
+    // single Function date/Session to show -- functionDate/session are only
+    // ever its first row's, so every sibling function gets its own line
+    // instead of silently hiding behind the one.
+    if (a.functions && a.functions.length > 1) {
+      doc.setFont(FONT, 'normal'); doc.setFontSize(8); doc.setTextColor(GRAY[0], GRAY[1], GRAY[2])
+      doc.text('Functions', MARGIN, y)
+      y += 4.5
+      a.functions.forEach(function (f) {
+        doc.setFont(FONT, 'bold'); doc.setFontSize(8.5); doc.setTextColor(DARK[0], DARK[1], DARK[2])
+        doc.text(f.name, MARGIN, y)
+        doc.setFont(FONT, 'normal'); doc.setFontSize(8); doc.setTextColor(GRAY[0], GRAY[1], GRAY[2])
+        doc.text(f.date + (f.session !== '—' ? ' · ' + f.session : ''), PAGE_RIGHT, y, { align: 'right' })
+        y += 4.5
+      })
+      y += 2
+    } else {
+      y = row(doc, FONT, y, 'Function date', a.functionDate)
+      y = row(doc, FONT, y, 'Session', a.session)
+    }
     y = row(doc, FONT, y, a.department + ' package', fmt(a.pkgPaise))
     y = row(doc, FONT, y, 'Tax', fmt(a.taxPaise))
     y = row(doc, FONT, y, 'Total — ' + a.department, fmt(a.pkgPaise + a.taxPaise), { bold: true, noRule: true })
