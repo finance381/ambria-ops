@@ -501,6 +501,7 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
         : (isEpc ? TYPE_META.epc : TYPE_META.collection)
       var evId = isEpc ? epc.event_id : ((sourceRow && sourceRow.reference_id) ? Number(sourceRow.reference_id) : null)
       var partyName = (evId && eventNames[evId]) || '—'
+      var clientName = (evId && eventInfo[evId] && eventInfo[evId].client_name) || ''
       combined.push({
         key: 'wt:' + w.id,
         source: 'collection',
@@ -524,6 +525,7 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
         _isEpc: isEpc,
         _epc: epc || null,
         _eventInfo: (evId && eventInfo[evId]) || null,
+        _clientName: clientName,
         _receiptNo: w.receipt_no || (original && original.receipt_no) || null,
         _performedBy: w.performed_by,
         _imgUrl: getReceiptUrl(w.received_image_path),
@@ -678,7 +680,11 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
         // _receiptNo included so searching the last few digits printed on a
         // receipt (the part someone actually remembers) finds it -- it wasn't
         // in the haystack at all before, only ever visible, never searchable.
-        var hay = [r.party_name, r.description, r.collector_name, r.recorded_by, r.type_label, r._receiptNo].join(' ').toLowerCase()
+        // _clientName (the guest, e.g. "Mr. Pankaj Prasad") is separate from
+        // party_name on a collection row, which is actually the event/function
+        // name ("SANGEET") -- without it, searching the guest's own name found
+        // nothing.
+        var hay = [r.party_name, r._clientName, r.description, r.collector_name, r.recorded_by, r.type_label, r._receiptNo].join(' ').toLowerCase()
         if (hay.indexOf(q) === -1) return false
       }
       return true
