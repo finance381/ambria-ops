@@ -1081,6 +1081,16 @@ function ContractList({ profile, deepLinkContractId }) {
                   // separate Pending tax line (effective agreed bank = agreed
                   // bank + agreed tax, per the user's own framing).
                   var pendingBank = Number(liveBalance.pending_bank_paise || 0) + Number(liveBalance.pending_tax_paise || 0)
+                  // What finance actually means by "the LMS package" is this
+                  // package+tax total, not LMS's own agreed_cash/agreed_bank
+                  // fields that pending_cash/bank_paise above are settled
+                  // against -- those can quietly drift from the package (an
+                  // LMS-side edit to one and not the other), so a real contract
+                  // was seen fully "Settled" against agreed_cash/bank while
+                  // still having collected far more than this package total.
+                  var totalDealPaise = venuePkg + venueTax + decor.pkg + decor.tax + ent.pkg + ent.tax
+                  var totalCollectedPaise = Number(liveBalance.collected_cash_paise || 0) + Number(liveBalance.collected_bank_paise || 0)
+                  var surplusVsPackage = totalCollectedPaise > totalDealPaise ? totalCollectedPaise - totalDealPaise : 0
                   function pkgCell(pkg, tax) {
                     if (tax > 0) {
                       return (
@@ -1133,18 +1143,16 @@ function ContractList({ profile, deepLinkContractId }) {
                         <span className="text-gray-500">Pending — bank</span>
                         <span className={"font-bold " + (pendingBank > 0 ? "text-red-600" : "text-green-600")}>{formatPaise(pendingBank > 0 ? pendingBank : 0)}</span>
                       </div>
-                      {/* pending_cash_paise goes negative only once agreed cash,
-                          bank and tax are all fully met and money is still left
-                          over (see settleAcrossChannels) -- real money collected
-                          beyond what LMS's own package says was agreed. Called
-                          out on its own line, not folded into "Pending — cash"
-                          as a green number, so finance notices and goes back to
-                          correct the LMS contract rather than reading it as
-                          just another flavour of "nothing due". */}
-                      {pendingCash < 0 && (
+                      {/* Real cash+bank collected beyond this package's own
+                          total -- not folded into "Pending — cash" as a green
+                          number (that line settles against LMS's separate
+                          agreed_cash/agreed_bank fields, which can drift from
+                          the package shown above), so finance notices and goes
+                          back to correct the LMS contract. */}
+                      {surplusVsPackage > 0 && (
                         <div className="flex justify-between pt-1 border-t border-amber-200">
                           <span className="text-amber-700 font-semibold">Surplus (over LMS total)</span>
-                          <span className="font-bold text-amber-700">{formatPaise(Math.abs(pendingCash))}</span>
+                          <span className="font-bold text-amber-700">{formatPaise(surplusVsPackage)}</span>
                         </div>
                       )}
                     </>
