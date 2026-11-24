@@ -817,11 +817,18 @@ function ContractList({ profile, deepLinkContractId }) {
                   ['Pax', selected.pax != null ? selected.pax : (selected.total_plates != null && selected.complementary_plates != null ? selected.total_plates - selected.complementary_plates : null)],
                   ['Extra', selected.complementary_plates],
                 ] : []),
-                // extra_plates_charge is LMS's per-plate RATE, not what was
-                // actually charged -- the real figure is rate × how many
-                // extra plates were served (complementary_plates, despite
-                // its name -- see the Pax/Extra relabeling above).
-                ['Extra plates charge', (selected.extra_plates_charge > 0 && selected.complementary_plates > 0) ? formatPaise(selected.extra_plates_charge * selected.complementary_plates) : null],
+                // extra_plates_charge is LMS's per-plate RATE -- complementary_
+                // plates ("Extra" above) is a free-pax allowance baked into the
+                // package, not a count of plates actually served/charged past
+                // it, so multiplying the two together (as this used to do) can
+                // produce a real-looking total even when the Extra Plate
+                // Collect system (ExtraPlateCollect.jsx) shows no charge was
+                // ever made for this event -- confirmed live, contract #00568:
+                // rate 1,000 × 25 "free" pax showed a phantom ₹25,000 charge
+                // with zero actual Extra Plate Collect transactions behind it.
+                // Just the rate, for reference -- the real charged amount (if
+                // any) lives in extra_plate_collections, not here.
+                ['Extra Plate Rate', selected.extra_plates_charge > 0 ? formatPaise(selected.extra_plates_charge) : null],
                 ['Menu rate', selected.menu_rate_paise > 0 ? formatPaise(selected.menu_rate_paise) : null],
                 ['Venue rental', selected.venue_rental_paise != null ? formatPaise(selected.venue_rental_paise) : null],
                 ['Venue + Menu', selected.venue_menu_paise != null ? formatPaise(selected.venue_menu_paise) : null],
@@ -1040,10 +1047,6 @@ function ContractList({ profile, deepLinkContractId }) {
                   // separate Pending tax line (effective agreed bank = agreed
                   // bank + agreed tax, per the user's own framing).
                   var pendingBank = Number(liveBalance.pending_bank_paise || 0) + Number(liveBalance.pending_tax_paise || 0)
-                  // extra_plates_charge is LMS's per-plate RATE -- see the
-                  // same fix in the main field list above.
-                  var extraPlatesActual = (selected.extra_plates_charge > 0 && selected.complementary_plates > 0)
-                    ? selected.extra_plates_charge * selected.complementary_plates : 0
                   function pkgCell(pkg, tax) {
                     if (tax > 0) {
                       return (
@@ -1077,9 +1080,6 @@ function ContractList({ profile, deepLinkContractId }) {
                       )}
                       <div className="flex justify-between pt-1 border-t border-gray-200"><span className="text-gray-500">Advance received — cash</span><span className="font-medium text-gray-800">{formatPaise(liveBalance.collected_cash_paise)}</span></div>
                       <div className="flex justify-between"><span className="text-gray-500">Advance received — bank</span><span className="font-medium text-gray-800">{formatPaise(liveBalance.collected_bank_paise)}</span></div>
-                      {extraPlatesActual > 0 && (
-                        <div className="flex justify-between"><span className="text-gray-500">Extra plates charge</span><span className="font-medium text-gray-800">{formatPaise(extraPlatesActual)}</span></div>
-                      )}
                       <div className="flex justify-between pt-1 border-t border-gray-200">
                         <span className="text-gray-500">Pending — cash</span>
                         <span className={"font-bold " + (pendingCash > 0 ? "text-red-600" : "text-green-600")}>{formatPaise(Math.abs(pendingCash))}</span>
