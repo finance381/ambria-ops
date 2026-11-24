@@ -158,13 +158,21 @@ function ContractList({ profile, deepLinkContractId }) {
   var [enteringId, setEnteringId] = useState(null)
   var [enteredFilter, setEnteredFilter] = useState('')
 
-  useEffect(function () { load() }, [])
+  // The list only ever fetches function_date >= (today - 5 days) -- a
+  // contract ages out of view on its own once its date rolls past that
+  // floor, with no sync/data problem at all (confirmed live: contract #00568,
+  // Nov 18, was visible on Nov 23 -- floor Nov 18 -- and gone on Nov 24 --
+  // floor Nov 19). Setting an earlier "From" date in Filters widens the
+  // floor to match (never narrows it -- that's dateTo's job, client-side on
+  // whatever's already loaded) so a past contract can still be found.
+  useEffect(function () { load() }, [dateFrom])
 
   async function load() {
     setLoading(true)
-    var dateFloor = new Date()
-    dateFloor.setDate(dateFloor.getDate() - 5)
-    var dateFloorStr = dateFloor.toISOString().split('T')[0]
+    var defaultFloor = new Date()
+    defaultFloor.setDate(defaultFloor.getDate() - 5)
+    var defaultFloorStr = defaultFloor.toISOString().split('T')[0]
+    var dateFloorStr = dateFrom && dateFrom < defaultFloorStr ? dateFrom : defaultFloorStr
     var [res, deptRes] = await Promise.all([
       supabase.from('events_safe')
         .select(CONTRACT_SELECT)
