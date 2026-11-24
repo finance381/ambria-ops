@@ -1096,7 +1096,7 @@ function ContractList({ profile, deepLinkContractId }) {
               // one of those function rows, selectedGroupRows carries every
               // sibling. Just [selected] (nothing to list) on a single-
               // function contract. Same shape reused below for a multi-
-              // function ADD-ON contract (page 2) -- rows[0] alone would
+              // function ADD-ON contract (page 3) -- rows[0] alone would
               // silently show only one of its own functions' date/session,
               // same gap this was just added to close for the primary
               // contract above.

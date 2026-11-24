@@ -1,6 +1,6 @@
 // Contract Statement PDF — the "Print" export on a Contract's detail modal
-// (ContractList.jsx). Three pages: Overview & Balance, Add-on Contracts,
-// Collections & Adjustments. Figures passed in are expected to already be in
+// (ContractList.jsx). Three pages: Overview & Balance, Collections &
+// Adjustments, Add-on Contracts. Figures passed in are expected to already be in
 // their TRUE, un-masked scale (the caller reveals the hidden ÷10 cash scale
 // and LMS's own /2 package-entry habit before handing data here) -- this
 // file only lays the numbers out, it never re-derives or re-scales them.
@@ -150,7 +150,7 @@ async function drawOverviewBalancePage(doc, FONT, autoTable, d) {
   // LMS's own per-department split of this contract's total (Menu rate/
   // Venue rental/Venue+Menu/Decor amount/Entertainment amount) -- distinct
   // from both the itemized Add-ons below (LMS's own addons_json list) and
-  // the Add-on Decor/Entertainment CONTRACTS on page 2 (each its own
+  // the Add-on Decor/Entertainment CONTRACTS on page 3 (each its own
   // separate contract_no, not a split field on this one).
   if (d.packageBreakdown && d.packageBreakdown.length > 0) {
     y = sectionLabel(doc, FONT, y + 4, 'Package Breakdown (LMS)')
@@ -160,7 +160,7 @@ async function drawOverviewBalancePage(doc, FONT, autoTable, d) {
 
   // LMS's own itemized Addons list on this contract (e.g. "L.L. ₹25,000") --
   // distinct from the per-department Decor/Entertainment ADD-ON CONTRACTS on
-  // page 2, which are each a whole separate contract, not a line item here.
+  // page 3, which are each a whole separate contract, not a line item here.
   if (d.addonItems && d.addonItems.length > 0) {
     y = sectionLabel(doc, FONT, y + 4, 'Add-ons')
     d.addonItems.forEach(function (it) { y = row(doc, FONT, y, it.label, fmt(it.amountPaise), { tight: true }) })
@@ -203,7 +203,7 @@ async function drawOverviewBalancePage(doc, FONT, autoTable, d) {
   doc.text('LMS\'s own half-value package entry are both reversed for this statement.', MARGIN, y + 4)
 }
 
-// ═══ PAGE 2 — Add-on Contracts ═══
+// ═══ ADD-ON CONTRACTS (page 3 — drawn last; see generateContractStatementPdf) ═══
 function drawAddonsPage(doc, FONT, d) {
   var y = addHeader(doc, FONT, 'Add-on Contracts', {
     line1: 'Linked to Contract #' + d.contractNo,
@@ -264,7 +264,7 @@ function drawAddonsPage(doc, FONT, d) {
   }
 }
 
-// ═══ PAGE 3 — Collections & Adjustments ═══
+// ═══ COLLECTIONS & ADJUSTMENTS (page 2) ═══
 async function drawTransactionsPage(doc, FONT, autoTable, d) {
   var y = addHeader(doc, FONT, 'Collections & Adjustments', {
     line1: 'Contract #' + d.contractNo,
@@ -341,11 +341,11 @@ export async function generateContractStatementPdf(d) {
   addFooter(doc, FONT, 1, 3)
 
   doc.addPage()
-  drawAddonsPage(doc, FONT, d)
+  await drawTransactionsPage(doc, FONT, autoTable, d)
   addFooter(doc, FONT, 2, 3)
 
   doc.addPage()
-  await drawTransactionsPage(doc, FONT, autoTable, d)
+  drawAddonsPage(doc, FONT, d)
   addFooter(doc, FONT, 3, 3)
 
   await openOrSharePdf(doc, 'Contract_Statement_' + (d.contractNo || 'contract') + '.pdf')
