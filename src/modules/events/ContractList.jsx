@@ -1050,10 +1050,20 @@ function ContractList({ profile, deepLinkContractId }) {
 
           return (
           <div className="space-y-4 text-sm">
-            <div className="flex items-center gap-2 flex-wrap">
-              {selected.is_tentative && <Badge color="amber">Tentative — no LMS contract yet</Badge>}
-              {selected.department && <Badge color="indigo">{selected.department}</Badge>}
-              {selected.status && <Badge color="gray">{selected.status}</Badge>}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                {selected.is_tentative && <Badge color="amber">Tentative — no LMS contract yet</Badge>}
+                {selected.department && <Badge color="indigo">{selected.department}</Badge>}
+                {selected.status && <Badge color="gray">{selected.status}</Badge>}
+              </div>
+              {isAdmin && liveBalance && (
+                <button type="button" disabled={printing}
+                  onClick={printStatement}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 disabled:opacity-50 disabled:cursor-wait transition-colors">
+                  <Icon name="download" size={13} />
+                  {printing ? 'Preparing…' : 'Print statement'}
+                </button>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -1441,21 +1451,11 @@ function ContractList({ profile, deepLinkContractId }) {
                 separate toggles a reader had to find and open one at a time. */}
             {isAdmin && (
               <div>
-                <div className="flex items-center justify-between gap-3">
-                  <button type="button"
-                    onClick={function () { setShowFinancials(!showFinancials) }}
-                    className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
-                    {showFinancials ? '− Hide financials' : '+ Show financials'}
-                  </button>
-                  {liveBalance && (
-                    <button type="button" disabled={printing}
-                      onClick={printStatement}
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 disabled:opacity-50 disabled:cursor-wait transition-colors">
-                      <Icon name="download" size={13} />
-                      {printing ? 'Preparing…' : 'Print statement'}
-                    </button>
-                  )}
-                </div>
+                <button type="button"
+                  onClick={function () { setShowFinancials(!showFinancials) }}
+                  className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                  {showFinancials ? '− Hide financials' : '+ Show financials'}
+                </button>
                 {showFinancials && (
                   <div className="mt-3">
                     {/* EventLedger's own Transactions tab now folds in LMS's
