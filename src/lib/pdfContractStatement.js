@@ -94,7 +94,7 @@ function twoCol(doc, FONT, y, pairs) {
 }
 
 // ═══ PAGE 1 — Overview & Balance ═══
-function drawOverviewBalancePage(doc, FONT, d) {
+async function drawOverviewBalancePage(doc, FONT, autoTable, d) {
   var y = addHeader(doc, FONT, 'Contract Statement', {
     line1: 'Contract #' + d.contractNo,
     line2: 'Printed ' + d.printedOn,
@@ -113,6 +113,24 @@ function drawOverviewBalancePage(doc, FONT, d) {
     ['Location', d.location], ['Address', d.address],
   ])
 
+  // Multi-function contract (Lunch+Dinner+Sagan etc., all one contract_no) --
+  // ahead of the Plate stats below, since those stats are only ever this one
+  // function's own, not a sum across the group.
+  if (d.functions && d.functions.length > 1) {
+    y = sectionLabel(doc, FONT, y + 4, 'Functions (' + d.functions.length + ')')
+    autoTable(doc, {
+      startY: y,
+      head: [['Function', 'Date', 'Session', 'Venue', 'Pax']],
+      body: d.functions.map(function (f) { return [f.name, f.date, f.session, f.venue, f.pax != null ? String(f.pax) : '—'] }),
+      theme: 'grid',
+      styles: { font: FONT, fontSize: 8, cellPadding: 2, textColor: DARK },
+      headStyles: { font: FONT, fillColor: [241, 242, 245], textColor: DARK, fontStyle: 'bold', fontSize: 7.5 },
+      columnStyles: { 4: { halign: 'right' } },
+      margin: { left: MARGIN, right: 14 },
+    })
+    y = doc.lastAutoTable.finalY + 6
+  }
+
   if (d.totalPlates != null) {
     y += 4
     var stats = [['Total plates', d.totalPlates], ['Pax', d.pax], ['Extra', d.extra]]
@@ -129,6 +147,16 @@ function drawOverviewBalancePage(doc, FONT, d) {
     y += 22
   }
 
+  // LMS's own itemized Addons list on this contract (e.g. "L.L. ₹25,000") --
+  // distinct from the per-department Decor/Entertainment ADD-ON CONTRACTS on
+  // page 2, which are each a whole separate contract, not a line item here.
+  if (d.addonItems && d.addonItems.length > 0) {
+    y = sectionLabel(doc, FONT, y + 4, 'Add-ons')
+    d.addonItems.forEach(function (it) { y = row(doc, FONT, y, it.label, fmt(it.amountPaise), { tight: true }) })
+    y = row(doc, FONT, y, 'Total add-ons', fmt(d.addonItemsTotalPaise), { bold: true, noRule: true })
+    y += 3
+  }
+
   // Balance
   y += 2
   doc.setDrawColor(238, 240, 243); doc.setFillColor(248, 249, 251)
@@ -140,7 +168,10 @@ function drawOverviewBalancePage(doc, FONT, d) {
     doc.text(d.status.toUpperCase(), PAGE_RIGHT - 4, y + 7, { align: 'right' })
   }
   y += 13
-  d.packageLines.forEach(function (p) { y = row(doc, FONT, y, p[0], fmt(p[1])) })
+  d.packageLines.forEach(function (p) {
+    var val = p.taxPaise > 0 ? fmt(p.pkgPaise) + '  +  ' + fmt(p.taxPaise) + ' tax' : fmt(p.pkgPaise)
+    y = row(doc, FONT, y, p.label, val)
+  })
   y = row(doc, FONT, y, 'Total Deal', fmt(d.totalDealPaise), { bold: true, big: true })
   y += 1
   y = row(doc, FONT, y, 'Advance received — cash', fmt(d.advCashPaise))
@@ -277,7 +308,7 @@ export async function generateContractStatementPdf(d) {
   var FONT = fontOk ? 'NotoSans' : 'helvetica'
   doc.setFont(FONT, 'normal')
 
-  drawOverviewBalancePage(doc, FONT, d)
+  await drawOverviewBalancePage(doc, FONT, autoTable, d)
   addFooter(doc, FONT, 1, 3)
 
   doc.addPage()

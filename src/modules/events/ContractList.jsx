@@ -70,6 +70,12 @@ function ContractList({ profile, deepLinkContractId }) {
   // group (see the consolidation pass above), or null for a standalone
   // contract / a non-Venue selection. { Decor: [group,...], Entertainment: [group,...] }
   var [selectedAddons, setSelectedAddons] = useState(null)
+  // Every function row in selected's own group (see groupsMap above) -- just
+  // selected itself for a single-function contract, but the full sibling set
+  // for a multi-function one (e.g. Lunch+Dinner+Sagan under one contract_no),
+  // which neither selected nor selectedAddons carries on its own. Only ever
+  // used by the print export's new Functions section.
+  var [selectedGroupRows, setSelectedGroupRows] = useState(null)
   // LMS's own Decor/Entertainment "Total Deal Amount" (total_amount_paise)
   // is entered at half the real value as a matter of habit (confirmed
   // live: contract #00374's Deal Amount 95000 vs. its own true 190000) --
@@ -188,6 +194,7 @@ function ContractList({ profile, deepLinkContractId }) {
         setPinnedContract(res.data || null)
         setSelected(res.data || null)
         setSelectedAddons(null)
+        setSelectedGroupRows(null)
         if (res.data) loadEnteredNames([res.data])
         setPinnedLoading(false)
       })
@@ -320,7 +327,7 @@ function ContractList({ profile, deepLinkContractId }) {
     setLinking(false)
     if (res.error) { alert('Link failed: ' + res.error.message); return }
     setLinkSearch(''); setLinkResults([]); setLinkTargetId(null)
-    setSelected(null); setSelectedAddons(null)
+    setSelected(null); setSelectedAddons(null); setSelectedGroupRows(null)
     load()
   }
 
@@ -331,7 +338,7 @@ function ContractList({ profile, deepLinkContractId }) {
     var res = await supabase.rpc('fn_unlink_addon_contract', { p_addon_event_id: addonEventId })
     setUnlinkingAddon(false)
     if (res.error) { alert('Unlink failed: ' + res.error.message); return }
-    setSelected(null); setSelectedAddons(null)
+    setSelected(null); setSelectedAddons(null); setSelectedGroupRows(null)
     load()
   }
 
@@ -723,8 +730,8 @@ function ContractList({ profile, deepLinkContractId }) {
             return (
               <div key={g.key}
                 role="button" tabIndex={0}
-                onClick={function () { setSelected(c); setSelectedAddons(g.addons || null) }}
-                onKeyDown={function (e) { if (e.key === 'Enter') { setSelected(c); setSelectedAddons(g.addons || null) } }}
+                onClick={function () { setSelected(c); setSelectedAddons(g.addons || null); setSelectedGroupRows(g.rows) }}
+                onKeyDown={function (e) { if (e.key === 'Enter') { setSelected(c); setSelectedAddons(g.addons || null); setSelectedGroupRows(g.rows) } }}
                 className={'group bg-white border border-slate-200 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] px-4 py-3.5 transition-colors sm:grid ' + COLS + ' sm:gap-3 sm:items-center cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/40'}>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -875,8 +882,8 @@ function ContractList({ profile, deepLinkContractId }) {
                         var rVenueLine = (r.venue_name !== c.venue_name || r.location) ? [rVenueName, r.location].filter(Boolean).join(' · ') : null
                         return (
                           <div key={r.id} role="button" tabIndex={0}
-                            onClick={function (ev) { ev.stopPropagation(); setSelected(r); setSelectedAddons(g.addons || null) }}
-                            onKeyDown={function (ev) { if (ev.key === 'Enter') { setSelected(r); setSelectedAddons(g.addons || null) } }}
+                            onClick={function (ev) { ev.stopPropagation(); setSelected(r); setSelectedAddons(g.addons || null); setSelectedGroupRows(g.rows) }}
+                            onKeyDown={function (ev) { if (ev.key === 'Enter') { setSelected(r); setSelectedAddons(g.addons || null); setSelectedGroupRows(g.rows) } }}
                             className="flex items-start justify-between gap-3 px-2.5 py-2 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2 flex-wrap text-[12.5px]">
@@ -975,7 +982,7 @@ function ContractList({ profile, deepLinkContractId }) {
       )}
 
       {/* ═══ CONTRACT DETAIL MODAL — every events_safe field ═══ */}
-      <Modal open={!!selected} onClose={function () { setSelected(null); setSelectedAddons(null) }}
+      <Modal open={!!selected} onClose={function () { setSelected(null); setSelectedAddons(null); setSelectedGroupRows(null) }}
         title={selected ? (selected.event_name || '—') : ''} wide>
         {selected && (function () {
           var addonEventIds = selectedAddons
@@ -1021,9 +1028,34 @@ function ContractList({ profile, deepLinkContractId }) {
               var surplusPaise = totalCollectedPaise > totalDealPaise ? totalCollectedPaise - totalDealPaise : 0
               var isSettled = pendingCashPaise <= 0 && pendingBankPaise <= 0
 
-              var packageLines = [[selected.department === 'Venue' ? 'Venue Contract package' : selected.department + ' Contract package', venuePkg]]
-              if (decor.pkg > 0) packageLines.push(['Add-on Decor package', decor.pkg * 2])
-              if (ent.pkg > 0) packageLines.push(['Add-on Entertainment package', ent.pkg * 2])
+              var packageLines = [{
+                label: selected.department === 'Venue' ? 'Venue Contract package' : selected.department + ' Contract package',
+                pkgPaise: venuePkg, taxPaise: venueTax,
+              }]
+              if (decor.pkg > 0) packageLines.push({ label: 'Add-on Decor package', pkgPaise: decor.pkg * 2, taxPaise: decor.tax })
+              if (ent.pkg > 0) packageLines.push({ label: 'Add-on Entertainment package', pkgPaise: ent.pkg * 2, taxPaise: ent.tax })
+
+              // Multi-function contract (Lunch+Dinner+Sagan etc. under one
+              // contract_no, see groupsMap above) -- selected is only ever
+              // one of those function rows, selectedGroupRows carries every
+              // sibling. Just [selected] (nothing to list) on a single-
+              // function contract.
+              var functions = (selectedGroupRows && selectedGroupRows.length > 1) ? selectedGroupRows.map(function (r) {
+                return {
+                  name: r.event_name || '—',
+                  date: r.function_date ? formatDate(r.function_date) : '—',
+                  session: r.session || '—',
+                  venue: [r.venue_name ? (venueMap[r.venue_name] ? (venueMap[r.venue_name] + ' — ' + r.venue_name) : r.venue_name) : null, r.location].filter(Boolean).join(' · ') || '—',
+                  pax: (r.department === 'Venue' || r.department === 'Catering') && r.total_plates != null ? r.total_plates : null,
+                }
+              }) : []
+
+              // LMS's own itemized Addons list on this Venue contract (e.g.
+              // "L.L. ₹25,000") -- the same addons_json the on-screen detail
+              // list already shows, not yet carried into the print.
+              var addonItemsList = Array.isArray(selected.addons_json) ? selected.addons_json : []
+              var addonItems = addonItemsList.map(function (it) { return { label: it.label, amountPaise: Number(it.amount_paise) || 0 } })
+              var addonItemsTotalPaise = addonItems.reduce(function (s, it) { return s + it.amountPaise }, 0)
 
               var addonContracts = []
               ;['Decor', 'Entertainment'].forEach(function (dept) {
@@ -1199,6 +1231,9 @@ function ContractList({ profile, deepLinkContractId }) {
                 totalPlates: (selected.department === 'Venue' || selected.department === 'Catering') ? selected.total_plates : null,
                 pax: selected.pax != null ? selected.pax : (selected.total_plates != null && selected.complementary_plates != null ? selected.total_plates - selected.complementary_plates : null),
                 extra: selected.complementary_plates,
+                functions: functions,
+                addonItems: addonItems,
+                addonItemsTotalPaise: addonItemsTotalPaise,
                 packageLines: packageLines,
                 totalDealPaise: totalDealPaise,
                 advCashPaise: advCashPaise,
