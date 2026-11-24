@@ -1039,8 +1039,8 @@ function ContractList({ profile, deepLinkContractId }) {
               <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Balance</p>
-                  {liveBalance && Number(liveBalance.pending_cash_paise || 0) === 0 &&
-                    (Number(liveBalance.pending_bank_paise || 0) + Number(liveBalance.pending_tax_paise || 0)) === 0 && (
+                  {liveBalance && Number(liveBalance.pending_cash_paise || 0) <= 0 &&
+                    (Number(liveBalance.pending_bank_paise || 0) + Number(liveBalance.pending_tax_paise || 0)) <= 0 && (
                     <span className="inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
                   )}
                 </div>
@@ -1127,12 +1127,26 @@ function ContractList({ profile, deepLinkContractId }) {
                       )}
                       <div className="flex justify-between pt-1 border-t border-gray-200">
                         <span className="text-gray-500">Pending — cash</span>
-                        <span className={"font-bold " + (pendingCash > 0 ? "text-red-600" : "text-green-600")}>{formatPaise(Math.abs(pendingCash))}</span>
+                        <span className={"font-bold " + (pendingCash > 0 ? "text-red-600" : "text-green-600")}>{formatPaise(pendingCash > 0 ? pendingCash : 0)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-500">Pending — bank</span>
-                        <span className={"font-bold " + (pendingBank > 0 ? "text-red-600" : "text-green-600")}>{formatPaise(Math.abs(pendingBank))}</span>
+                        <span className={"font-bold " + (pendingBank > 0 ? "text-red-600" : "text-green-600")}>{formatPaise(pendingBank > 0 ? pendingBank : 0)}</span>
                       </div>
+                      {/* pending_cash_paise goes negative only once agreed cash,
+                          bank and tax are all fully met and money is still left
+                          over (see settleAcrossChannels) -- real money collected
+                          beyond what LMS's own package says was agreed. Called
+                          out on its own line, not folded into "Pending — cash"
+                          as a green number, so finance notices and goes back to
+                          correct the LMS contract rather than reading it as
+                          just another flavour of "nothing due". */}
+                      {pendingCash < 0 && (
+                        <div className="flex justify-between pt-1 border-t border-amber-200">
+                          <span className="text-amber-700 font-semibold">Surplus (over LMS total)</span>
+                          <span className="font-bold text-amber-700">{formatPaise(Math.abs(pendingCash))}</span>
+                        </div>
+                      )}
                     </>
                   )
                 })()}
