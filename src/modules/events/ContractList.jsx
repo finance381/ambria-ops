@@ -998,15 +998,16 @@ function ContractList({ profile, deepLinkContractId }) {
               })
 
               // The table's own In/Out/Net, derived from exactly the rows it
-              // lists -- not from liveBalance's collected_cash/bank_paise,
-              // which (as of this writing) doesn't yet exclude a cancelled
-              // collection either, so the two can legitimately disagree
-              // until that's fixed. This page is the one that has to be
-              // right regardless, since every row behind the number is
-              // printed right above it.
+              // lists, gross -- a voided original genuinely was collected
+              // (it belongs in In) and its reversal genuinely paid that back
+              // out (it belongs in Out); excluding the voided row from In
+              // instead of letting its own reversal net it back out
+              // understated In by the full cancelled amount, same gross/net
+              // convention the in-app Transactions tab already uses. voided
+              // only controls how a row is styled below, never whether it's
+              // counted.
               var txInPaise = 0, txOutPaise = 0
               transactions.forEach(function (t) {
-                if (t.voided) return
                 if (t.isReversal) txOutPaise += t.amountPaise
                 else txInPaise += t.amountPaise
               })
