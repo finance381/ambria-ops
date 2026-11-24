@@ -90,6 +90,12 @@ function ContractList({ profile, deepLinkContractId }) {
   var [linkTargetId, setLinkTargetId] = useState(null)
   var [linking, setLinking] = useState(false)
   var [unlinkingAddon, setUnlinkingAddon] = useState(false)
+  // Multi-select merge from the list itself -- same fn_link_addon_contract
+  // under the hood as the single-contract "Link to a Venue contract" search,
+  // just picking both ends of the link from checkboxes instead of a search
+  // box. Holds each selected group's own representative id (g.rows[0].id).
+  var [mergeSelectIds, setMergeSelectIds] = useState([])
+  var [merging, setMerging] = useState(false)
   var [liveBalance, setLiveBalance] = useState(null)
   var [liveBalanceLoading, setLiveBalanceLoading] = useState(false)
   // Live reconciled balance for whatever page of rows is currently shown in
@@ -326,6 +332,49 @@ function ContractList({ profile, deepLinkContractId }) {
     setUnlinkingAddon(false)
     if (res.error) { alert('Unlink failed: ' + res.error.message); return }
     setSelected(null); setSelectedAddons(null)
+    load()
+  }
+
+  function toggleMergeSelect(id) {
+    setMergeSelectIds(function (prev) {
+      return prev.indexOf(id) !== -1 ? prev.filter(function (x) { return x !== id }) : prev.concat([id])
+    })
+  }
+
+  // Picked from the list's own checkboxes rather than the single-contract
+  // search: needs exactly one Venue contract among the selection (the merge
+  // target) and at least one real Decor/Entertainment contract (what gets
+  // linked to it) -- the same two-sided shape fn_link_addon_contract always
+  // required, just validated up front instead of the picker only ever
+  // offering one side of it.
+  async function submitMergeSelected(selGroups) {
+    if (merging) return
+    var venueGroups = selGroups.filter(function (g) { return g.rows[0].department === 'Venue' })
+    var addonGroups = selGroups.filter(function (g) { return g.rows[0].department === 'Decor' || g.rows[0].department === 'Entertainment' })
+    if (venueGroups.length !== 1) {
+      alert('Select exactly one Venue contract (the one everything else merges into), plus one or more Decor/Entertainment contracts for the same guest.')
+      return
+    }
+    if (addonGroups.length === 0) {
+      alert('Select at least one Decor/Entertainment contract to merge into the Venue contract.')
+      return
+    }
+    if (addonGroups.length !== selGroups.length - 1) {
+      alert('Only Venue + Decor/Entertainment contracts can be merged here — drop any other selected contract and try again.')
+      return
+    }
+    var venue = venueGroups[0].rows[0]
+    if (!(await appConfirm('Merge ' + addonGroups.length + ' contract' + (addonGroups.length === 1 ? '' : 's') + ' into Venue contract #' + venue.contract_no + '? Their balances fold into one consolidated Balance box — no history moves, and each can be unlinked again later.'))) return
+    setMerging(true)
+    var errors = []
+    for (var i = 0; i < addonGroups.length; i++) {
+      var addon = addonGroups[i].rows[0]
+      var res = await supabase.rpc('fn_link_addon_contract', { p_addon_event_id: addon.id, p_venue_event_id: venue.id })
+      if (res.error) errors.push('#' + addon.contract_no + ': ' + res.error.message)
+    }
+    setMerging(false)
+    setMergeSelectIds([])
+    if (errors.length > 0) alert('Some contracts could not be merged:\n' + errors.join('\n'))
     load()
   }
 
@@ -572,6 +621,21 @@ function ContractList({ profile, deepLinkContractId }) {
             <button type="button" onClick={clearAll}
               className="h-6 px-2 rounded-md font-bold text-indigo-600 hover:bg-indigo-50">Reset</button>
           )}
+          {canLinkAddon && mergeSelectIds.length > 0 && (
+            <>
+              <span className="h-6 px-2 rounded-md bg-indigo-50 text-indigo-700 font-semibold inline-flex items-center">{mergeSelectIds.length} selected</span>
+              <button type="button" disabled={mergeSelectIds.length < 2 || merging}
+                onClick={function () {
+                  var selGroups = groupsToShow.filter(function (g) { return mergeSelectIds.indexOf(g.rows[0].id) !== -1 })
+                  submitMergeSelected(selGroups)
+                }}
+                className="h-6 px-2.5 rounded-md font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                {merging ? 'Merging…' : 'Merge selected'}
+              </button>
+              <button type="button" onClick={function () { setMergeSelectIds([]) }}
+                className="h-6 px-2 rounded-md font-semibold text-slate-500 hover:bg-slate-100">Clear selection</button>
+            </>
+          )}
         </div>
       </div>
         )
@@ -635,6 +699,13 @@ function ContractList({ profile, deepLinkContractId }) {
                 className={'group bg-white border border-slate-200 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] px-4 py-3.5 transition-colors sm:grid ' + COLS + ' sm:gap-3 sm:items-center cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/40'}>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
+                    {canLinkAddon && c.contract_no && (
+                      <input type="checkbox" checked={mergeSelectIds.indexOf(c.id) !== -1}
+                        title="Select to merge with another contract"
+                        onClick={function (e) { e.stopPropagation() }}
+                        onChange={function () { toggleMergeSelect(c.id) }}
+                        className="shrink-0 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                    )}
                     <h3 className={'font-display text-[14px] font-bold tracking-[-0.01em] text-slate-900 truncate ' + (multi ? '' : 'group-hover:text-indigo-700')}>
                       {multi ? titleCase(c.client_name || '—') : (c.event_name || '—')}
                     </h3>
