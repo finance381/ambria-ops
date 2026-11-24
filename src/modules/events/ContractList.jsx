@@ -10,6 +10,7 @@ import Icon from '../../components/ui/Icon'
 import EventLedger from '../expenses/EventLedger'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { fetchContractBalanceSummary, fetchConsolidatedContractBalance, fetchContractBalancesBatch } from '../../lib/contractBalance'
+import { generateContractStatementPdf } from '../../lib/pdfContractStatement'
 
 // The list's columns from sm up: event, contract, date, venue, balance, Tally.
 var COLS = 'sm:grid-cols-[minmax(0,2.2fr)_140px_110px_minmax(0,1.5fr)_150px_120px]'
@@ -76,6 +77,7 @@ function ContractList({ profile, deepLinkContractId }) {
   // than an assumed-universal fix.
   var [pkgX2, setPkgX2] = useState(false)
   var [showFinancials, setShowFinancials] = useState(false)
+  var [printing, setPrinting] = useState(false)
   var [liveBalance, setLiveBalance] = useState(null)
   var [liveBalanceLoading, setLiveBalanceLoading] = useState(false)
   // Live reconciled balance for whatever page of rows is currently shown in
@@ -809,6 +811,164 @@ function ContractList({ profile, deepLinkContractId }) {
             ? [].concat(selectedAddons.Decor || [], selectedAddons.Entertainment || []).map(function (g) { return g.rows[0].id })
             : []
           var hasAddons = addonEventIds.length > 0
+
+          async function printStatement() {
+            if (!liveBalance || printing) return
+            setPrinting(true)
+            try {
+              var poolIds = [selected.id].concat(addonEventIds)
+
+              function addonPkgTax(dept) {
+                var list = (selectedAddons && selectedAddons[dept]) || []
+                var pkg = 0, tax = 0
+                list.forEach(function (g) {
+                  var a = g.rows[0]
+                  var pkgFromTotal = a.total_amount_paise > 0
+                  var pkgRaw = pkgFromTotal ? a.total_amount_paise : (a.net_amount_paise || 0)
+                  pkg += pkgRaw
+                  if (pkgFromTotal) tax += Number(a.tax_amount_paise || 0)
+                })
+                return { pkg: pkg, tax: tax }
+              }
+
+              // The print export always reveals the TRUE scale, regardless of
+              // the live pkgX2/cashX10 toggles above -- LMS enters the package
+              // total at half its real value (see pkgX2's own note) and the
+              // app logs collected cash at a hidden ÷10 scale (see
+              // fn_extra_plate_collect); this statement exists specifically
+              // to show finance the real numbers, not the masked defaults.
+              var venuePkg = Number(selected.total_amount_paise || 0) * 2
+              var venueTax = Number(selected.tax_amount_paise || 0)
+              var decor = addonPkgTax('Decor')
+              var ent = addonPkgTax('Entertainment')
+              var totalDealPaise = venuePkg + venueTax + (decor.pkg * 2) + decor.tax + (ent.pkg * 2) + ent.tax
+              var advCashPaise = Number(liveBalance.collected_cash_paise || 0) * 10
+              var advBankPaise = Number(liveBalance.collected_bank_paise || 0)
+              var pendingCashPaise = Number(liveBalance.pending_cash_paise || 0) * 10
+              var pendingBankPaise = Number(liveBalance.pending_bank_paise || 0) + Number(liveBalance.pending_tax_paise || 0)
+              var totalCollectedPaise = advCashPaise + advBankPaise
+              var surplusPaise = totalCollectedPaise > totalDealPaise ? totalCollectedPaise - totalDealPaise : 0
+              var isSettled = pendingCashPaise <= 0 && pendingBankPaise <= 0
+
+              var packageLines = [[selected.department === 'Venue' ? 'Venue Contract package' : selected.department + ' Contract package', venuePkg]]
+              if (decor.pkg > 0) packageLines.push(['Add-on Decor package', decor.pkg * 2])
+              if (ent.pkg > 0) packageLines.push(['Add-on Entertainment package', ent.pkg * 2])
+
+              var addonContracts = []
+              ;['Decor', 'Entertainment'].forEach(function (dept) {
+                var list = (selectedAddons && selectedAddons[dept]) || []
+                list.forEach(function (g) {
+                  var a = g.rows[0]
+                  var pkgFromTotal = a.total_amount_paise > 0
+                  var pkgRaw = pkgFromTotal ? a.total_amount_paise : (a.net_amount_paise || 0)
+                  addonContracts.push({
+                    chipLabel: 'Add-on ' + dept,
+                    department: dept,
+                    contractNo: a.contract_no || '—',
+                    functionDate: a.function_date ? formatDate(a.function_date) : '—',
+                    session: a.session || '—',
+                    pkgPaise: pkgRaw * 2,
+                    taxPaise: pkgFromTotal ? Number(a.tax_amount_paise || 0) : 0,
+                  })
+                })
+              })
+              // Decor/Entertainment are the only real "add-on contract" types
+              // this app folds under a Venue contract -- Catering is its own
+              // standalone department contract (see ExtraPlateCollect.jsx /
+              // StoreRequisitionForm.jsx grouping it with Venue, never as a
+              // selectedAddons entry), so it has no "missing" note here.
+              var missingAddonDepts = ['Decor', 'Entertainment'].filter(function (dept) {
+                return !addonContracts.some(function (a) { return a.department === dept })
+              })
+
+              // Collection rows directly reference the event id; a cancelled
+              // one is usually just that same row with status flipped
+              // (confirmed live) -- the separate 'collection_cancel' reversal
+              // leg (a different row, referencing the original row's own id,
+              // not an event id) is fetched as a second pass so either
+              // cancellation shape still shows up here.
+              var collRes = await supabase.from('wallet_transactions')
+                .select('id, reference_type, reference_id, payment_mode, amount_paise, status, created_at, performed_by')
+                .in('reference_id', poolIds.map(String))
+                .eq('reference_type', 'collection')
+                .order('created_at', { ascending: true })
+              var collRows = collRes.data || []
+              var collById = {}
+              collRows.forEach(function (w) { collById[String(w.id)] = w })
+              var cancelRes = collRows.length > 0
+                ? await supabase.from('wallet_transactions')
+                    .select('id, reference_type, reference_id, payment_mode, amount_paise, status, created_at, performed_by')
+                    .in('reference_id', collRows.map(function (w) { return String(w.id) }))
+                    .eq('reference_type', 'collection_cancel')
+                : { data: [] }
+              var allRows = collRows.concat(cancelRes.data || []).sort(function (a, b) {
+                return (a.created_at || '').localeCompare(b.created_at || '')
+              })
+
+              var performerIds = [...new Set(allRows.map(function (w) { return w.performed_by }).filter(Boolean))]
+              var names = {}
+              if (performerIds.length > 0) {
+                var nameRes = await supabase.rpc('fn_profile_names', { p_ids: performerIds })
+                ;(nameRes.data || []).forEach(function (p) { names[p.id] = p.name })
+              }
+
+              var transactions = allRows.map(function (w) {
+                var isCancelLeg = w.reference_type === 'collection_cancel'
+                var original = isCancelLeg ? collById[String(w.reference_id)] : null
+                var mode = (original && original.payment_mode) || w.payment_mode
+                var cancelled = isCancelLeg || w.status === 'cancelled'
+                var dt = new Date(w.created_at)
+                return {
+                  date: formatDate(w.created_at),
+                  time: isNaN(dt) ? '' : dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                  type: isCancelLeg ? 'Collection reversal' : 'Collection',
+                  mode: mode === 'bank' ? 'Bank' : 'Cash',
+                  amountPaise: Math.abs((original && original.amount_paise) || w.amount_paise || 0),
+                  handledBy: names[w.performed_by] || null,
+                  statusLabel: cancelled ? 'Cancelled' : 'Completed',
+                  cancelled: cancelled,
+                }
+              })
+
+              await generateContractStatementPdf({
+                contractNo: selected.contract_no,
+                printedOn: formatDate(new Date().toISOString()),
+                clientName: selected.client_name ? titleCase(selected.client_name) : '—',
+                contact: selected.contact_number || '—',
+                contractDate: selected.contract_date ? formatDate(selected.contract_date) : '—',
+                functionDate: selected.function_date ? formatDate(selected.function_date) : '—',
+                department: selected.department || '—',
+                session: selected.session || '—',
+                venue: selected.venue_name || '—',
+                venueType: venueTypeLabel(selected.contract_type),
+                location: selected.location || '—',
+                address: selected.address || '—',
+                totalPlates: (selected.department === 'Venue' || selected.department === 'Catering') ? selected.total_plates : null,
+                pax: selected.pax != null ? selected.pax : (selected.total_plates != null && selected.complementary_plates != null ? selected.total_plates - selected.complementary_plates : null),
+                extra: selected.complementary_plates,
+                packageLines: packageLines,
+                totalDealPaise: totalDealPaise,
+                advCashPaise: advCashPaise,
+                advBankPaise: advBankPaise,
+                pendingCashPaise: pendingCashPaise,
+                pendingBankPaise: pendingBankPaise,
+                surplusPaise: surplusPaise,
+                status: isSettled ? 'Settled' : null,
+                addonContracts: addonContracts,
+                missingAddonDepts: missingAddonDepts,
+                transactions: transactions,
+                // Out is always 0 here -- this statement only ever lists
+                // collections and their reversals, never an expense/payout
+                // line, so there is nothing to put in that column yet.
+                totals: { inPaise: totalCollectedPaise, outPaise: 0, netPaise: totalCollectedPaise },
+              })
+            } catch (e) {
+              alert('Could not generate the statement: ' + e.message)
+            } finally {
+              setPrinting(false)
+            }
+          }
+
           return (
           <div className="space-y-4 text-sm">
             <div className="flex items-center gap-2 flex-wrap">
@@ -1169,11 +1329,21 @@ function ContractList({ profile, deepLinkContractId }) {
                 separate toggles a reader had to find and open one at a time. */}
             {isAdmin && (
               <div>
-                <button type="button"
-                  onClick={function () { setShowFinancials(!showFinancials) }}
-                  className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
-                  {showFinancials ? '− Hide financials' : '+ Show financials'}
-                </button>
+                <div className="flex items-center justify-between gap-3">
+                  <button type="button"
+                    onClick={function () { setShowFinancials(!showFinancials) }}
+                    className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                    {showFinancials ? '− Hide financials' : '+ Show financials'}
+                  </button>
+                  {liveBalance && (
+                    <button type="button" disabled={printing}
+                      onClick={printStatement}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 disabled:opacity-50 disabled:cursor-wait transition-colors">
+                      <Icon name="download" size={13} />
+                      {printing ? 'Preparing…' : 'Print statement'}
+                    </button>
+                  )}
+                </div>
                 {showFinancials && (
                   <div className="mt-3">
                     {/* EventLedger's own Transactions tab now folds in LMS's
