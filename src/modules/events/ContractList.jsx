@@ -1041,15 +1041,32 @@ function ContractList({ profile, deepLinkContractId }) {
               // app logs collected cash at a hidden ÷10 scale (see
               // fn_extra_plate_collect); this statement exists specifically
               // to show finance the real numbers, not the masked defaults.
+              // Re-fetched fresh here rather than trusting the already-loaded
+              // liveBalance state -- that only reloads when selected.id/
+              // selectedAddons changes (see its own effect above), so a
+              // collection made elsewhere while this same modal sat open
+              // (or a very recent one the effect just hasn't caught up with
+              // yet) wouldn't be reflected in it. A printed statement is
+              // meant to be authoritative, so it gets its own up-to-the-
+              // moment read instead of risking a stale on-screen snapshot --
+              // this is exactly the shape of a reported mismatch (print
+              // showed Pending — bank where the Balance box, reopened after,
+              // showed Settled: the gap matched a cash collection landing
+              // between the two reads almost paisa-for-paisa).
+              var addonPrimariesForBalance = [].concat(selectedAddons ? (selectedAddons.Decor || []) : [], selectedAddons ? (selectedAddons.Entertainment || []) : []).map(function (g) { return g.rows[0] })
+              var balance = (addonPrimariesForBalance.length > 0
+                ? await fetchConsolidatedContractBalance([selected].concat(addonPrimariesForBalance)).then(function (r) { return r && r.total })
+                : await fetchContractBalanceSummary(selected.id)) || liveBalance
+
               var venuePkg = Number(selected.total_amount_paise || 0) * 2
               var venueTax = Number(selected.tax_amount_paise || 0)
               var decor = addonPkgTax('Decor')
               var ent = addonPkgTax('Entertainment')
               var totalDealPaise = venuePkg + venueTax + (decor.pkg * 2) + decor.tax + (ent.pkg * 2) + ent.tax
-              var advCashPaise = Number(liveBalance.collected_cash_paise || 0) * 10
-              var advBankPaise = Number(liveBalance.collected_bank_paise || 0)
-              var pendingCashPaise = Number(liveBalance.pending_cash_paise || 0) * 10
-              var pendingBankPaise = Number(liveBalance.pending_bank_paise || 0) + Number(liveBalance.pending_tax_paise || 0)
+              var advCashPaise = Number(balance.collected_cash_paise || 0) * 10
+              var advBankPaise = Number(balance.collected_bank_paise || 0)
+              var pendingCashPaise = Number(balance.pending_cash_paise || 0) * 10
+              var pendingBankPaise = Number(balance.pending_bank_paise || 0) + Number(balance.pending_tax_paise || 0)
               var totalCollectedPaise = advCashPaise + advBankPaise
               var surplusPaise = totalCollectedPaise > totalDealPaise ? totalCollectedPaise - totalDealPaise : 0
               var isSettled = pendingCashPaise <= 0 && pendingBankPaise <= 0
