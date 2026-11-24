@@ -936,8 +936,67 @@ function ContractList({ profile, deepLinkContractId }) {
                   statusLabel: voided ? 'Cancelled' : (isCancelLeg ? 'Reversed' : 'Completed'),
                   voided: voided,
                   isReversal: isCancelLeg,
+                  _sortKey: w.created_at || '',
                 }
               })
+              // LMS's own payment history (collected outside Ambria Ops'
+              // wallet entirely -- same read the Wallet's Collect flow and
+              // EventLedger's Transactions tab already use, see
+              // fetchContractBalanceSummary/fetchLmsCollected in
+              // contractBalance.js) -- without this, the print export only
+              // ever showed money collected through this app's own wallet,
+              // silently dropping anything collected straight into LMS even
+              // though the Balance box above already folds it into Advance
+              // received. One contract (Venue) + department can carry its own
+              // LMS history; each add-on contract is its own separate
+              // contract_no+department, so it's fetched for those too.
+              async function fetchLmsRows(contractNo, department) {
+                if (!contractNo) return []
+                var sessionRes = await supabase.auth.getSession()
+                var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
+                var res = await supabase.functions.invoke('lms-payment-collections', {
+                  body: { contract_no: contractNo, department: department || '' },
+                  headers: token ? { Authorization: 'Bearer ' + token } : {},
+                })
+                if (res.error) return []
+                return (res.data && res.data.data) || []
+              }
+              var lmsTargets = [{ contractNo: selected.contract_no, department: selected.department }]
+              ;['Decor', 'Entertainment'].forEach(function (dept) {
+                ((selectedAddons && selectedAddons[dept]) || []).forEach(function (g) {
+                  var a = g.rows[0]
+                  if (a.contract_no) lmsTargets.push({ contractNo: a.contract_no, department: dept })
+                })
+              })
+              var lmsRowsNested = await Promise.all(lmsTargets.map(function (t) { return fetchLmsRows(t.contractNo, t.department) }))
+              var lmsRows = [].concat.apply([], lmsRowsNested)
+              // LMS reports cash at the same hidden ÷10 scale as everywhere
+              // else (see lms-payment-collections' own note) -- revealed here
+              // the same way advCashPaise is above, so it lines up with the
+              // rest of this (always fully revealed) statement; bank is
+              // already true scale.
+              var lmsTransactions = lmsRows.map(function (p) {
+                var isCash = String(p.pay_mode || '').toLowerCase().indexOf('cash') !== -1
+                var raw = Number(p.net_amount_paise || 0)
+                var voided = String(p.status || '').toLowerCase().indexOf('cancel') !== -1
+                var dt = p.date ? new Date(p.date) : null
+                return {
+                  date: formatDate(p.date),
+                  time: '',
+                  type: 'LMS Collection',
+                  mode: isCash ? 'Cash' : 'Bank',
+                  amountPaise: Math.abs(isCash ? raw * 10 : raw),
+                  handledBy: p.entry_by || null,
+                  statusLabel: voided ? 'Cancelled' : 'Completed',
+                  voided: voided,
+                  isReversal: false,
+                  _sortKey: (dt && !isNaN(dt)) ? dt.toISOString() : '',
+                }
+              })
+              transactions = transactions.concat(lmsTransactions).sort(function (a, b) {
+                return (a._sortKey || '').localeCompare(b._sortKey || '')
+              })
+
               // The table's own In/Out/Net, derived from exactly the rows it
               // lists -- not from liveBalance's collected_cash/bank_paise,
               // which (as of this writing) doesn't yet exclude a cancelled
@@ -1267,9 +1326,42 @@ function ContractList({ profile, deepLinkContractId }) {
                   // LMS-side edit to one and not the other), so a real contract
                   // was seen fully "Settled" against agreed_cash/bank while
                   // still having collected far more than this package total.
-                  var totalDealPaise = venuePkg + venueTax + decor.pkg + decor.tax + ent.pkg + ent.tax
-                  var totalCollectedPaise = Number(liveBalance.collected_cash_paise || 0) + Number(liveBalance.collected_bank_paise || 0)
-                  var surplusVsPackage = totalCollectedPaise > totalDealPaise ? totalCollectedPaise - totalDealPaise : 0
+                  // Surplus can't be read off venuePkg/decor.pkg/ent.pkg and
+                  // collected_cash_paise directly -- those mix whatever scale
+                  // each line happens to be shown at (venuePkg masked ÷2,
+                  // decor/ent only ×2'd when the
+                  // pkgX2 toggle is on, collected_cash_paise always masked ÷10),
+                  // so subtracting them produced a number that was neither the
+                  // masked nor the true surplus -- confirmed live, it didn't
+                  // match the real figure once cash and package happened to be
+                  // masked by two different factors. Surplus is always computed
+                  // fully revealed instead, independent of what the lines above
+                  // it are showing.
+                  var decorTrue = (function () {
+                    var list = (selectedAddons && selectedAddons.Decor) || []
+                    var pkg = 0, tax = 0
+                    list.forEach(function (g) {
+                      var a = g.rows[0]
+                      var pkgFromTotal = a.total_amount_paise > 0
+                      pkg += (pkgFromTotal ? a.total_amount_paise : (a.net_amount_paise || 0)) * 2
+                      if (pkgFromTotal) tax += Number(a.tax_amount_paise || 0)
+                    })
+                    return { pkg: pkg, tax: tax }
+                  })()
+                  var entTrue = (function () {
+                    var list = (selectedAddons && selectedAddons.Entertainment) || []
+                    var pkg = 0, tax = 0
+                    list.forEach(function (g) {
+                      var a = g.rows[0]
+                      var pkgFromTotal = a.total_amount_paise > 0
+                      pkg += (pkgFromTotal ? a.total_amount_paise : (a.net_amount_paise || 0)) * 2
+                      if (pkgFromTotal) tax += Number(a.tax_amount_paise || 0)
+                    })
+                    return { pkg: pkg, tax: tax }
+                  })()
+                  var trueTotalDealPaise = (venuePkg * 2) + venueTax + decorTrue.pkg + decorTrue.tax + entTrue.pkg + entTrue.tax
+                  var trueTotalCollectedPaise = Number(liveBalance.collected_cash_paise || 0) * 10 + Number(liveBalance.collected_bank_paise || 0)
+                  var surplusVsPackage = trueTotalCollectedPaise > trueTotalDealPaise ? trueTotalCollectedPaise - trueTotalDealPaise : 0
                   function pkgCell(pkg, tax) {
                     if (tax > 0) {
                       return (
