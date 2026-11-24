@@ -87,6 +87,40 @@ function ContractList({ profile, deepLinkContractId }) {
   // fold in LMS-only payments or a Venue row's own Add-on contracts the way
   // the detail panel's Balance box does.
   var [listBalances, setListBalances] = useState({})
+  // The real Extra Plate Collect history for this contract (ExtraPlateCollect.jsx,
+  // fn_extra_plate_collect) -- distinct from extra_plates_charge (just LMS's
+  // own rate, shown in the field list below). fn_extra_plate_collect already
+  // posts every collection to event_ledger too, so this is already folded
+  // into "Advance received" above -- shown here only as a labeled breakdown
+  // of that figure, never added on top of it.
+  var [extraPlateCollected, setExtraPlateCollected] = useState(null)
+
+  useEffect(function () {
+    setExtraPlateCollected(null)
+    if (!selected) return
+    var cancelled = false
+    ;(async function () {
+      var ids = [selected.id]
+      if (selected.contract_no) {
+        var poolRes = await supabase.from('events').select('id').eq('contract_no', selected.contract_no).eq('department', selected.department)
+        if (poolRes.data && poolRes.data.length > 0) ids = poolRes.data.map(function (r) { return r.id })
+      }
+      var res = await supabase.from('extra_plate_collections').select('total_paise, discount_paise, payment_mode').in('event_id', ids).is('cancelled_at', null)
+      if (cancelled) return
+      var cash = 0, bank = 0
+      ;(res.data || []).forEach(function (r) {
+        var net = Number(r.total_paise || 0) - Number(r.discount_paise || 0)
+        // Collected cash is logged to event_ledger at the hidden ÷10 scale
+        // (see fn_extra_plate_collect's own v_ledger_amt_paise) -- matching
+        // that here so this lines up with "Advance received — cash" above,
+        // which is shown at that same hidden scale, not the true rupee one.
+        if (r.payment_mode === 'cash') cash += Math.round(net / 10)
+        else if (r.payment_mode === 'bank') bank += net
+      })
+      setExtraPlateCollected({ cash: cash, bank: bank })
+    })()
+    return function () { cancelled = true }
+  }, [selected && selected.id])
 
   // Reset the financials disclosure whenever a different contract is opened,
   // so it doesn't stay expanded (showing the previous contract's figures for
@@ -1080,6 +1114,17 @@ function ContractList({ profile, deepLinkContractId }) {
                       )}
                       <div className="flex justify-between pt-1 border-t border-gray-200"><span className="text-gray-500">Advance received — cash</span><span className="font-medium text-gray-800">{formatPaise(liveBalance.collected_cash_paise)}</span></div>
                       <div className="flex justify-between"><span className="text-gray-500">Advance received — bank</span><span className="font-medium text-gray-800">{formatPaise(liveBalance.collected_bank_paise)}</span></div>
+                      {extraPlateCollected && (extraPlateCollected.cash > 0 || extraPlateCollected.bank > 0) && (
+                        <div className="flex justify-between gap-3 text-[11px] text-gray-400">
+                          <span>↳ incl. Extra plates collected</span>
+                          <span className="text-right">
+                            {[
+                              extraPlateCollected.cash > 0 ? formatPaise(extraPlateCollected.cash) + ' cash' : null,
+                              extraPlateCollected.bank > 0 ? formatPaise(extraPlateCollected.bank) + ' bank' : null,
+                            ].filter(Boolean).join(' + ')}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between pt-1 border-t border-gray-200">
                         <span className="text-gray-500">Pending — cash</span>
                         <span className={"font-bold " + (pendingCash > 0 ? "text-red-600" : "text-green-600")}>{formatPaise(Math.abs(pendingCash))}</span>
