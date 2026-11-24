@@ -994,7 +994,33 @@ function ContractList({ profile, deepLinkContractId }) {
             if (!liveBalance || printing) return
             setPrinting(true)
             try {
-              var poolIds = [selected.id].concat(addonEventIds)
+              // [selected.id].concat(addonEventIds) (the old poolIds) only
+              // ever covered the ONE function row each of selected/an add-on
+              // happened to be opened on -- a multi-function contract (e.g.
+              // Lunch+Dinner+Sagan, or Sahiba's own WEDDING/HALDI/SANGEET)
+              // has its collections spread across every sibling function's
+              // own event id, same gap EventLedger's Transactions tab
+              // already closes for its own query (see its own "sameContract"
+              // pool) -- confirmed live, two of three real Ambria Ops
+              // collections on Sahiba were silently dropped from the print
+              // while the Transactions tab showed all three. Queried fresh
+              // by contract_no+department here (not off selectedGroupRows,
+              // which only ever reflects whatever the current list's own
+              // filters happened to have loaded) so it's never short a
+              // function the same way the Balance box above isn't.
+              async function poolIdsFor(contractNo, department, fallbackId) {
+                if (!contractNo) return [fallbackId]
+                var res = await supabase.from('events').select('id')
+                  .eq('contract_no', contractNo).eq('department', department).is('merged_into_id', null)
+                var ids = (res.data || []).map(function (r) { return r.id })
+                return ids.length > 0 ? ids : [fallbackId]
+              }
+              var addonGroupsList = [].concat(selectedAddons ? (selectedAddons.Decor || []) : [], selectedAddons ? (selectedAddons.Entertainment || []) : [])
+              var poolIdsNested = await Promise.all(
+                [poolIdsFor(selected.contract_no, selected.department, selected.id)]
+                  .concat(addonGroupsList.map(function (g) { var a = g.rows[0]; return poolIdsFor(a.contract_no, a.department, a.id) }))
+              )
+              var poolIds = [].concat.apply([], poolIdsNested)
 
               function addonPkgTax(dept) {
                 var list = (selectedAddons && selectedAddons[dept]) || []
