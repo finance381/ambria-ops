@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { Badge } from '../../components/ui/Badge'
 import { formatDate, formatPaise, titleCase } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
+import { appConfirm } from '../../components/ui/AppDialog'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import EnteredMark from '../../components/ui/EnteredMark'
@@ -29,7 +30,8 @@ var CONTRACT_SELECT = 'id, lms_event_id, contract_no, contract_date, function_da
   'balance_amount, status, synced_at, created_user_name, ppt_link, pdf_link, enquiry_mode, priority, address, ' +
   'is_tentative, pax, function_type, merged_into_id, tally_entered_by, tally_entered_at, ' +
   'menu_rate_paise, venue_rental_paise, decor_amount_paise, entertainment_amount_paise, tentative_created_at, ' +
-  'venue_menu_paise, addons_json, total_amount_paise, net_amount_paise, tax_amount_paise'
+  'venue_menu_paise, addons_json, total_amount_paise, net_amount_paise, tax_amount_paise, ' +
+  'manual_addon_contract_no, manual_addon_department'
 
 // LMS's own indoor/outdoor flag — confirmed directly against the live API:
 // every department returns a `lead_type` field, "I" (one of Ambria's own
@@ -78,6 +80,16 @@ function ContractList({ profile, deepLinkContractId }) {
   var [pkgX2, setPkgX2] = useState(false)
   var [showFinancials, setShowFinancials] = useState(false)
   var [printing, setPrinting] = useState(false)
+  // Manual add-on linking (fn_link_addon_contract/fn_unlink_addon_contract) --
+  // for when the automatic guest+venue+date match (see the grouping pass
+  // above) misses and a Decor/Entertainment contract needs pointing at its
+  // Venue contract by hand.
+  var [linkSearch, setLinkSearch] = useState('')
+  var [linkResults, setLinkResults] = useState([])
+  var [linkSearching, setLinkSearching] = useState(false)
+  var [linkTargetId, setLinkTargetId] = useState(null)
+  var [linking, setLinking] = useState(false)
+  var [unlinkingAddon, setUnlinkingAddon] = useState(false)
   var [liveBalance, setLiveBalance] = useState(null)
   var [liveBalanceLoading, setLiveBalanceLoading] = useState(false)
   // Live reconciled balance for whatever page of rows is currently shown in
@@ -184,6 +196,10 @@ function ContractList({ profile, deepLinkContractId }) {
   var isAdmin = hasPerm(profile?.permsNew, 'events.list')
   var isSysAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
   var canMarkEntered = hasPerm(profile?.permsNew, 'finance.wallet.mark_entered')
+  // Same permission fn_merge_events already gates (Events.jsx) -- linking an
+  // add-on contract is the same class of privileged, cross-contract action,
+  // just non-destructive (see fn_link_addon_contract's own note).
+  var canLinkAddon = hasPerm(profile?.permsNew, 'events.list.merge')
   var userEventDeptNames = (profile?.event_dept_ids || []).map(function (id) {
     var dept = departments.find(function (d) { return d.id === id })
     return dept ? dept.name : null
@@ -272,6 +288,47 @@ function ContractList({ profile, deepLinkContractId }) {
     if (res.data && profile.name) setEnteredNames(function (prev) { return Object.assign({}, prev, { [profile.id]: profile.name }) })
   }
 
+  function searchLinkTargets(q) {
+    setLinkSearch(q)
+    setLinkTargetId(null)
+    if (!q || q.trim().length < 2) { setLinkResults([]); return }
+    setLinkSearching(true)
+    supabase.from('events_safe')
+      .select('id, event_name, client_name, venue_name, function_date, contract_no')
+      .eq('department', 'Venue')
+      .eq('is_tentative', false)
+      .ilike('client_name', '%' + q.trim() + '%')
+      .order('function_date', { ascending: false })
+      .limit(20)
+      .then(function (res) {
+        setLinkResults(res.data || [])
+        setLinkSearching(false)
+      })
+  }
+
+  async function submitLinkAddon() {
+    if (linking || !selected || !linkTargetId) return
+    if (!(await appConfirm('Link this contract as an add-on of the selected Venue contract? Its balance folds into that contract\'s consolidated Balance box.'))) return
+    setLinking(true)
+    var res = await supabase.rpc('fn_link_addon_contract', { p_addon_event_id: selected.id, p_venue_event_id: linkTargetId })
+    setLinking(false)
+    if (res.error) { alert('Link failed: ' + res.error.message); return }
+    setLinkSearch(''); setLinkResults([]); setLinkTargetId(null)
+    setSelected(null); setSelectedAddons(null)
+    load()
+  }
+
+  async function unlinkAddon(addonEventId) {
+    if (unlinkingAddon) return
+    if (!(await appConfirm('Unlink this add-on contract? It goes back to showing its own separate balance.'))) return
+    setUnlinkingAddon(true)
+    var res = await supabase.rpc('fn_unlink_addon_contract', { p_addon_event_id: addonEventId })
+    setUnlinkingAddon(false)
+    if (res.error) { alert('Unlink failed: ' + res.error.message); return }
+    setSelected(null); setSelectedAddons(null)
+    load()
+  }
+
   var visible = hasEventDeptFilter
     ? contracts.filter(function (c) { return userEventDeptNames.includes(c.department) })
     : contracts
@@ -326,6 +383,7 @@ function ContractList({ profile, deepLinkContractId }) {
   // same venue never gets folded in by mistake.
   function clientVenueKey(c) { return (c.client_name || '').trim().toLowerCase() + '|' + (c.venue_name || '').trim().toLowerCase() }
   var venueGroupsByKey = {}
+  var venueGroupsByContractKey = {}
   groups.forEach(function (g) {
     // Tentative (no contract_no yet) excluded: EventLedger's own pooling
     // for a tentative primary never looks at extraEventIds at all (there's
@@ -336,18 +394,31 @@ function ContractList({ profile, deepLinkContractId }) {
     var k = clientVenueKey(g.rows[0])
     if (!venueGroupsByKey[k]) venueGroupsByKey[k] = []
     venueGroupsByKey[k].push(g)
+    venueGroupsByContractKey[g.rows[0].department + '|' + g.rows[0].contract_no] = g
   })
   var consumedKeys = {}
   groups.forEach(function (g) {
     var dept = g.rows[0].department
     if (dept !== 'Decor' && dept !== 'Entertainment') return
-    var candidates = venueGroupsByKey[clientVenueKey(g.rows[0])]
-    if (!candidates || candidates.length === 0) return
-    var venueDates = {}
-    var matched = candidates.find(function (vg) {
-      vg.rows.forEach(function (r) { if (r.function_date) venueDates[r.function_date] = true })
-      return g.rows.some(function (r) { return !r.function_date || venueDates[r.function_date] })
-    })
+    // A manual link (see fn_link_addon_contract, for when the automatic
+    // guest+venue+date match below misses) always wins when it points at a
+    // Venue group that's actually in view -- explicit beats implicit, and it
+    // has to work even for a guest/venue name the automatic match would
+    // never have matched in the first place.
+    var manualTarget = g.rows[0].manual_addon_contract_no
+      ? venueGroupsByContractKey[(g.rows[0].manual_addon_department || 'Venue') + '|' + g.rows[0].manual_addon_contract_no]
+      : null
+    var matched = manualTarget
+    if (!matched) {
+      var candidates = venueGroupsByKey[clientVenueKey(g.rows[0])]
+      if (candidates && candidates.length > 0) {
+        var venueDates = {}
+        matched = candidates.find(function (vg) {
+          vg.rows.forEach(function (r) { if (r.function_date) venueDates[r.function_date] = true })
+          return g.rows.some(function (r) { return !r.function_date || venueDates[r.function_date] })
+        })
+      }
+    }
     if (!matched) return
     if (!matched.addons) matched.addons = { Decor: [], Entertainment: [] }
     matched.addons[dept].push(g)
@@ -1215,17 +1286,30 @@ function ContractList({ profile, deepLinkContractId }) {
                         <Badge color={dept === 'Decor' ? 'purple' : 'pink'}>Add-on &middot; {dept === 'Entertainment' ? 'Ent' : dept}</Badge>
                         <span className="font-mono text-xs text-slate-600">#{a.contract_no}</span>
                       </span>
-                      {(a.tally_entered_by || canMarkEntered) && (
-                        <EnteredMark
-                          entered={!!a.tally_entered_by}
-                          enteredByName={enteredNames[a.tally_entered_by]}
-                          enteredAt={a.tally_entered_at}
-                          canToggle={canMarkEntered}
-                          canUnenter={a.tally_entered_by === profile.id || isSysAdmin}
-                          busy={enteringId === a.id}
-                          onToggle={function () { toggleContractEntered(a.id) }}
-                        />
-                      )}
+                      <span className="inline-flex items-center gap-2">
+                        {(a.tally_entered_by || canMarkEntered) && (
+                          <EnteredMark
+                            entered={!!a.tally_entered_by}
+                            enteredByName={enteredNames[a.tally_entered_by]}
+                            enteredAt={a.tally_entered_at}
+                            canToggle={canMarkEntered}
+                            canUnenter={a.tally_entered_by === profile.id || isSysAdmin}
+                            busy={enteringId === a.id}
+                            onToggle={function () { toggleContractEntered(a.id) }}
+                          />
+                        )}
+                        {/* Only a manual link (fn_link_addon_contract) is ever
+                            reversible here -- an automatic guest+venue+date
+                            match has no row to clear, it just stops matching
+                            the moment one of those fields changes. */}
+                        {canLinkAddon && a.manual_addon_contract_no === selected.contract_no && a.manual_addon_department === selected.department && (
+                          <button type="button" disabled={unlinkingAddon}
+                            onClick={function () { unlinkAddon(a.id) }}
+                            className="text-[11px] font-semibold text-slate-400 hover:text-red-600 disabled:opacity-50 transition-colors">
+                            Unlink
+                          </button>
+                        )}
+                      </span>
                     </div>
                     <div className="px-3 py-2.5 space-y-1">
                       {[
@@ -1440,6 +1524,63 @@ function ContractList({ profile, deepLinkContractId }) {
                     </>
                   )
                 })()}
+              </div>
+            )}
+
+            {/* Showing up here at all means this Decor/Entertainment contract
+                isn't currently folded under any Venue contract as an add-on
+                (one that is never gets its own card in the list -- see the
+                grouping pass above) -- either nothing matched, or a manual
+                link points at a Venue contract that isn't in view right now
+                (e.g. aged past the list's date floor). */}
+            {canLinkAddon && (selected.department === 'Decor' || selected.department === 'Entertainment') && (
+              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 space-y-2">
+                {selected.manual_addon_contract_no ? (
+                  <>
+                    <p className="text-xs text-indigo-700">
+                      Manually linked to {selected.manual_addon_department || 'Venue'} contract #{selected.manual_addon_contract_no} — not showing here because that contract isn't in the current list (check its own date range/filters).
+                    </p>
+                    <button type="button" disabled={unlinkingAddon}
+                      onClick={function () { unlinkAddon(selected.id) }}
+                      className="w-full py-2 text-sm font-semibold text-indigo-700 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+                      {unlinkingAddon ? 'Unlinking…' : 'Unlink'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wider">Link to a Venue contract</h4>
+                    <p className="text-xs text-indigo-600">For when this is really the same guest's Venue booking, just not auto-matched (a different name spelling, no overlapping date, etc.) — search for it and link, no history moves, and the two Balance boxes fold into one.</p>
+                    <input type="text" value={linkSearch}
+                      onChange={function (e) { searchLinkTargets(e.target.value) }}
+                      placeholder="Search guest name..."
+                      className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    {linkSearching && <p className="text-xs text-indigo-400">Searching...</p>}
+                    {!linkSearching && linkResults.length > 0 && (
+                      <div className="space-y-1 max-h-48 overflow-y-auto">
+                        {linkResults.map(function (r) {
+                          var picked = linkTargetId === r.id
+                          return (
+                            <div key={r.id} role="button" tabIndex={0}
+                              onClick={function () { setLinkTargetId(r.id) }}
+                              onKeyDown={function (e) { if (e.key === 'Enter') setLinkTargetId(r.id) }}
+                              className={"px-3 py-2 rounded-lg border cursor-pointer text-sm " +
+                                (picked ? "border-indigo-600 bg-indigo-100" : "border-gray-200 bg-white hover:border-gray-300")}>
+                              <div className="font-medium text-gray-900">{r.event_name}{r.client_name ? ' — ' + r.client_name : ''}</div>
+                              <div className="text-xs text-gray-500">{r.venue_name || ''}{r.function_date ? ' · ' + formatDate(r.function_date) : ''}{r.contract_no ? ' · #' + r.contract_no : ''}</div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                    {!linkSearching && linkSearch.trim().length >= 2 && linkResults.length === 0 && (
+                      <p className="text-xs text-gray-400">No matching Venue contracts found.</p>
+                    )}
+                    <button type="button" onClick={submitLinkAddon} disabled={!linkTargetId || linking}
+                      className="w-full py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                      {linking ? 'Linking...' : 'Link as add-on'}
+                    </button>
+                  </>
+                )}
               </div>
             )}
 
