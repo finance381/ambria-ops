@@ -147,6 +147,17 @@ async function drawOverviewBalancePage(doc, FONT, autoTable, d) {
     y += 22
   }
 
+  // LMS's own per-department split of this contract's total (Menu rate/
+  // Venue rental/Venue+Menu/Decor amount/Entertainment amount) -- distinct
+  // from both the itemized Add-ons below (LMS's own addons_json list) and
+  // the Add-on Decor/Entertainment CONTRACTS on page 2 (each its own
+  // separate contract_no, not a split field on this one).
+  if (d.packageBreakdown && d.packageBreakdown.length > 0) {
+    y = sectionLabel(doc, FONT, y + 4, 'Package Breakdown (LMS)')
+    d.packageBreakdown.forEach(function (it) { y = row(doc, FONT, y, it.label, fmt(it.amountPaise), { tight: true }) })
+    y += 3
+  }
+
   // LMS's own itemized Addons list on this contract (e.g. "L.L. ₹25,000") --
   // distinct from the per-department Decor/Entertainment ADD-ON CONTRACTS on
   // page 2, which are each a whole separate contract, not a line item here.

@@ -1078,6 +1078,19 @@ function ContractList({ profile, deepLinkContractId }) {
               if (decor.pkg > 0) packageLines.push({ label: 'Add-on Decor package', pkgPaise: decor.pkg * 2, taxPaise: decor.tax })
               if (ent.pkg > 0) packageLines.push({ label: 'Add-on Entertainment package', pkgPaise: ent.pkg * 2, taxPaise: ent.tax })
 
+              // LMS's own per-department split of this Venue contract's total
+              // (Menu rate/Venue rental/Venue+Menu/Decor amount/Entertainment
+              // amount) -- the same fields the on-screen detail list already
+              // shows further down, none of them subject to the pkgX2 ÷2
+              // habit (that's only ever total_amount_paise), so shown as-is.
+              var packageBreakdown = [
+                ['Menu rate', selected.menu_rate_paise > 0 ? selected.menu_rate_paise : null],
+                ['Venue rental', selected.venue_rental_paise != null ? selected.venue_rental_paise : null],
+                ['Venue + Menu', selected.venue_menu_paise != null ? selected.venue_menu_paise : null],
+                ['Decor amount', selected.decor_amount_paise > 0 ? selected.decor_amount_paise : null],
+                ['Entertainment amount', selected.entertainment_amount_paise > 0 ? selected.entertainment_amount_paise : null],
+              ].filter(function (r) { return r[1] != null }).map(function (r) { return { label: r[0], amountPaise: r[1] } })
+
               // Multi-function contract (Lunch+Dinner+Sagan etc. under one
               // contract_no, see groupsMap above) -- selected is only ever
               // one of those function rows, selectedGroupRows carries every
@@ -1275,6 +1288,7 @@ function ContractList({ profile, deepLinkContractId }) {
                 pax: selected.pax != null ? selected.pax : (selected.total_plates != null && selected.complementary_plates != null ? selected.total_plates - selected.complementary_plates : null),
                 extra: selected.complementary_plates,
                 functions: functions,
+                packageBreakdown: packageBreakdown,
                 addonItems: addonItems,
                 addonItemsTotalPaise: addonItemsTotalPaise,
                 packageLines: packageLines,
