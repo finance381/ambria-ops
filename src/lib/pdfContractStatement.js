@@ -19,7 +19,6 @@ var GRAY = [107, 114, 128]
 var MUTED = [154, 160, 171]
 var GREEN = [4, 120, 87]
 var AMBER = [180, 83, 9]
-var RED = [220, 38, 38]
 
 var MARGIN = 14
 var PAGE_RIGHT = 196
@@ -236,11 +235,18 @@ async function drawTransactionsPage(doc, FONT, autoTable, d) {
       if (data.section !== 'body') return
       var t = d.transactions[data.row.index]
       if (!t) return
+      // A voided original and the reversal that undoes it are one correction
+      // episode, not two separate signals -- grey + strikethrough on one and
+      // red on the other read as two different kinds of thing when they're
+      // the same pair. Both get the same muted tone; the amount's own "-"
+      // prefix and the Status column's wording ("Cancelled" / "Reversed")
+      // already say which leg is which. What the reversal actually did to
+      // the total is the Out figure below, not a color on this row.
       if (t.voided) {
-        data.cell.styles.textColor = [183, 188, 196]
+        data.cell.styles.textColor = MUTED
         if (data.column.index === 3) data.cell.styles.fontStyle = 'italic'
-      } else if (t.isReversal && (data.column.index === 3 || data.column.index === 5)) {
-        data.cell.styles.textColor = RED
+      } else if (t.isReversal) {
+        data.cell.styles.textColor = MUTED
       }
     },
   })
