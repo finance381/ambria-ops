@@ -341,16 +341,45 @@ function ContractList({ profile, deepLinkContractId }) {
     })
   }
 
-  // Picked from the list's own checkboxes rather than the single-contract
-  // search: needs exactly one Venue contract among the selection (the merge
-  // target) and at least one real Decor/Entertainment contract (what gets
-  // linked to it) -- the same two-sided shape fn_link_addon_contract always
-  // required, just validated up front instead of the picker only ever
-  // offering one side of it.
+  // Picked from the list's own checkboxes. Two different merges share this
+  // button, told apart by whether a tentative placeholder is in the
+  // selection:
+  //  - a tentative (no LMS contract yet) + one real contract -> fn_merge_events
+  //    (Events.jsx's existing "Merge into a real LMS event" path, just
+  //    triggered from here too) -- moves every real operational record
+  //    (ledger, requisitions, manpower, challans...) onto the target.
+  //    Irreversible.
+  //  - Venue + one or more Decor/Entertainment contracts, none tentative ->
+  //    fn_link_addon_contract -- no history moves, reversible (Unlink).
+  // Mixing the two shapes in one selection is rejected rather than guessed at.
   async function submitMergeSelected(selGroups) {
     if (merging) return
-    var venueGroups = selGroups.filter(function (g) { return g.rows[0].department === 'Venue' })
-    var addonGroups = selGroups.filter(function (g) { return g.rows[0].department === 'Decor' || g.rows[0].department === 'Entertainment' })
+    var tentativeGroups = selGroups.filter(function (g) { return g.rows[0].is_tentative })
+    var realGroups = selGroups.filter(function (g) { return !g.rows[0].is_tentative })
+
+    if (tentativeGroups.length > 0) {
+      if (realGroups.length !== 1) {
+        alert('Select exactly one real, already-synced contract as the merge target, plus one or more tentative placeholders to merge into it.')
+        return
+      }
+      var target = realGroups[0].rows[0]
+      if (!(await appConfirm('Merge ' + tentativeGroups.length + ' tentative placeholder' + (tentativeGroups.length === 1 ? '' : 's') + ' into "' + (target.event_name || target.client_name || ('#' + target.contract_no)) + '"? This moves all of its collections/ledger history onto the target and cannot be undone.'))) return
+      setMerging(true)
+      var tErrors = []
+      for (var ti = 0; ti < tentativeGroups.length; ti++) {
+        var src = tentativeGroups[ti].rows[0]
+        var tRes = await supabase.rpc('fn_merge_events', { p_tentative_id: src.id, p_target_id: target.id })
+        if (tRes.error) tErrors.push((src.event_name || src.client_name || 'Tentative #' + src.id) + ': ' + tRes.error.message)
+      }
+      setMerging(false)
+      setMergeSelectIds([])
+      if (tErrors.length > 0) alert('Some contracts could not be merged:\n' + tErrors.join('\n'))
+      load()
+      return
+    }
+
+    var venueGroups = realGroups.filter(function (g) { return g.rows[0].department === 'Venue' })
+    var addonGroups = realGroups.filter(function (g) { return g.rows[0].department === 'Decor' || g.rows[0].department === 'Entertainment' })
     if (venueGroups.length !== 1) {
       alert('Select exactly one Venue contract (the one everything else merges into), plus one or more Decor/Entertainment contracts for the same guest.')
       return
@@ -359,7 +388,7 @@ function ContractList({ profile, deepLinkContractId }) {
       alert('Select at least one Decor/Entertainment contract to merge into the Venue contract.')
       return
     }
-    if (addonGroups.length !== selGroups.length - 1) {
+    if (addonGroups.length !== realGroups.length - 1) {
       alert('Only Venue + Decor/Entertainment contracts can be merged here — drop any other selected contract and try again.')
       return
     }
@@ -699,7 +728,7 @@ function ContractList({ profile, deepLinkContractId }) {
                 className={'group bg-white border border-slate-200 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] px-4 py-3.5 transition-colors sm:grid ' + COLS + ' sm:gap-3 sm:items-center cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/40'}>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    {canLinkAddon && c.contract_no && (
+                    {canLinkAddon && (c.contract_no || c.is_tentative) && (
                       <input type="checkbox" checked={mergeSelectIds.indexOf(c.id) !== -1}
                         title="Select to merge with another contract"
                         onClick={function (e) { e.stopPropagation() }}
