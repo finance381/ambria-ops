@@ -24,6 +24,27 @@ var DEPT_BADGE = {
   Entertainment: 'bg-pink-100 text-pink-700',
 }
 
+// A live, reconciled balance (fn_event_group_balance-backed, same shape
+// fetchContractBalanceSummary/fetchContractBalancesBatch return) turned into
+// one true-scale settled/due/adv figure -- shared by the list's own Balance
+// column and each Add-on card's mini "Balance" line, both of which used to
+// trust the stale LMS-synced balance_amount field instead (confirmed live:
+// it can read 0/"settled" while real money is still pending). Cash is
+// revealed ×10 before summing with bank/tax (already true scale) -- the same
+// no-mixed-scale-sum rule the Balance box's own Surplus line follows.
+function reconciledDueDisplay(lb) {
+  if (!lb) return null
+  var pendingCash = Number(lb.pending_cash_paise || 0)
+  var pendingBank = Number(lb.pending_bank_paise || 0)
+  var pendingTax = Number(lb.pending_tax_paise || 0)
+  if (pendingCash === 0 && (pendingBank + pendingTax) === 0) return { settled: true }
+  var duePaise = Math.max(0, pendingCash) * 10 + pendingBank + pendingTax
+  if (duePaise > 0) return { settled: false, amountPaise: duePaise, label: 'due' }
+  var cashOver = Math.max(0, -pendingCash)
+  if (pendingBank === 0 && pendingTax === 0 && cashOver > 0) return { settled: false, amountPaise: cashOver * 10, label: 'adv' }
+  return { settled: true }
+}
+
 var CONTRACT_SELECT = 'id, lms_event_id, contract_no, contract_date, function_date, department, contract_type, ' +
   'venue_name, location, contact_person, contact_number, secondary_contact, event_name, client_name, session, ' +
   'catering, total_plates, complementary_plates, extra_plates_charge, balance_received, balance_bank, ' +
@@ -102,6 +123,9 @@ function ContractList({ profile, deepLinkContractId }) {
   var [merging, setMerging] = useState(false)
   var [liveBalance, setLiveBalance] = useState(null)
   var [liveBalanceLoading, setLiveBalanceLoading] = useState(false)
+  // Each Add-on card's own live balance, keyed by 'department|contract_no' --
+  // see the effect below.
+  var [addonLiveBalances, setAddonLiveBalances] = useState({})
   // Live reconciled balance for whatever page of rows is currently shown in
   // the list (one batched RPC call, not one per row) -- keyed by the row's
   // own primary contract id. Only ever used to upgrade a row to "Settled"
@@ -157,13 +181,28 @@ function ContractList({ profile, deepLinkContractId }) {
   useEffect(function () {
     setShowFinancials(false)
     setLiveBalance(null)
+    setAddonLiveBalances({})
     if (!selected) return
     setLiveBalanceLoading(true)
     var addonPrimaries = selectedAddons
       ? [].concat(selectedAddons.Decor || [], selectedAddons.Entertainment || []).map(function (g) { return g.rows[0] })
       : []
+    // fetchConsolidatedContractBalance already reconciles each add-on
+    // contract on its own (byContract) on the way to the combined total --
+    // keyed here by department|contract_no so each Add-on card's own mini
+    // "Balance" line can use the SAME live figure instead of the stale,
+    // LMS-synced balance_amount it used to read (see reconciledDueDisplay's
+    // own note; no second round trip needed, this was already being
+    // computed and thrown away).
     var p = addonPrimaries.length > 0
-      ? fetchConsolidatedContractBalance([selected].concat(addonPrimaries)).then(function (r) { return r && r.total })
+      ? fetchConsolidatedContractBalance([selected].concat(addonPrimaries)).then(function (r) {
+          if (r && r.byContract) {
+            var map = {}
+            r.byContract.forEach(function (bc) { map[bc.department + '|' + bc.contract_no] = bc.balance })
+            setAddonLiveBalances(map)
+          }
+          return r && r.total
+        })
       : fetchContractBalanceSummary(selected.id)
     p.then(function (b) {
       setLiveBalance(b)
@@ -674,33 +713,10 @@ function ContractList({ profile, deepLinkContractId }) {
             var rows = g.rows
             var c = rows[0]
             var multi = rows.length > 1
-            // Only ever used to confirm a genuine settlement -- a live
-            // balance that ISN'T settled doesn't override the existing
-            // due/adv figure below (different scales/sources, see
-            // fetchContractBalancesBatch's own notes; not worth a cross-
-            // scale combined number for a case nobody asked to fix).
             var lb = listBalances[c.id]
-            var liveSettled = isAdmin && lb && Number(lb.pending_cash_paise || 0) === 0 &&
-              (Number(lb.pending_bank_paise || 0) + Number(lb.pending_tax_paise || 0)) === 0
-            // Live, not settled -- never let the stale LMS-synced balance_amount
-            // fallback below override that with ITS OWN "Settled" (confirmed
-            // live: a Decor contract's balance_amount read 0 while this same
-            // reconciled figure showed a real ₹65,000 still due in bank --
-            // balance_amount is "whatever LMS last synced", the same field the
-            // Balance box in the modal was built to stop relying on). Combined
-            // into one true-scale figure the same way the Balance box's own
-            // Surplus does (cash ×10 revealed, bank/tax already true scale --
-            // never summed while still masked).
-            var lbDue = (isAdmin && lb && !liveSettled) ? (function () {
-              var cashDue = Math.max(0, Number(lb.pending_cash_paise || 0))
-              var bankDue = Number(lb.pending_bank_paise || 0)
-              var taxDue = Number(lb.pending_tax_paise || 0)
-              var duePaise = cashDue * 10 + bankDue + taxDue
-              if (duePaise > 0) return { amountPaise: duePaise, label: 'due' }
-              var cashOver = Math.max(0, -Number(lb.pending_cash_paise || 0))
-              if (bankDue === 0 && taxDue === 0 && cashOver > 0) return { amountPaise: cashOver * 10, label: 'adv' }
-              return null
-            })() : null
+            var lbDisplay = isAdmin ? reconciledDueDisplay(lb) : null
+            var liveSettled = !!(lbDisplay && lbDisplay.settled)
+            var lbDue = (lbDisplay && !lbDisplay.settled) ? lbDisplay : null
             var dates = rows.map(function (r) { return r.function_date || r.contract_date }).filter(Boolean).sort()
             var dateStart = dates[0], dateEnd = dates[dates.length - 1]
             var isTentative = rows.some(function (r) { return r.is_tentative })
@@ -1536,20 +1552,29 @@ function ContractList({ profile, deepLinkContractId }) {
                           </div>
                         )
                       })}
-                      {isAdmin && (
-                        <div className="flex justify-between gap-3 text-xs pt-1 border-t border-gray-100">
-                          <span className="text-gray-500">Balance</span>
-                          {a.balance_amount != null ? (
-                            a.balance_amount === 0 ? (
-                              <span className="font-bold text-emerald-600">{formatPaise(0)} <span className="font-semibold opacity-80">settled</span></span>
-                            ) : (
-                              <span className={'font-bold ' + (a.balance_amount < 0 ? 'text-red-600' : 'text-emerald-600')}>
-                                {formatPaise(Math.abs(a.balance_amount))} <span className="font-semibold opacity-80">{a.balance_amount < 0 ? 'due' : 'adv'}</span>
-                              </span>
-                            )
-                          ) : <span className="text-gray-300">—</span>}
-                        </div>
-                      )}
+                      {isAdmin && (function () {
+                        // Live, reconciled per-contract figure (see the
+                        // liveBalance effect above) in place of the stale
+                        // LMS-synced balance_amount this used to read --
+                        // same reasoning as the list's own Balance column
+                        // (reconciledDueDisplay's own note).
+                        var addonLb = addonLiveBalances[dept + '|' + a.contract_no]
+                        var disp = reconciledDueDisplay(addonLb)
+                        return (
+                          <div className="flex justify-between gap-3 text-xs pt-1 border-t border-gray-100">
+                            <span className="text-gray-500">Balance</span>
+                            {disp ? (
+                              disp.settled ? (
+                                <span className="font-bold text-emerald-600">{formatPaise(0)} <span className="font-semibold opacity-80">settled</span></span>
+                              ) : (
+                                <span className={'font-bold ' + (disp.label === 'due' ? 'text-red-600' : 'text-emerald-600')}>
+                                  {formatPaise(disp.amountPaise)} <span className="font-semibold opacity-80">{disp.label}</span>
+                                </span>
+                              )
+                            ) : <span className="text-gray-300">—</span>}
+                          </div>
+                        )
+                      })()}
                       {a.pdf_link && (
                         <div className="pt-1">
                           <a href={a.pdf_link} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">View contract PDF ↗</a>
