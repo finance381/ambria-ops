@@ -274,7 +274,7 @@ async function drawTransactionsPage(doc, FONT, autoTable, d) {
   var rows = d.transactions.map(function (t) {
     return [
       t.date + (t.time ? '\n' + t.time : ''),
-      t.type + (t.note ? '\n' + t.note : ''),
+      t.source || '—',
       t.mode,
       (t.isReversal ? '-' : '') + fmt(t.amountPaise),
       t.handledBy || '—',
@@ -284,7 +284,10 @@ async function drawTransactionsPage(doc, FONT, autoTable, d) {
 
   autoTable(doc, {
     startY: y,
-    head: [['Date', 'Type', 'Mode', 'Amount', 'Handled by', 'Status']],
+    // Every row here is a collection (or its reversal) -- Type never said
+    // anything else, so it's gone; Source (LMS vs OPs) is what actually
+    // varies and matters, now in its place.
+    head: [['Date', 'Source', 'Mode', 'Amount', 'Handled by', 'Status']],
     body: rows,
     theme: 'grid',
     styles: { font: FONT, fontSize: 8, cellPadding: 2.4, textColor: DARK, valign: 'top' },
