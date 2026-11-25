@@ -89,12 +89,10 @@ function ContractList({ profile, deepLinkContractId }) {
   // Manual add-on linking (fn_link_addon_contract/fn_unlink_addon_contract) --
   // for when the automatic guest+venue+date match (see the grouping pass
   // above) misses and a Decor/Entertainment contract needs pointing at its
-  // Venue contract by hand.
-  var [linkSearch, setLinkSearch] = useState('')
-  var [linkResults, setLinkResults] = useState([])
-  var [linkSearching, setLinkSearching] = useState(false)
-  var [linkTargetId, setLinkTargetId] = useState(null)
-  var [linking, setLinking] = useState(false)
+  // Venue contract by hand. Linking itself now only ever happens through the
+  // list's own checkbox "Merge selected" (submitMergeSelected below) -- the
+  // single-contract search-and-link UI this used to back is gone, Unlink is
+  // all that's left here.
   var [unlinkingAddon, setUnlinkingAddon] = useState(false)
   // Multi-select merge from the list itself -- same fn_link_addon_contract
   // under the hood as the single-contract "Link to a Venue contract" search,
@@ -299,36 +297,6 @@ function ContractList({ profile, deepLinkContractId }) {
       return { Decor: patchGroups(prev.Decor), Entertainment: patchGroups(prev.Entertainment) }
     })
     if (res.data && profile.name) setEnteredNames(function (prev) { return Object.assign({}, prev, { [profile.id]: profile.name }) })
-  }
-
-  function searchLinkTargets(q) {
-    setLinkSearch(q)
-    setLinkTargetId(null)
-    if (!q || q.trim().length < 2) { setLinkResults([]); return }
-    setLinkSearching(true)
-    supabase.from('events_safe')
-      .select('id, event_name, client_name, venue_name, function_date, contract_no')
-      .eq('department', 'Venue')
-      .eq('is_tentative', false)
-      .ilike('client_name', '%' + q.trim() + '%')
-      .order('function_date', { ascending: false })
-      .limit(20)
-      .then(function (res) {
-        setLinkResults(res.data || [])
-        setLinkSearching(false)
-      })
-  }
-
-  async function submitLinkAddon() {
-    if (linking || !selected || !linkTargetId) return
-    if (!(await appConfirm('Link this contract as an add-on of the selected Venue contract? Its balance folds into that contract\'s consolidated Balance box.'))) return
-    setLinking(true)
-    var res = await supabase.rpc('fn_link_addon_contract', { p_addon_event_id: selected.id, p_venue_event_id: linkTargetId })
-    setLinking(false)
-    if (res.error) { alert('Link failed: ' + res.error.message); return }
-    setLinkSearch(''); setLinkResults([]); setLinkTargetId(null)
-    setSelected(null); setSelectedAddons(null); setSelectedGroupRows(null)
-    load()
   }
 
   async function unlinkAddon(addonEventId) {
@@ -714,6 +682,25 @@ function ContractList({ profile, deepLinkContractId }) {
             var lb = listBalances[c.id]
             var liveSettled = isAdmin && lb && Number(lb.pending_cash_paise || 0) === 0 &&
               (Number(lb.pending_bank_paise || 0) + Number(lb.pending_tax_paise || 0)) === 0
+            // Live, not settled -- never let the stale LMS-synced balance_amount
+            // fallback below override that with ITS OWN "Settled" (confirmed
+            // live: a Decor contract's balance_amount read 0 while this same
+            // reconciled figure showed a real ₹65,000 still due in bank --
+            // balance_amount is "whatever LMS last synced", the same field the
+            // Balance box in the modal was built to stop relying on). Combined
+            // into one true-scale figure the same way the Balance box's own
+            // Surplus does (cash ×10 revealed, bank/tax already true scale --
+            // never summed while still masked).
+            var lbDue = (isAdmin && lb && !liveSettled) ? (function () {
+              var cashDue = Math.max(0, Number(lb.pending_cash_paise || 0))
+              var bankDue = Number(lb.pending_bank_paise || 0)
+              var taxDue = Number(lb.pending_tax_paise || 0)
+              var duePaise = cashDue * 10 + bankDue + taxDue
+              if (duePaise > 0) return { amountPaise: duePaise, label: 'due' }
+              var cashOver = Math.max(0, -Number(lb.pending_cash_paise || 0))
+              if (bankDue === 0 && taxDue === 0 && cashOver > 0) return { amountPaise: cashOver * 10, label: 'adv' }
+              return null
+            })() : null
             var dates = rows.map(function (r) { return r.function_date || r.contract_date }).filter(Boolean).sort()
             var dateStart = dates[0], dateEnd = dates[dates.length - 1]
             var isTentative = rows.some(function (r) { return r.is_tentative })
@@ -826,7 +813,12 @@ function ContractList({ profile, deepLinkContractId }) {
                 <span className="hidden sm:block text-right">
                     {liveSettled ? (
                       <span className="inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
-                    ) : isAdmin && c.balance_amount != null ? (
+                    ) : lbDue ? (
+                      <span className={'text-[13px] font-bold tabular-nums ' + (lbDue.label === 'due' ? 'text-red-600' : 'text-emerald-600')}>
+                        {formatPaise(lbDue.amountPaise)}
+                        <span className="ml-1 text-[11px] font-semibold opacity-80">{lbDue.label}</span>
+                      </span>
+                    ) : !lb && isAdmin && c.balance_amount != null ? (
                       c.balance_amount === 0 ? (
                         <span className="inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
                       ) : (
@@ -840,7 +832,11 @@ function ContractList({ profile, deepLinkContractId }) {
                   <div className="mt-2 sm:mt-0 flex sm:justify-end items-center gap-3">
                     {liveSettled ? (
                       <span className="sm:hidden inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
-                    ) : isAdmin && c.balance_amount != null ? (
+                    ) : lbDue ? (
+                      <span className={'sm:hidden text-[12.5px] font-bold tabular-nums ' + (lbDue.label === 'due' ? 'text-red-600' : 'text-emerald-600')}>
+                        {formatPaise(lbDue.amountPaise)} {lbDue.label}
+                      </span>
+                    ) : !lb && isAdmin && c.balance_amount != null ? (
                       c.balance_amount === 0 ? (
                         <span className="sm:hidden inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
                       ) : (
@@ -1734,57 +1730,21 @@ function ContractList({ profile, deepLinkContractId }) {
             {/* Showing up here at all means this Decor/Entertainment contract
                 isn't currently folded under any Venue contract as an add-on
                 (one that is never gets its own card in the list -- see the
-                grouping pass above) -- either nothing matched, or a manual
-                link points at a Venue contract that isn't in view right now
-                (e.g. aged past the list's date floor). */}
-            {canLinkAddon && (selected.department === 'Decor' || selected.department === 'Entertainment') && (
+                grouping pass above) -- a manual link points at a Venue
+                contract that isn't in view right now (e.g. aged past the
+                list's date floor). Linking itself happens from the list's
+                own checkbox "Merge selected" now (submitMergeSelected) --
+                this is Unlink only. */}
+            {canLinkAddon && (selected.department === 'Decor' || selected.department === 'Entertainment') && selected.manual_addon_contract_no && (
               <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 space-y-2">
-                {selected.manual_addon_contract_no ? (
-                  <>
-                    <p className="text-xs text-indigo-700">
-                      Manually linked to {selected.manual_addon_department || 'Venue'} contract #{selected.manual_addon_contract_no} — not showing here because that contract isn't in the current list (check its own date range/filters).
-                    </p>
-                    <button type="button" disabled={unlinkingAddon}
-                      onClick={function () { unlinkAddon(selected.id) }}
-                      className="w-full py-2 text-sm font-semibold text-indigo-700 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
-                      {unlinkingAddon ? 'Unlinking…' : 'Unlink'}
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wider">Link to a Venue contract</h4>
-                    <p className="text-xs text-indigo-600">For when this is really the same guest's Venue booking, just not auto-matched (a different name spelling, no overlapping date, etc.) — search for it and link, no history moves, and the two Balance boxes fold into one.</p>
-                    <input type="text" value={linkSearch}
-                      onChange={function (e) { searchLinkTargets(e.target.value) }}
-                      placeholder="Search guest name..."
-                      className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                    {linkSearching && <p className="text-xs text-indigo-400">Searching...</p>}
-                    {!linkSearching && linkResults.length > 0 && (
-                      <div className="space-y-1 max-h-48 overflow-y-auto">
-                        {linkResults.map(function (r) {
-                          var picked = linkTargetId === r.id
-                          return (
-                            <div key={r.id} role="button" tabIndex={0}
-                              onClick={function () { setLinkTargetId(r.id) }}
-                              onKeyDown={function (e) { if (e.key === 'Enter') setLinkTargetId(r.id) }}
-                              className={"px-3 py-2 rounded-lg border cursor-pointer text-sm " +
-                                (picked ? "border-indigo-600 bg-indigo-100" : "border-gray-200 bg-white hover:border-gray-300")}>
-                              <div className="font-medium text-gray-900">{r.event_name}{r.client_name ? ' — ' + r.client_name : ''}</div>
-                              <div className="text-xs text-gray-500">{r.venue_name || ''}{r.function_date ? ' · ' + formatDate(r.function_date) : ''}{r.contract_no ? ' · #' + r.contract_no : ''}</div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                    {!linkSearching && linkSearch.trim().length >= 2 && linkResults.length === 0 && (
-                      <p className="text-xs text-gray-400">No matching Venue contracts found.</p>
-                    )}
-                    <button type="button" onClick={submitLinkAddon} disabled={!linkTargetId || linking}
-                      className="w-full py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-                      {linking ? 'Linking...' : 'Link as add-on'}
-                    </button>
-                  </>
-                )}
+                <p className="text-xs text-indigo-700">
+                  Manually linked to {selected.manual_addon_department || 'Venue'} contract #{selected.manual_addon_contract_no} — not showing here because that contract isn't in the current list (check its own date range/filters).
+                </p>
+                <button type="button" disabled={unlinkingAddon}
+                  onClick={function () { unlinkAddon(selected.id) }}
+                  className="w-full py-2 text-sm font-semibold text-indigo-700 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+                  {unlinkingAddon ? 'Unlinking…' : 'Unlink'}
+                </button>
               </div>
             )}
 
