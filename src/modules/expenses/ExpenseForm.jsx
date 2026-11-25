@@ -388,6 +388,11 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
     return []
   })
   var [removedReceipts, setRemovedReceipts] = useState([])
+  // Real wallet exposure for the expense being edited, from wallet_transactions
+  // itself -- not the row's own payment_cash_paise/amount_paise, which only
+  // says what SHOULD have been debited (see fn_expense_wallet_debited_net, 00204).
+  // Starts null (falls back to the old field-based estimate below) until this loads.
+  var [editWalletNet, setEditWalletNet] = useState(null)
 
   // Draft (new-entry only) — restore banner + debounced save + save-indicator
   var [draftRestorable, setDraftRestorable] = useState(null)
@@ -399,6 +404,14 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
   var draftKey = profile ? DRAFT_KEY_PREFIX + profile.id : null
 
   useEffect(function () { loadRefData(); ensureLookupData('vendors') }, [])
+
+  useEffect(function () {
+    if (!isEditing || !editExp) return
+    supabase.rpc('fn_expense_wallet_debited_net', { p_expense_id: editExp.id }).then(function (res) {
+      if (!res.error) setEditWalletNet(Number(res.data || 0))
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editExp && editExp.id])
 
   useEffect(function () {
     if (!isEditing || !editExp) return
@@ -2112,11 +2125,15 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
           throw new Error('Allocations failed: ' + editAllocErr.message + ' [' + editAllocDump + '] (your previous allocations were kept)')
         }
 
-        // Wallet diff — use actual wallet exposure (cash portion + tax if credit), not gross amount
+        // Wallet diff — use actual wallet exposure (cash portion + tax if credit), not gross amount.
+        // oldWalletSpend comes from the real wallet_transactions net, not the expense row's own
+        // payment_cash_paise/amount_paise field -- that field only says what SHOULD have been
+        // debited, not what actually was. If the original submit's debit silently failed, trusting
+        // the field credits back money that was never really taken (see 00204, 00203 #3597/3599/3600).
         var newWalletSpend = _editSplit.walletSpendPaise
-        var oldWalletSpend = (editExp.payment_credit_paise || 0) > 0
-          ? (editExp.payment_cash_paise || 0)
-          : (editExp.amount_paise || 0)
+        var { data: oldWalletSpendData, error: oldWalletSpendErr } = await supabase.rpc('fn_expense_wallet_debited_net', { p_expense_id: editExp.id })
+        if (oldWalletSpendErr) { console.error('WALLET_NET_LOOKUP_FAIL', oldWalletSpendErr); throw new Error('Could not verify wallet balance for this expense: ' + oldWalletSpendErr.message) }
+        var oldWalletSpend = Number(oldWalletSpendData || 0)
         var walletDiff = newWalletSpend - oldWalletSpend
         var walletDiffFailed = false
         // A flagged expense was already refunded in full on Send back, and
@@ -3926,10 +3943,12 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         }
         var oldSpend = 0
         if (editExp) {
-          // v87+: amount_paise is gross → wallet debit = payment_cash_paise (tax already included)
-          oldSpend = (editExp.payment_credit_paise || 0) > 0
-            ? (editExp.payment_cash_paise || 0)
-            : (editExp.amount_paise || 0)
+          oldSpend = editWalletNet != null
+            ? editWalletNet
+            // Field-based estimate, used only until editWalletNet loads.
+            : (editExp.payment_credit_paise || 0) > 0
+              ? (editExp.payment_cash_paise || 0)
+              : (editExp.amount_paise || 0)
         }
         var effAvail = walletBalance + oldSpend
         if (totalWalletSpend <= effAvail) return null
