@@ -1346,12 +1346,14 @@ function ContractList({ profile, deepLinkContractId }) {
                 {selected.status && <Badge color="gray">{selected.status}</Badge>}
               </div>
               {isAdmin && liveBalance && (
+                // Same small, discrete grey dot as the pkgX2 "show true
+                // package amount" toggle elsewhere in this modal -- Print
+                // doesn't need its own labeled button competing with the
+                // badges for attention.
                 <button type="button" disabled={printing}
                   onClick={printStatement}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 disabled:opacity-50 disabled:cursor-wait transition-colors">
-                  <Icon name="download" size={13} />
-                  {printing ? 'Preparing…' : 'Print statement'}
-                </button>
+                  title={printing ? 'Preparing statement…' : 'Print statement'}
+                  className={'w-2 h-2 rounded-full transition-colors disabled:cursor-wait ' + (printing ? 'bg-amber-400' : 'bg-slate-200 opacity-25 hover:opacity-50')} />
               )}
             </div>
 
