@@ -15,6 +15,7 @@ const DEPARTMENTS = [
     h: "fisc_", d: "fiscd_",
     entryNo: "fisc_entryno",
     entryBy: "fisc_entryby",
+    leadDate: "fisc_entrydate",
     contactNo: "fisc_client_mobile",
     functionDate: "fiscd_function_date",
     funcCode: "fiscd_function_type",
@@ -40,6 +41,7 @@ const DEPARTMENTS = [
     h: "chc_", d: "chcd_",
     entryNo: "chc_entry_no",
     entryBy: "chc_cater_entryby",
+    leadDate: "chc_cater_entry_date",
     contactNo: "chc_contact_no",
     functionDate: "chcd_date",
     funcCode: "chcd_function",
@@ -55,6 +57,7 @@ const DEPARTMENTS = [
     h: "dhc_", d: "dhcd_",
     entryNo: "dhc_entry_no",
     entryBy: "dhc_decor_entryby",
+    leadDate: "dhc_decor_entry_date",
     contactNo: "dhc_contact_no",
     functionDate: "dhcd_date",
     funcCode: "dhcd_function",
@@ -70,6 +73,7 @@ const DEPARTMENTS = [
     h: "ehc_", d: "ehcd_",
     entryNo: "ehc_entry_no",
     entryBy: "ehc_entertain_entryby",
+    leadDate: "ehc_entertain_entry_date",
     contactNo: "ehc_contact_no",
     functionDate: "ehcd_date",
     funcCode: "ehcd_function",
@@ -139,6 +143,17 @@ function normalizeVenue(venueName: string, department: string): string {
 function safeInt(val: any): number {
   const n = Number(val)
   return isNaN(n) ? 0 : Math.round(n)
+}
+
+// LMS dates come as "2026-11-14" (Venue) or "16-Oct-2026" (Catering,
+// Entertainment). Returns YYYY-MM-DD or null.
+const MONTHS: Record<string, string> = { jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06", jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12" }
+function lmsDate(val: any): string | null {
+  const v = String(val == null ? "" : val).trim()
+  if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10)
+  const m = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/.exec(v)
+  if (m && MONTHS[m[2].toLowerCase()]) return m[3] + "-" + MONTHS[m[2].toLowerCase()] + "-" + m[1].padStart(2, "0")
+  return null
 }
 
 function safePaise(val: any): number {
@@ -236,6 +251,10 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
     lms_event_id: dep.name + "_" + entryNo + "_" + detailId,
     contract_no: entryNo || null,
     contract_date: e[h + "contract_date"] || null,
+    // when the LEAD behind this contract came in (Analytics: lead -> conversion
+    // for a period). LMS fills it for Venue/Catering/Entertainment; Decor's
+    // dhc_decor_entry_date is always empty (checked Nov 2026, 0/702).
+    lead_entry_date: lmsDate(e[dep.leadDate]),
     department: dep.name,
     contract_type: e[dep.d + "lead_type"] || null,
     venue_name: normalizeVenue(e.venue1 || "", dep.name),
@@ -279,7 +298,10 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
     ppt_link: e.pptLink || null,
     pdf_link: e.pdfLink || null,
     secondary_contact: e[h + "secondary_mobileno"] || null,
-    enquiry_mode: e[h + "enq_mode"] || null,
+    // Venue calls it fisc_enq_mode; Catering / Decor / Entertainment call it
+    // <h>enquiry_mode (checked Nov 2026) -- reading only enq_mode left every
+    // non-Venue contract's source blank
+    enquiry_mode: e[h + "enq_mode"] || e[h + "enquiry_mode"] || null,
     priority: e[h + "priority"] || null,
     address: e[h + "address"] || null,
     function_date: e[dep.functionDate] || null,
