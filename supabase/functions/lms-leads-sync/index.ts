@@ -42,6 +42,7 @@ var RETRIES = 3
 // Each run works for this long, saves where it got to (lms_leads_sync_state
 // .cursor) and the next run carries on from there.
 var RUN_BUDGET_MS = 100000
+var QUICK_PAGES = 1   // pages per department on a quick (button) sync
 
 var FUNC_NAMES: Record<string, string> = {
   "1": "RING CEREMONY", "2": "BIRTHDAY", "3": "WEDDING", "4": "RECEPTION",
@@ -298,6 +299,11 @@ serve(async function (req) {
     // optional: { departments: ['Venue', ...] } or { department: 'Venue' }
     var wanted: string[] = Array.isArray(body.departments) ? body.departments.map(str) : (str(body.department) ? [str(body.department)] : [])
     var depts = wanted.length ? DEPARTMENTS.filter(function (d) { return wanted.indexOf(d.name) !== -1 }) : DEPARTMENTS
+    // { quick: true } -- the Sync button. LMS's first pages hold the newest /
+    // most recently touched leads, so read just those, leave the full-pass
+    // cursor alone and mark nothing closed (that needs a whole pass, which
+    // the 15-minute cron does). One LMS page can take 5-15s.
+    var quick = !!body.quick
 
     var lmsUserId = Deno.env.get("LMS_USER_ID") || "1"
     var profRows = await admin.from("profiles").select("lms_user_id, name").not("lms_user_id", "is", null)
@@ -306,7 +312,11 @@ serve(async function (req) {
     // LMS's own user list (one call, ~80 users, no paging) -> lms_users, so
     // Analytics can name a creator nobody has mapped to a profile yet, and
     // fn_map_profiles_to_lms can map profiles by phone. Best effort.
-    try {
+    // A quick sync reads the saved list instead of waiting on LMS.
+    if (quick) {
+      var lu = await admin.from("lms_users").select("id, full_name")
+      ;(lu.data || []).forEach(function (u: any) { if (u.full_name) names[String(u.id)] = u.full_name })
+    } else try {
       var ures = await fetch("https://gyv.inqcrm.in/api/v1/createcommon_api/get_user_list", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ search_byuserid: "" }),
       })
@@ -359,7 +369,7 @@ serve(async function (req) {
         var cycleStartedAt = cursor === 1 || !(st.data && st.data.cycle_started_at) ? new Date().toISOString() : st.data.cycle_started_at
         var raw: any[] = []
         var fetchErr: string | null = null
-        var res = await pullPages(dep, lmsUserId, cursor, deadline)
+        var res = await pullPages(dep, lmsUserId, quick ? 1 : cursor, deadline, quick ? QUICK_PAGES : undefined)
         raw = raw.concat(res.rows)
         fetchErr = fetchErr || res.error
         var leads = buildLeads(dep, raw, names)
@@ -380,6 +390,11 @@ serve(async function (req) {
         for (var i = 0; i < leads.length; i += 500) {
           var up = await admin.from("lms_leads").upsert(leads.slice(i, i + 500), { onConflict: "lead_key" })
           if (up.error) throw new Error("upsert: " + up.error.message)
+        }
+        if (quick) {
+          // stamp the time only -- the full pass's cursor stays where it is
+          if (!res.error) await admin.from("lms_leads_sync_state").upsert({ department: dep.name, synced_at: new Date().toISOString(), error: null })
+          return { department: dep.name, leads: leads.length, quick: true, done: true, error: res.error }
         }
         var nowIso = new Date().toISOString()
         var state: any = { department: dep.name, cursor: res.reachedEnd ? 1 : res.nextPage, synced_at: nowIso, fetched: leads.length, error: fetchErr, cycle_started_at: cycleStartedAt }

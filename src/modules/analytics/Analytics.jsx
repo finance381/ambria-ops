@@ -1054,29 +1054,39 @@ function LeadLevel() {
     return function () { cancelled = true }
   }, [fSel.from, fSel.to, fSel.basis, reload])
 
-  // Each call works ~100s and saves its place; keep calling (only for the
-  // departments not finished yet) until every one has read LMS's whole list.
+  // The button does a quick sync: just the first LMS pages of each
+  // department (the newest / most recently touched leads). Reading the whole
+  // list takes many slow LMS calls -- the 15-minute auto sync does that.
+  // A call that never answers is given up on; the button always comes back.
   async function syncNow() {
     setSyncing(true)
-    var left = null, pending = null
-    var MAX_RUNS = 30
-    for (var run = 1; run <= MAX_RUNS; run++) {
-      setSyncMsg('Syncing leads from LMS… run ' + run + (pending ? ' · still reading: ' + pending : ''))
-      // only the departments still unfinished; first run: the filtered
-      // department if one is picked, else all four
-      var body = left ? { departments: left.map(function (s) { return s.department }) } : (f.dept ? { departments: [f.dept] } : {})
-      var res = await supabase.functions.invoke('lms-leads-sync', { body: body })
-      if (res.error) { setSyncMsg('Sync failed: ' + await edgeFnErrorMessage(res.error)); break }
+    var started = Date.now()
+    var secs = function () { return Math.round((Date.now() - started) / 1000) + 's' }
+    setSyncMsg('Syncing the latest leads from LMS…')
+    var tick = setInterval(function () { setSyncMsg('Syncing the latest leads from LMS… ' + secs()) }, 1000)
+    try {
+      var body = { quick: true }
+      if (f.dept) body.departments = [f.dept]
+      var res = await Promise.race([
+        supabase.functions.invoke('lms-leads-sync', { body: body }),
+        new Promise(function (ok) { setTimeout(function () { ok({ timedOut: true }) }, 90000) }),
+      ])
+      clearInterval(tick)
+      if (res.timedOut) { setSyncMsg('LMS is slow to answer right now — the auto sync (every 15 min) will bring them in.'); return }
+      if (res.error) { setSyncMsg('Sync failed: ' + await edgeFnErrorMessage(res.error)); return }
       var summary = (res.data && res.data.summary) || []
       setReload(function (n) { return n + 1 })
       var bad = summary.filter(function (s) { return s.error })
-      if (bad.length) { setSyncMsg('Sync stopped: ' + bad.map(function (s) { return s.department + ' — ' + s.error }).join('; ') + ' · press Sync now to carry on.'); break }
-      left = summary.filter(function (s) { return !s.done })
-      if (!left.length) { setSyncMsg('All leads synced.'); break }
-      pending = left.map(function (s) { return s.department + ' (page ' + s.next_page + ')' }).join(', ')
-      if (run === MAX_RUNS) setSyncMsg('Synced part of the list — still reading: ' + pending + '. The hourly sync will carry on.')
+      var got = summary.reduce(function (t, s) { return t + (s.leads || 0) }, 0)
+      setSyncMsg(bad.length
+        ? 'Synced ' + got + ' leads; LMS did not answer for ' + bad.map(function (s) { return s.department }).join(', ') + ' — the auto sync will retry.'
+        : 'Latest ' + got + ' leads synced in ' + secs() + '. The full list refreshes automatically every 15 min.')
+    } catch (e) {
+      setSyncMsg('Sync failed: ' + ((e && e.message) || String(e)))
+    } finally {
+      clearInterval(tick)
+      setSyncing(false)
     }
-    setSyncing(false)
   }
 
   // LMS's lead list drops a lead once it converts, so each converted contract
@@ -1564,6 +1574,12 @@ function ContractLevel() {
   // and threw a scrolled-down user back to the top
   var [ready, setReady] = useState(false)
   var [error, setError] = useState('')
+  // contracts come from sync-events (every 15 min by cron); the button runs
+  // it now -- the same call as Events' "Sync LMS"
+  var [syncing, setSyncing] = useState(false)
+  var [syncMsg, setSyncMsg] = useState('')
+  var [lastSync, setLastSync] = useState(null)
+  var [reload, setReload] = useState(0)
 
   // the dates the charts' data was loaded for. While a new date range
   // loads, the old data is still on screen -- count it with its OWN dates,
@@ -1588,7 +1604,41 @@ function ContractLevel() {
       if (!cancelled) { setError(e.message || 'Could not load contracts'); setLoading(false) }
     })
     return function () { cancelled = true }
-  }, [fSel.from, fSel.to, fSel.basis])
+  }, [fSel.from, fSel.to, fSel.basis, reload])
+
+  useEffect(function () {
+    supabase.from('events').select('synced_at').not('synced_at', 'is', null).order('synced_at', { ascending: false }).limit(1)
+      .then(function (r) { setLastSync((r.data && r.data[0] && r.data[0].synced_at) || null) })
+  }, [reload])
+
+  async function syncNow() {
+    setSyncing(true)
+    var started = Date.now()
+    var secs = function () { return Math.round((Date.now() - started) / 1000) + 's' }
+    setSyncMsg('Syncing contracts from LMS…')
+    var tick = setInterval(function () { setSyncMsg('Syncing contracts from LMS… ' + secs()) }, 1000)
+    try {
+      var sess = await supabase.auth.getSession()
+      var token = sess.data && sess.data.session && sess.data.session.access_token
+      if (!token) { setSyncMsg('Not signed in'); return }
+      var ctl = new AbortController()
+      var timer = setTimeout(function () { ctl.abort() }, 150000)
+      var res = await fetch(import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sync-events', {
+        method: 'POST', signal: ctl.signal,
+        headers: { Authorization: 'Bearer ' + token, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      }).finally(function () { clearTimeout(timer) })
+      var body = await res.json().catch(function () { return {} })
+      clearInterval(tick)
+      if (!res.ok) { setSyncMsg('Sync failed: ' + (body.error || res.status)); return }
+      setReload(function (n) { return n + 1 })
+      setSyncMsg('Synced ' + (body.synced || 0) + ' contract rows in ' + secs() + (body.errors && body.errors.length ? ' (' + body.errors.length + ' department errors)' : '') + '.')
+    } catch (e) {
+      setSyncMsg(e && e.name === 'AbortError' ? 'LMS is slow to answer right now — the auto sync (every 15 min) will bring them in.' : 'Sync failed: ' + ((e && e.message) || String(e)))
+    } finally {
+      clearInterval(tick)
+      setSyncing(false)
+    }
+  }
 
   var opts = useMemo(function () {
     return {
@@ -1663,7 +1713,20 @@ function ContractLevel() {
           { key: 'source', label: 'Source', options: opts.source, allLabel: 'All sources' },
           { key: 'priority', label: 'Priority', options: opts.priority },
           { key: 'leadType', label: 'Contract type', options: [{ value: 'I', label: 'In-house' }, { value: 'O', label: 'Outdoor' }] },
-        ]} />
+        ]}
+        right={(
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-white border border-slate-200 text-[12.5px] font-semibold text-slate-600">
+              <span className={'w-1.5 h-1.5 rounded-full ' + (lastSync ? 'bg-emerald-500' : 'bg-slate-300')} />
+              {lastSync ? 'Synced ' + formatDateTime(lastSync) : 'Not synced yet'}
+            </span>
+            <button type="button" onClick={syncNow} disabled={syncing}
+              className="h-10 px-4 inline-flex items-center gap-1.5 rounded-xl text-[13px] font-bold text-white bg-[#0f1f45] hover:bg-[#1a2f60] disabled:opacity-60 shadow-sm">
+              <Icon name="refresh" size={13} className={syncing ? 'animate-spin' : ''} />{syncing ? 'Syncing…' : 'Sync now'}
+            </button>
+          </div>
+        )}
+        footer={syncMsg ? <p className="text-[12px] text-slate-600">{syncMsg}</p> : null} />
 
       {error ? <p className="text-[13px] text-red-600">{error}</p> : loading && !ready ? (
         <p className="py-16 text-center text-[13px] text-slate-400">Loading contracts…</p>
