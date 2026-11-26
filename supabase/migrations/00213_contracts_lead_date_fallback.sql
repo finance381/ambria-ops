@@ -3,7 +3,7 @@
 -- field is always empty), and existing rows only have it once sync-events
 -- with lead_entry_date has run. So the lead date falls back to: a synced
 -- lead with the same phone + department, else the contract date.
--- Same signature and columns as 00205 -- create or replace is enough.
+-- Same signature and columns as 00212 -- create or replace is enough.
 
 create or replace function public.fn_analytics_contracts(p_from date, p_to date, p_basis text default 'contract')
 returns table (

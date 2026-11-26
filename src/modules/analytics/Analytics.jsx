@@ -1783,7 +1783,7 @@ function DataIssues({ list }) {
 
 // Salesperson revenue: Venue contracts by venue revenue (the rental, or on a
 // "Venue + Menu" package the menu value less the kitchen's share -- see
-// migration 00211), summed over the contract's functions; every other
+// migration 00216), summed over the contract's functions; every other
 // department by its package value. A department switch narrows it to a team.
 function salesRevenue(r) {
   if (r.department !== 'Venue') return Number(r.package_paise || 0)
