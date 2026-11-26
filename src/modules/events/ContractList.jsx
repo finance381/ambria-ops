@@ -1093,14 +1093,16 @@ function ContractList({ profile, deepLinkContractId }) {
               // LMS's own per-department split of this Venue contract's total
               // (Menu rate/Venue rental/Venue+Menu/Decor amount/Entertainment
               // amount) -- the same fields the on-screen detail list already
-              // shows further down, none of them subject to the pkgX2 ÷2
-              // habit (that's only ever total_amount_paise), so shown as-is.
+              // shows further down. These turn out to carry the same ÷2 LMS
+              // entry habit as total_amount_paise (not just that one field as
+              // previously assumed here) -- the print always reveals true
+              // scale (see the comment above this block), so doubled here.
               var packageBreakdown = [
-                ['Menu rate', selected.menu_rate_paise > 0 ? selected.menu_rate_paise : null],
-                ['Venue rental', selected.venue_rental_paise != null ? selected.venue_rental_paise : null],
-                ['Venue + Menu', selected.venue_menu_paise != null ? selected.venue_menu_paise : null],
-                ['Decor amount', selected.decor_amount_paise > 0 ? selected.decor_amount_paise : null],
-                ['Entertainment amount', selected.entertainment_amount_paise > 0 ? selected.entertainment_amount_paise : null],
+                ['Menu rate', selected.menu_rate_paise > 0 ? selected.menu_rate_paise * 2 : null],
+                ['Venue rental', selected.venue_rental_paise != null ? selected.venue_rental_paise * 2 : null],
+                ['Venue + Menu', selected.venue_menu_paise != null ? selected.venue_menu_paise * 2 : null],
+                ['Decor amount', selected.decor_amount_paise > 0 ? selected.decor_amount_paise * 2 : null],
+                ['Entertainment amount', selected.entertainment_amount_paise > 0 ? selected.entertainment_amount_paise * 2 : null],
               ].filter(function (r) { return r[1] != null }).map(function (r) { return { label: r[0], amountPaise: r[1] } })
 
               // Multi-function contract (Lunch+Dinner+Sagan etc. under one
