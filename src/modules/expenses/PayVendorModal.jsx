@@ -25,6 +25,8 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
   var [payMode, setPayMode] = useState('')
   var [payType, setPayType] = useState('')
   var [payAmount, setPayAmount] = useState('')
+  var [modeOwedPaise, setModeOwedPaise] = useState(0)
+  var [amountAutoFilled, setAmountAutoFilled] = useState(false)
   var [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0])
   var [payDescription, setPayDescription] = useState('Payment to ' + (vendor.vendor_name || ''))
   var [useDeduction, setUseDeduction] = useState(false)
@@ -53,6 +55,16 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
       return prev.indexOf(id) === -1 ? prev.concat([id]) : prev.filter(function (x) { return x !== id })
     })
   }
+
+  // Keeps Amount = owed - deduction while Amount is still the untouched
+  // auto-fill, so the two fields stay in sync with what's actually owed
+  // instead of silently stacking. A manual edit to Amount (below) stops this.
+  useEffect(function () {
+    if (!amountAutoFilled) return
+    var dedPaise = useDeduction ? Math.round(Number(deductionAmount || 0) * 100) : 0
+    var remaining = Math.max(0, modeOwedPaise - (isFinite(dedPaise) ? dedPaise : 0))
+    setPayAmount(remaining > 0 ? String(remaining / 100) : '')
+  }, [deductionAmount, useDeduction, modeOwedPaise, amountAutoFilled])
 
   useEffect(function () {
     var cancelled = false
@@ -95,8 +107,20 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
   //
   // Pressing the method that is already selected leaves the field alone, so a
   // typed amount is not thrown away by a second press on the same button.
+  //
+  // amountAutoFilled tracks that this figure is still the untouched "full
+  // balance owed" default, not something the admin chose — so adding a
+  // deduction can shrink it back down to what's actually left to pay in cash,
+  // instead of sitting there as the full balance while the deduction is
+  // added ON TOP of it (two real payments did exactly that: owed 10,007,
+  // admin added a ₹7 "round off" deduction without noticing Amount was still
+  // the full 10,007, and the wallet took the whole 10,007 instead of 10,000).
   function chooseMode(mode, bal) {
-    if (mode !== payMode) setPayAmount(bal > 0 ? String(bal / 100) : '')
+    if (mode !== payMode) {
+      setPayAmount(bal > 0 ? String(bal / 100) : '')
+      setModeOwedPaise(bal > 0 ? bal : 0)
+      setAmountAutoFilled(bal > 0)
+    }
     setPayMode(mode)
   }
 
@@ -306,7 +330,7 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
         <div>
           <label className={LABEL}>Amount (pts) <span className="text-rose-500">*</span></label>
           <input type="number" inputMode="decimal" value={payAmount}
-            onChange={function (ev) { setPayAmount(ev.target.value) }}
+            onChange={function (ev) { setPayAmount(ev.target.value); setAmountAutoFilled(false) }}
             placeholder="0" min="0" step="any"
             className={FIELD + ' tabular-nums'}
             style={{ fontSize: '16px' }} />
@@ -369,6 +393,15 @@ function PayVendorModal({ vendor, profile, onClose, onSuccess }) {
                   placeholder="0" min="0" step="any"
                   className={FIELD + ' tabular-nums'}
                   style={{ fontSize: '16px' }} />
+                {/* Amount and Deduction are two separate fields the admin sets
+                    independently — this is the one place that adds them back
+                    up, so a stale Amount (left over from the method auto-fill)
+                    is visible before submit instead of only in the ledger after. */}
+                <p className="mt-1.5 text-[11.5px] text-slate-500">
+                  Clearing <span data-notranslate className="font-bold text-slate-700">{formatPoints(Math.round(Number(payAmount || 0) * 100) + Math.round(Number(deductionAmount || 0) * 100))}</span> from
+                  this vendor — <span data-notranslate>{formatPoints(Math.round(Number(payAmount || 0) * 100))}</span> from your wallet
+                  + <span data-notranslate>{formatPoints(Math.round(Number(deductionAmount || 0) * 100))}</span> deduction.
+                </p>
               </div>
               <div>
                 <label className={LABEL}>Reason <span className="text-rose-500">*</span></label>

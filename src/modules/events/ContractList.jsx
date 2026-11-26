@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { Badge } from '../../components/ui/Badge'
 import { formatDate, formatPaise, titleCase } from '../../lib/format'
 import Modal from '../../components/ui/Modal'
+import { appConfirm } from '../../components/ui/AppDialog'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import EnteredMark from '../../components/ui/EnteredMark'
@@ -10,6 +11,7 @@ import Icon from '../../components/ui/Icon'
 import EventLedger from '../expenses/EventLedger'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { fetchContractBalanceSummary, fetchConsolidatedContractBalance, fetchContractBalancesBatch } from '../../lib/contractBalance'
+import { generateContractStatementPdf } from '../../lib/pdfContractStatement'
 
 // The list's columns from sm up: event, contract, date, venue, balance, Tally.
 var COLS = 'sm:grid-cols-[minmax(0,2.2fr)_140px_110px_minmax(0,1.5fr)_150px_120px]'
@@ -22,13 +24,35 @@ var DEPT_BADGE = {
   Entertainment: 'bg-pink-100 text-pink-700',
 }
 
+// A live, reconciled balance (fn_event_group_balance-backed, same shape
+// fetchContractBalanceSummary/fetchContractBalancesBatch return) turned into
+// one true-scale settled/due/adv figure -- shared by the list's own Balance
+// column and each Add-on card's mini "Balance" line, both of which used to
+// trust the stale LMS-synced balance_amount field instead (confirmed live:
+// it can read 0/"settled" while real money is still pending). Cash is
+// revealed ×10 before summing with bank/tax (already true scale) -- the same
+// no-mixed-scale-sum rule the Balance box's own Surplus line follows.
+function reconciledDueDisplay(lb) {
+  if (!lb) return null
+  var pendingCash = Number(lb.pending_cash_paise || 0)
+  var pendingBank = Number(lb.pending_bank_paise || 0)
+  var pendingTax = Number(lb.pending_tax_paise || 0)
+  if (pendingCash === 0 && (pendingBank + pendingTax) === 0) return { settled: true }
+  var duePaise = Math.max(0, pendingCash) * 10 + pendingBank + pendingTax
+  if (duePaise > 0) return { settled: false, amountPaise: duePaise, label: 'due' }
+  var cashOver = Math.max(0, -pendingCash)
+  if (pendingBank === 0 && pendingTax === 0 && cashOver > 0) return { settled: false, amountPaise: cashOver * 10, label: 'adv' }
+  return { settled: true }
+}
+
 var CONTRACT_SELECT = 'id, lms_event_id, contract_no, contract_date, function_date, department, contract_type, ' +
   'venue_name, location, contact_person, contact_number, secondary_contact, event_name, client_name, session, ' +
   'catering, total_plates, complementary_plates, extra_plates_charge, balance_received, balance_bank, ' +
   'balance_amount, status, synced_at, created_user_name, ppt_link, pdf_link, enquiry_mode, priority, address, ' +
   'is_tentative, pax, function_type, merged_into_id, tally_entered_by, tally_entered_at, ' +
   'menu_rate_paise, venue_rental_paise, decor_amount_paise, entertainment_amount_paise, tentative_created_at, ' +
-  'venue_menu_paise, addons_json, total_amount_paise, net_amount_paise, tax_amount_paise'
+  'venue_menu_paise, addons_json, total_amount_paise, net_amount_paise, tax_amount_paise, ' +
+  'manual_addon_contract_no, manual_addon_department'
 
 // LMS's own indoor/outdoor flag — confirmed directly against the live API:
 // every department returns a `lead_type` field, "I" (one of Ambria's own
@@ -67,6 +91,12 @@ function ContractList({ profile, deepLinkContractId }) {
   // group (see the consolidation pass above), or null for a standalone
   // contract / a non-Venue selection. { Decor: [group,...], Entertainment: [group,...] }
   var [selectedAddons, setSelectedAddons] = useState(null)
+  // Every function row in selected's own group (see groupsMap above) -- just
+  // selected itself for a single-function contract, but the full sibling set
+  // for a multi-function one (e.g. Lunch+Dinner+Sagan under one contract_no),
+  // which neither selected nor selectedAddons carries on its own. Only ever
+  // used by the print export's new Functions section.
+  var [selectedGroupRows, setSelectedGroupRows] = useState(null)
   // LMS's own Decor/Entertainment "Total Deal Amount" (total_amount_paise)
   // is entered at half the real value as a matter of habit (confirmed
   // live: contract #00374's Deal Amount 95000 vs. its own true 190000) --
@@ -76,8 +106,26 @@ function ContractList({ profile, deepLinkContractId }) {
   // than an assumed-universal fix.
   var [pkgX2, setPkgX2] = useState(false)
   var [showFinancials, setShowFinancials] = useState(false)
+  var [printing, setPrinting] = useState(false)
+  // Manual add-on linking (fn_link_addon_contract/fn_unlink_addon_contract) --
+  // for when the automatic guest+venue+date match (see the grouping pass
+  // above) misses and a Decor/Entertainment contract needs pointing at its
+  // Venue contract by hand. Linking itself now only ever happens through the
+  // list's own checkbox "Merge selected" (submitMergeSelected below) -- the
+  // single-contract search-and-link UI this used to back is gone, Unlink is
+  // all that's left here.
+  var [unlinkingAddon, setUnlinkingAddon] = useState(false)
+  // Multi-select merge from the list itself -- same fn_link_addon_contract
+  // under the hood as the single-contract "Link to a Venue contract" search,
+  // just picking both ends of the link from checkboxes instead of a search
+  // box. Holds each selected group's own representative id (g.rows[0].id).
+  var [mergeSelectIds, setMergeSelectIds] = useState([])
+  var [merging, setMerging] = useState(false)
   var [liveBalance, setLiveBalance] = useState(null)
   var [liveBalanceLoading, setLiveBalanceLoading] = useState(false)
+  // Each Add-on card's own live balance, keyed by 'department|contract_no' --
+  // see the effect below.
+  var [addonLiveBalances, setAddonLiveBalances] = useState({})
   // Live reconciled balance for whatever page of rows is currently shown in
   // the list (one batched RPC call, not one per row) -- keyed by the row's
   // own primary contract id. Only ever used to upgrade a row to "Settled"
@@ -87,6 +135,40 @@ function ContractList({ profile, deepLinkContractId }) {
   // fold in LMS-only payments or a Venue row's own Add-on contracts the way
   // the detail panel's Balance box does.
   var [listBalances, setListBalances] = useState({})
+  // The real Extra Plate Collect history for this contract (ExtraPlateCollect.jsx,
+  // fn_extra_plate_collect) -- distinct from extra_plates_charge (just LMS's
+  // own rate, shown in the field list below). fn_extra_plate_collect already
+  // posts every collection to event_ledger too, so this is already folded
+  // into "Advance received" above -- shown here only as a labeled breakdown
+  // of that figure, never added on top of it.
+  var [extraPlateCollected, setExtraPlateCollected] = useState(null)
+
+  useEffect(function () {
+    setExtraPlateCollected(null)
+    if (!selected) return
+    var cancelled = false
+    ;(async function () {
+      var ids = [selected.id]
+      if (selected.contract_no) {
+        var poolRes = await supabase.from('events').select('id').eq('contract_no', selected.contract_no).eq('department', selected.department)
+        if (poolRes.data && poolRes.data.length > 0) ids = poolRes.data.map(function (r) { return r.id })
+      }
+      var res = await supabase.from('extra_plate_collections').select('total_paise, discount_paise, payment_mode').in('event_id', ids).is('cancelled_at', null)
+      if (cancelled) return
+      var cash = 0, bank = 0
+      ;(res.data || []).forEach(function (r) {
+        var net = Number(r.total_paise || 0) - Number(r.discount_paise || 0)
+        // Collected cash is logged to event_ledger at the hidden ÷10 scale
+        // (see fn_extra_plate_collect's own v_ledger_amt_paise) -- matching
+        // that here so this lines up with "Advance received — cash" above,
+        // which is shown at that same hidden scale, not the true rupee one.
+        if (r.payment_mode === 'cash') cash += Math.round(net / 10)
+        else if (r.payment_mode === 'bank') bank += net
+      })
+      setExtraPlateCollected({ cash: cash, bank: bank })
+    })()
+    return function () { cancelled = true }
+  }, [selected && selected.id])
 
   // Reset the financials disclosure whenever a different contract is opened,
   // so it doesn't stay expanded (showing the previous contract's figures for
@@ -99,13 +181,28 @@ function ContractList({ profile, deepLinkContractId }) {
   useEffect(function () {
     setShowFinancials(false)
     setLiveBalance(null)
+    setAddonLiveBalances({})
     if (!selected) return
     setLiveBalanceLoading(true)
     var addonPrimaries = selectedAddons
       ? [].concat(selectedAddons.Decor || [], selectedAddons.Entertainment || []).map(function (g) { return g.rows[0] })
       : []
+    // fetchConsolidatedContractBalance already reconciles each add-on
+    // contract on its own (byContract) on the way to the combined total --
+    // keyed here by department|contract_no so each Add-on card's own mini
+    // "Balance" line can use the SAME live figure instead of the stale,
+    // LMS-synced balance_amount it used to read (see reconciledDueDisplay's
+    // own note; no second round trip needed, this was already being
+    // computed and thrown away).
     var p = addonPrimaries.length > 0
-      ? fetchConsolidatedContractBalance([selected].concat(addonPrimaries)).then(function (r) { return r && r.total })
+      ? fetchConsolidatedContractBalance([selected].concat(addonPrimaries)).then(function (r) {
+          if (r && r.byContract) {
+            var map = {}
+            r.byContract.forEach(function (bc) { map[bc.department + '|' + bc.contract_no] = bc.balance })
+            setAddonLiveBalances(map)
+          }
+          return r && r.total
+        })
       : fetchContractBalanceSummary(selected.id)
     p.then(function (b) {
       setLiveBalance(b)
@@ -134,6 +231,7 @@ function ContractList({ profile, deepLinkContractId }) {
         setPinnedContract(res.data || null)
         setSelected(res.data || null)
         setSelectedAddons(null)
+        setSelectedGroupRows(null)
         if (res.data) loadEnteredNames([res.data])
         setPinnedLoading(false)
       })
@@ -148,6 +246,10 @@ function ContractList({ profile, deepLinkContractId }) {
   var isAdmin = hasPerm(profile?.permsNew, 'events.list')
   var isSysAdmin = hasPerm(profile?.permsNew, 'admin.dashboard')
   var canMarkEntered = hasPerm(profile?.permsNew, 'finance.wallet.mark_entered')
+  // Same permission fn_merge_events already gates (Events.jsx) -- linking an
+  // add-on contract is the same class of privileged, cross-contract action,
+  // just non-destructive (see fn_link_addon_contract's own note).
+  var canLinkAddon = hasPerm(profile?.permsNew, 'events.list.merge')
   var userEventDeptNames = (profile?.event_dept_ids || []).map(function (id) {
     var dept = departments.find(function (d) { return d.id === id })
     return dept ? dept.name : null
@@ -158,13 +260,21 @@ function ContractList({ profile, deepLinkContractId }) {
   var [enteringId, setEnteringId] = useState(null)
   var [enteredFilter, setEnteredFilter] = useState('')
 
-  useEffect(function () { load() }, [])
+  // The list only ever fetches function_date >= (today - 5 days) -- a
+  // contract ages out of view on its own once its date rolls past that
+  // floor, with no sync/data problem at all (confirmed live: contract #00568,
+  // Nov 18, was visible on Nov 23 -- floor Nov 18 -- and gone on Nov 24 --
+  // floor Nov 19). Setting an earlier "From" date in Filters widens the
+  // floor to match (never narrows it -- that's dateTo's job, client-side on
+  // whatever's already loaded) so a past contract can still be found.
+  useEffect(function () { load() }, [dateFrom])
 
   async function load() {
     setLoading(true)
-    var dateFloor = new Date()
-    dateFloor.setDate(dateFloor.getDate() - 5)
-    var dateFloorStr = dateFloor.toISOString().split('T')[0]
+    var defaultFloor = new Date()
+    defaultFloor.setDate(defaultFloor.getDate() - 5)
+    var defaultFloorStr = defaultFloor.toISOString().split('T')[0]
+    var dateFloorStr = dateFrom && dateFrom < defaultFloorStr ? dateFrom : defaultFloorStr
     var [res, deptRes] = await Promise.all([
       supabase.from('events_safe')
         .select(CONTRACT_SELECT)
@@ -228,6 +338,89 @@ function ContractList({ profile, deepLinkContractId }) {
     if (res.data && profile.name) setEnteredNames(function (prev) { return Object.assign({}, prev, { [profile.id]: profile.name }) })
   }
 
+  async function unlinkAddon(addonEventId) {
+    if (unlinkingAddon) return
+    if (!(await appConfirm('Unlink this add-on contract? It goes back to showing its own separate balance.'))) return
+    setUnlinkingAddon(true)
+    var res = await supabase.rpc('fn_unlink_addon_contract', { p_addon_event_id: addonEventId })
+    setUnlinkingAddon(false)
+    if (res.error) { alert('Unlink failed: ' + res.error.message); return }
+    setSelected(null); setSelectedAddons(null); setSelectedGroupRows(null)
+    load()
+  }
+
+  function toggleMergeSelect(id) {
+    setMergeSelectIds(function (prev) {
+      return prev.indexOf(id) !== -1 ? prev.filter(function (x) { return x !== id }) : prev.concat([id])
+    })
+  }
+
+  // Picked from the list's own checkboxes. Two different merges share this
+  // button, told apart by whether a tentative placeholder is in the
+  // selection:
+  //  - a tentative (no LMS contract yet) + one real contract -> fn_merge_events
+  //    (Events.jsx's existing "Merge into a real LMS event" path, just
+  //    triggered from here too) -- moves every real operational record
+  //    (ledger, requisitions, manpower, challans...) onto the target.
+  //    Irreversible.
+  //  - Venue + one or more Decor/Entertainment contracts, none tentative ->
+  //    fn_link_addon_contract -- no history moves, reversible (Unlink).
+  // Mixing the two shapes in one selection is rejected rather than guessed at.
+  async function submitMergeSelected(selGroups) {
+    if (merging) return
+    var tentativeGroups = selGroups.filter(function (g) { return g.rows[0].is_tentative })
+    var realGroups = selGroups.filter(function (g) { return !g.rows[0].is_tentative })
+
+    if (tentativeGroups.length > 0) {
+      if (realGroups.length !== 1) {
+        alert('Select exactly one real, already-synced contract as the merge target, plus one or more tentative placeholders to merge into it.')
+        return
+      }
+      var target = realGroups[0].rows[0]
+      if (!(await appConfirm('Merge ' + tentativeGroups.length + ' tentative placeholder' + (tentativeGroups.length === 1 ? '' : 's') + ' into "' + (target.event_name || target.client_name || ('#' + target.contract_no)) + '"? This moves all of its collections/ledger history onto the target and cannot be undone.'))) return
+      setMerging(true)
+      var tErrors = []
+      for (var ti = 0; ti < tentativeGroups.length; ti++) {
+        var src = tentativeGroups[ti].rows[0]
+        var tRes = await supabase.rpc('fn_merge_events', { p_tentative_id: src.id, p_target_id: target.id })
+        if (tRes.error) tErrors.push((src.event_name || src.client_name || 'Tentative #' + src.id) + ': ' + tRes.error.message)
+      }
+      setMerging(false)
+      setMergeSelectIds([])
+      if (tErrors.length > 0) alert('Some contracts could not be merged:\n' + tErrors.join('\n'))
+      load()
+      return
+    }
+
+    var venueGroups = realGroups.filter(function (g) { return g.rows[0].department === 'Venue' })
+    var addonGroups = realGroups.filter(function (g) { return g.rows[0].department === 'Decor' || g.rows[0].department === 'Entertainment' })
+    if (venueGroups.length !== 1) {
+      alert('Select exactly one Venue contract (the one everything else merges into), plus one or more Decor/Entertainment contracts for the same guest.')
+      return
+    }
+    if (addonGroups.length === 0) {
+      alert('Select at least one Decor/Entertainment contract to merge into the Venue contract.')
+      return
+    }
+    if (addonGroups.length !== realGroups.length - 1) {
+      alert('Only Venue + Decor/Entertainment contracts can be merged here — drop any other selected contract and try again.')
+      return
+    }
+    var venue = venueGroups[0].rows[0]
+    if (!(await appConfirm('Merge ' + addonGroups.length + ' contract' + (addonGroups.length === 1 ? '' : 's') + ' into Venue contract #' + venue.contract_no + '? Their balances fold into one consolidated Balance box — no history moves, and each can be unlinked again later.'))) return
+    setMerging(true)
+    var errors = []
+    for (var i = 0; i < addonGroups.length; i++) {
+      var addon = addonGroups[i].rows[0]
+      var res = await supabase.rpc('fn_link_addon_contract', { p_addon_event_id: addon.id, p_venue_event_id: venue.id })
+      if (res.error) errors.push('#' + addon.contract_no + ': ' + res.error.message)
+    }
+    setMerging(false)
+    setMergeSelectIds([])
+    if (errors.length > 0) alert('Some contracts could not be merged:\n' + errors.join('\n'))
+    load()
+  }
+
   var visible = hasEventDeptFilter
     ? contracts.filter(function (c) { return userEventDeptNames.includes(c.department) })
     : contracts
@@ -282,6 +475,7 @@ function ContractList({ profile, deepLinkContractId }) {
   // same venue never gets folded in by mistake.
   function clientVenueKey(c) { return (c.client_name || '').trim().toLowerCase() + '|' + (c.venue_name || '').trim().toLowerCase() }
   var venueGroupsByKey = {}
+  var venueGroupsByContractKey = {}
   groups.forEach(function (g) {
     // Tentative (no contract_no yet) excluded: EventLedger's own pooling
     // for a tentative primary never looks at extraEventIds at all (there's
@@ -292,18 +486,31 @@ function ContractList({ profile, deepLinkContractId }) {
     var k = clientVenueKey(g.rows[0])
     if (!venueGroupsByKey[k]) venueGroupsByKey[k] = []
     venueGroupsByKey[k].push(g)
+    venueGroupsByContractKey[g.rows[0].department + '|' + g.rows[0].contract_no] = g
   })
   var consumedKeys = {}
   groups.forEach(function (g) {
     var dept = g.rows[0].department
     if (dept !== 'Decor' && dept !== 'Entertainment') return
-    var candidates = venueGroupsByKey[clientVenueKey(g.rows[0])]
-    if (!candidates || candidates.length === 0) return
-    var venueDates = {}
-    var matched = candidates.find(function (vg) {
-      vg.rows.forEach(function (r) { if (r.function_date) venueDates[r.function_date] = true })
-      return g.rows.some(function (r) { return !r.function_date || venueDates[r.function_date] })
-    })
+    // A manual link (see fn_link_addon_contract, for when the automatic
+    // guest+venue+date match below misses) always wins when it points at a
+    // Venue group that's actually in view -- explicit beats implicit, and it
+    // has to work even for a guest/venue name the automatic match would
+    // never have matched in the first place.
+    var manualTarget = g.rows[0].manual_addon_contract_no
+      ? venueGroupsByContractKey[(g.rows[0].manual_addon_department || 'Venue') + '|' + g.rows[0].manual_addon_contract_no]
+      : null
+    var matched = manualTarget
+    if (!matched) {
+      var candidates = venueGroupsByKey[clientVenueKey(g.rows[0])]
+      if (candidates && candidates.length > 0) {
+        var venueDates = {}
+        matched = candidates.find(function (vg) {
+          vg.rows.forEach(function (r) { if (r.function_date) venueDates[r.function_date] = true })
+          return g.rows.some(function (r) { return !r.function_date || venueDates[r.function_date] })
+        })
+      }
+    }
     if (!matched) return
     if (!matched.addons) matched.addons = { Decor: [], Entertainment: [] }
     matched.addons[dept].push(g)
@@ -457,6 +664,21 @@ function ContractList({ profile, deepLinkContractId }) {
             <button type="button" onClick={clearAll}
               className="h-6 px-2 rounded-md font-bold text-indigo-600 hover:bg-indigo-50">Reset</button>
           )}
+          {canLinkAddon && mergeSelectIds.length > 0 && (
+            <>
+              <span className="h-6 px-2 rounded-md bg-indigo-50 text-indigo-700 font-semibold inline-flex items-center">{mergeSelectIds.length} selected</span>
+              <button type="button" disabled={mergeSelectIds.length < 2 || merging}
+                onClick={function () {
+                  var selGroups = groupsToShow.filter(function (g) { return mergeSelectIds.indexOf(g.rows[0].id) !== -1 })
+                  submitMergeSelected(selGroups)
+                }}
+                className="h-6 px-2.5 rounded-md font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                {merging ? 'Merging…' : 'Merge selected'}
+              </button>
+              <button type="button" onClick={function () { setMergeSelectIds([]) }}
+                className="h-6 px-2 rounded-md font-semibold text-slate-500 hover:bg-slate-100">Clear selection</button>
+            </>
+          )}
         </div>
       </div>
         )
@@ -491,14 +713,10 @@ function ContractList({ profile, deepLinkContractId }) {
             var rows = g.rows
             var c = rows[0]
             var multi = rows.length > 1
-            // Only ever used to confirm a genuine settlement -- a live
-            // balance that ISN'T settled doesn't override the existing
-            // due/adv figure below (different scales/sources, see
-            // fetchContractBalancesBatch's own notes; not worth a cross-
-            // scale combined number for a case nobody asked to fix).
             var lb = listBalances[c.id]
-            var liveSettled = isAdmin && lb && Number(lb.pending_cash_paise || 0) === 0 &&
-              (Number(lb.pending_bank_paise || 0) + Number(lb.pending_tax_paise || 0)) === 0
+            var lbDisplay = isAdmin ? reconciledDueDisplay(lb) : null
+            var liveSettled = !!(lbDisplay && lbDisplay.settled)
+            var lbDue = (lbDisplay && !lbDisplay.settled) ? lbDisplay : null
             var dates = rows.map(function (r) { return r.function_date || r.contract_date }).filter(Boolean).sort()
             var dateStart = dates[0], dateEnd = dates[dates.length - 1]
             var isTentative = rows.some(function (r) { return r.is_tentative })
@@ -515,11 +733,18 @@ function ContractList({ profile, deepLinkContractId }) {
             return (
               <div key={g.key}
                 role="button" tabIndex={0}
-                onClick={function () { setSelected(c); setSelectedAddons(g.addons || null) }}
-                onKeyDown={function (e) { if (e.key === 'Enter') { setSelected(c); setSelectedAddons(g.addons || null) } }}
+                onClick={function () { setSelected(c); setSelectedAddons(g.addons || null); setSelectedGroupRows(g.rows) }}
+                onKeyDown={function (e) { if (e.key === 'Enter') { setSelected(c); setSelectedAddons(g.addons || null); setSelectedGroupRows(g.rows) } }}
                 className={'group bg-white border border-slate-200 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] px-4 py-3.5 transition-colors sm:grid ' + COLS + ' sm:gap-3 sm:items-center cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/40'}>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
+                    {canLinkAddon && (c.contract_no || c.is_tentative) && (
+                      <input type="checkbox" checked={mergeSelectIds.indexOf(c.id) !== -1}
+                        title="Select to merge with another contract"
+                        onClick={function (e) { e.stopPropagation() }}
+                        onChange={function () { toggleMergeSelect(c.id) }}
+                        className="shrink-0 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                    )}
                     <h3 className={'font-display text-[14px] font-bold tracking-[-0.01em] text-slate-900 truncate ' + (multi ? '' : 'group-hover:text-indigo-700')}>
                       {multi ? titleCase(c.client_name || '—') : (c.event_name || '—')}
                     </h3>
@@ -604,7 +829,12 @@ function ContractList({ profile, deepLinkContractId }) {
                 <span className="hidden sm:block text-right">
                     {liveSettled ? (
                       <span className="inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
-                    ) : isAdmin && c.balance_amount != null ? (
+                    ) : lbDue ? (
+                      <span className={'text-[13px] font-bold tabular-nums ' + (lbDue.label === 'due' ? 'text-red-600' : 'text-emerald-600')}>
+                        {formatPaise(lbDue.amountPaise)}
+                        <span className="ml-1 text-[11px] font-semibold opacity-80">{lbDue.label}</span>
+                      </span>
+                    ) : !lb && isAdmin && c.balance_amount != null ? (
                       c.balance_amount === 0 ? (
                         <span className="inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
                       ) : (
@@ -618,7 +848,11 @@ function ContractList({ profile, deepLinkContractId }) {
                   <div className="mt-2 sm:mt-0 flex sm:justify-end items-center gap-3">
                     {liveSettled ? (
                       <span className="sm:hidden inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
-                    ) : isAdmin && c.balance_amount != null ? (
+                    ) : lbDue ? (
+                      <span className={'sm:hidden text-[12.5px] font-bold tabular-nums ' + (lbDue.label === 'due' ? 'text-red-600' : 'text-emerald-600')}>
+                        {formatPaise(lbDue.amountPaise)} {lbDue.label}
+                      </span>
+                    ) : !lb && isAdmin && c.balance_amount != null ? (
                       c.balance_amount === 0 ? (
                         <span className="sm:hidden inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
                       ) : (
@@ -660,8 +894,8 @@ function ContractList({ profile, deepLinkContractId }) {
                         var rVenueLine = (r.venue_name !== c.venue_name || r.location) ? [rVenueName, r.location].filter(Boolean).join(' · ') : null
                         return (
                           <div key={r.id} role="button" tabIndex={0}
-                            onClick={function (ev) { ev.stopPropagation(); setSelected(r); setSelectedAddons(g.addons || null) }}
-                            onKeyDown={function (ev) { if (ev.key === 'Enter') { setSelected(r); setSelectedAddons(g.addons || null) } }}
+                            onClick={function (ev) { ev.stopPropagation(); setSelected(r); setSelectedAddons(g.addons || null); setSelectedGroupRows(g.rows) }}
+                            onKeyDown={function (ev) { if (ev.key === 'Enter') { setSelected(r); setSelectedAddons(g.addons || null); setSelectedGroupRows(g.rows) } }}
                             className="flex items-start justify-between gap-3 px-2.5 py-2 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2 flex-wrap text-[12.5px]">
@@ -760,19 +994,367 @@ function ContractList({ profile, deepLinkContractId }) {
       )}
 
       {/* ═══ CONTRACT DETAIL MODAL — every events_safe field ═══ */}
-      <Modal open={!!selected} onClose={function () { setSelected(null); setSelectedAddons(null) }}
+      <Modal open={!!selected} onClose={function () { setSelected(null); setSelectedAddons(null); setSelectedGroupRows(null) }}
         title={selected ? (selected.event_name || '—') : ''} wide>
         {selected && (function () {
           var addonEventIds = selectedAddons
             ? [].concat(selectedAddons.Decor || [], selectedAddons.Entertainment || []).map(function (g) { return g.rows[0].id })
             : []
           var hasAddons = addonEventIds.length > 0
+
+          async function printStatement() {
+            if (!liveBalance || printing) return
+            setPrinting(true)
+            try {
+              // [selected.id].concat(addonEventIds) (the old poolIds) only
+              // ever covered the ONE function row each of selected/an add-on
+              // happened to be opened on -- a multi-function contract (e.g.
+              // Lunch+Dinner+Sagan, or Sahiba's own WEDDING/HALDI/SANGEET)
+              // has its collections spread across every sibling function's
+              // own event id, same gap EventLedger's Transactions tab
+              // already closes for its own query (see its own "sameContract"
+              // pool) -- confirmed live, two of three real Ambria Ops
+              // collections on Sahiba were silently dropped from the print
+              // while the Transactions tab showed all three. Queried fresh
+              // by contract_no+department here (not off selectedGroupRows,
+              // which only ever reflects whatever the current list's own
+              // filters happened to have loaded) so it's never short a
+              // function the same way the Balance box above isn't.
+              async function poolIdsFor(contractNo, department, fallbackId) {
+                if (!contractNo) return [fallbackId]
+                var res = await supabase.from('events').select('id')
+                  .eq('contract_no', contractNo).eq('department', department).is('merged_into_id', null)
+                var ids = (res.data || []).map(function (r) { return r.id })
+                return ids.length > 0 ? ids : [fallbackId]
+              }
+              var addonGroupsList = [].concat(selectedAddons ? (selectedAddons.Decor || []) : [], selectedAddons ? (selectedAddons.Entertainment || []) : [])
+              var poolIdsNested = await Promise.all(
+                [poolIdsFor(selected.contract_no, selected.department, selected.id)]
+                  .concat(addonGroupsList.map(function (g) { var a = g.rows[0]; return poolIdsFor(a.contract_no, a.department, a.id) }))
+              )
+              var poolIds = [].concat.apply([], poolIdsNested)
+
+              function addonPkgTax(dept) {
+                var list = (selectedAddons && selectedAddons[dept]) || []
+                var pkg = 0, tax = 0
+                list.forEach(function (g) {
+                  var a = g.rows[0]
+                  var pkgFromTotal = a.total_amount_paise > 0
+                  var pkgRaw = pkgFromTotal ? a.total_amount_paise : (a.net_amount_paise || 0)
+                  pkg += pkgRaw
+                  if (pkgFromTotal) tax += Number(a.tax_amount_paise || 0)
+                })
+                return { pkg: pkg, tax: tax }
+              }
+
+              // The print export always reveals the TRUE scale, regardless of
+              // the live pkgX2/cashX10 toggles above -- LMS enters the package
+              // total at half its real value (see pkgX2's own note) and the
+              // app logs collected cash at a hidden ÷10 scale (see
+              // fn_extra_plate_collect); this statement exists specifically
+              // to show finance the real numbers, not the masked defaults.
+              // Re-fetched fresh here rather than trusting the already-loaded
+              // liveBalance state -- that only reloads when selected.id/
+              // selectedAddons changes (see its own effect above), so a
+              // collection made elsewhere while this same modal sat open
+              // (or a very recent one the effect just hasn't caught up with
+              // yet) wouldn't be reflected in it. A printed statement is
+              // meant to be authoritative, so it gets its own up-to-the-
+              // moment read instead of risking a stale on-screen snapshot --
+              // this is exactly the shape of a reported mismatch (print
+              // showed Pending — bank where the Balance box, reopened after,
+              // showed Settled: the gap matched a cash collection landing
+              // between the two reads almost paisa-for-paisa).
+              var addonPrimariesForBalance = [].concat(selectedAddons ? (selectedAddons.Decor || []) : [], selectedAddons ? (selectedAddons.Entertainment || []) : []).map(function (g) { return g.rows[0] })
+              var balance = (addonPrimariesForBalance.length > 0
+                ? await fetchConsolidatedContractBalance([selected].concat(addonPrimariesForBalance)).then(function (r) { return r && r.total })
+                : await fetchContractBalanceSummary(selected.id)) || liveBalance
+
+              var venuePkg = Number(selected.total_amount_paise || 0) * 2
+              var venueTax = Number(selected.tax_amount_paise || 0)
+              var decor = addonPkgTax('Decor')
+              var ent = addonPkgTax('Entertainment')
+              var totalDealPaise = venuePkg + venueTax + (decor.pkg * 2) + decor.tax + (ent.pkg * 2) + ent.tax
+              var advCashPaise = Number(balance.collected_cash_paise || 0) * 10
+              var advBankPaise = Number(balance.collected_bank_paise || 0)
+              var pendingCashPaise = Number(balance.pending_cash_paise || 0) * 10
+              var pendingBankPaise = Number(balance.pending_bank_paise || 0) + Number(balance.pending_tax_paise || 0)
+              var totalCollectedPaise = advCashPaise + advBankPaise
+              var surplusPaise = totalCollectedPaise > totalDealPaise ? totalCollectedPaise - totalDealPaise : 0
+              var isSettled = pendingCashPaise <= 0 && pendingBankPaise <= 0
+
+              var packageLines = [{
+                label: selected.department === 'Venue' ? 'Venue Contract package' : selected.department + ' Contract package',
+                pkgPaise: venuePkg, taxPaise: venueTax,
+              }]
+              if (decor.pkg > 0) packageLines.push({ label: 'Add-on Decor package', pkgPaise: decor.pkg * 2, taxPaise: decor.tax })
+              if (ent.pkg > 0) packageLines.push({ label: 'Add-on Entertainment package', pkgPaise: ent.pkg * 2, taxPaise: ent.tax })
+
+              // LMS's own per-department split of this Venue contract's total
+              // (Menu rate/Venue rental/Venue+Menu/Decor amount/Entertainment
+              // amount) -- the same fields the on-screen detail list already
+              // shows further down, none of them subject to the pkgX2 ÷2
+              // habit (that's only ever total_amount_paise), so shown as-is.
+              var packageBreakdown = [
+                ['Menu rate', selected.menu_rate_paise > 0 ? selected.menu_rate_paise : null],
+                ['Venue rental', selected.venue_rental_paise != null ? selected.venue_rental_paise : null],
+                ['Venue + Menu', selected.venue_menu_paise != null ? selected.venue_menu_paise : null],
+                ['Decor amount', selected.decor_amount_paise > 0 ? selected.decor_amount_paise : null],
+                ['Entertainment amount', selected.entertainment_amount_paise > 0 ? selected.entertainment_amount_paise : null],
+              ].filter(function (r) { return r[1] != null }).map(function (r) { return { label: r[0], amountPaise: r[1] } })
+
+              // Multi-function contract (Lunch+Dinner+Sagan etc. under one
+              // contract_no, see groupsMap above) -- selected is only ever
+              // one of those function rows, selectedGroupRows carries every
+              // sibling. Just [selected] (nothing to list) on a single-
+              // function contract. Same shape reused below for a multi-
+              // function ADD-ON contract (page 3) -- rows[0] alone would
+              // silently show only one of its own functions' date/session,
+              // same gap this was just added to close for the primary
+              // contract above.
+              function rowsToFunctions(rows) {
+                return (rows || []).map(function (r) {
+                  return {
+                    name: r.event_name || '—',
+                    date: r.function_date ? formatDate(r.function_date) : '—',
+                    session: r.session || '—',
+                    venue: [r.venue_name ? (venueMap[r.venue_name] ? (venueMap[r.venue_name] + ' — ' + r.venue_name) : r.venue_name) : null, r.location].filter(Boolean).join(' · ') || '—',
+                    pax: (r.department === 'Venue' || r.department === 'Catering') && r.total_plates != null ? r.total_plates : null,
+                  }
+                })
+              }
+              var functions = (selectedGroupRows && selectedGroupRows.length > 1) ? rowsToFunctions(selectedGroupRows) : []
+
+              // LMS's own itemized Addons list on this Venue contract (e.g.
+              // "L.L. ₹25,000") -- the same addons_json the on-screen detail
+              // list already shows, not yet carried into the print.
+              var addonItemsList = Array.isArray(selected.addons_json) ? selected.addons_json : []
+              var addonItems = addonItemsList.map(function (it) { return { label: it.label, amountPaise: Number(it.amount_paise) || 0 } })
+              var addonItemsTotalPaise = addonItems.reduce(function (s, it) { return s + it.amountPaise }, 0)
+
+              var addonContracts = []
+              ;['Decor', 'Entertainment'].forEach(function (dept) {
+                var list = (selectedAddons && selectedAddons[dept]) || []
+                list.forEach(function (g) {
+                  var a = g.rows[0]
+                  var pkgFromTotal = a.total_amount_paise > 0
+                  var pkgRaw = pkgFromTotal ? a.total_amount_paise : (a.net_amount_paise || 0)
+                  addonContracts.push({
+                    chipLabel: 'Add-on ' + dept,
+                    department: dept,
+                    contractNo: a.contract_no || '—',
+                    functionDate: a.function_date ? formatDate(a.function_date) : '—',
+                    session: a.session || '—',
+                    pkgPaise: pkgRaw * 2,
+                    taxPaise: pkgFromTotal ? Number(a.tax_amount_paise || 0) : 0,
+                    // Multi-function add-on (e.g. a Decor contract covering
+                    // its own Wedding+Haldi+Sangeet) -- functionDate/session
+                    // above are only ever rows[0]'s, same gap just fixed for
+                    // the primary contract's own Functions table.
+                    functions: g.rows.length > 1 ? rowsToFunctions(g.rows) : null,
+                  })
+                })
+              })
+              // Decor/Entertainment are the only real "add-on contract" types
+              // this app folds under a Venue contract -- Catering is its own
+              // standalone department contract (see ExtraPlateCollect.jsx /
+              // StoreRequisitionForm.jsx grouping it with Venue, never as a
+              // selectedAddons entry), so it has no "missing" note here.
+              var missingAddonDepts = ['Decor', 'Entertainment'].filter(function (dept) {
+                return !addonContracts.some(function (a) { return a.department === dept })
+              })
+
+              // Collection rows directly reference the event id; a cancelled
+              // one is usually just that same row with status flipped
+              // (confirmed live) -- the separate 'collection_cancel' reversal
+              // leg (a different row, referencing the original row's own id,
+              // not an event id) is fetched as a second pass so either
+              // cancellation shape still shows up here.
+              var collRes = await supabase.from('wallet_transactions')
+                .select('id, reference_type, reference_id, payment_mode, amount_paise, status, created_at, performed_by')
+                .in('reference_id', poolIds.map(String))
+                .eq('reference_type', 'collection')
+                .order('created_at', { ascending: true })
+              var collRows = collRes.data || []
+              var collById = {}
+              collRows.forEach(function (w) { collById[String(w.id)] = w })
+              var cancelRes = collRows.length > 0
+                ? await supabase.from('wallet_transactions')
+                    .select('id, reference_type, reference_id, payment_mode, amount_paise, status, created_at, performed_by')
+                    .in('reference_id', collRows.map(function (w) { return String(w.id) }))
+                    .eq('reference_type', 'collection_cancel')
+                : { data: [] }
+              var allRows = collRows.concat(cancelRes.data || []).sort(function (a, b) {
+                return (a.created_at || '').localeCompare(b.created_at || '')
+              })
+
+              var performerIds = [...new Set(allRows.map(function (w) { return w.performed_by }).filter(Boolean))]
+              var names = {}
+              if (performerIds.length > 0) {
+                var nameRes = await supabase.rpc('fn_profile_names', { p_ids: performerIds })
+                ;(nameRes.data || []).forEach(function (p) { names[p.id] = p.name })
+              }
+
+              // A cancelled original (status flipped on its own row) is void --
+              // it never happened, excluded from both In and Out. The
+              // separate 'collection_cancel' reversal row is a real,
+              // completed transaction in its own right (confirmed live: this
+              // contract carries both for the same cancellation) -- money
+              // that genuinely moved back out, so it's counted in Out, not
+              // folded invisibly into "nothing happened" alongside the
+              // original it reverses.
+              var transactions = allRows.map(function (w) {
+                var isCancelLeg = w.reference_type === 'collection_cancel'
+                var original = isCancelLeg ? collById[String(w.reference_id)] : null
+                var mode = (original && original.payment_mode) || w.payment_mode
+                var voided = !isCancelLeg && w.status === 'cancelled'
+                var dt = new Date(w.created_at)
+                return {
+                  date: formatDate(w.created_at),
+                  time: isNaN(dt) ? '' : dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                  type: isCancelLeg ? 'Collection reversal' : 'Collection',
+                  source: 'OPs',
+                  mode: mode === 'bank' ? 'Bank' : 'Cash',
+                  amountPaise: Math.abs((original && original.amount_paise) || w.amount_paise || 0),
+                  handledBy: names[w.performed_by] || null,
+                  statusLabel: voided ? 'Cancelled' : (isCancelLeg ? 'Reversed' : 'Completed'),
+                  voided: voided,
+                  isReversal: isCancelLeg,
+                  _sortKey: w.created_at || '',
+                }
+              })
+              // LMS's own payment history (collected outside Ambria Ops'
+              // wallet entirely -- same read the Wallet's Collect flow and
+              // EventLedger's Transactions tab already use, see
+              // fetchContractBalanceSummary/fetchLmsCollected in
+              // contractBalance.js) -- without this, the print export only
+              // ever showed money collected through this app's own wallet,
+              // silently dropping anything collected straight into LMS even
+              // though the Balance box above already folds it into Advance
+              // received. One contract (Venue) + department can carry its own
+              // LMS history; each add-on contract is its own separate
+              // contract_no+department, so it's fetched for those too.
+              async function fetchLmsRows(contractNo, department) {
+                if (!contractNo) return []
+                var sessionRes = await supabase.auth.getSession()
+                var token = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.access_token : null
+                var res = await supabase.functions.invoke('lms-payment-collections', {
+                  body: { contract_no: contractNo, department: department || '' },
+                  headers: token ? { Authorization: 'Bearer ' + token } : {},
+                })
+                if (res.error) return []
+                return (res.data && res.data.data) || []
+              }
+              var lmsTargets = [{ contractNo: selected.contract_no, department: selected.department }]
+              ;['Decor', 'Entertainment'].forEach(function (dept) {
+                ((selectedAddons && selectedAddons[dept]) || []).forEach(function (g) {
+                  var a = g.rows[0]
+                  if (a.contract_no) lmsTargets.push({ contractNo: a.contract_no, department: dept })
+                })
+              })
+              var lmsRowsNested = await Promise.all(lmsTargets.map(function (t) { return fetchLmsRows(t.contractNo, t.department) }))
+              var lmsRows = [].concat.apply([], lmsRowsNested)
+              // LMS reports cash at the same hidden ÷10 scale as everywhere
+              // else (see lms-payment-collections' own note) -- revealed here
+              // the same way advCashPaise is above, so it lines up with the
+              // rest of this (always fully revealed) statement; bank is
+              // already true scale.
+              var lmsTransactions = lmsRows.map(function (p) {
+                var isCash = String(p.pay_mode || '').toLowerCase().indexOf('cash') !== -1
+                var raw = Number(p.net_amount_paise || 0)
+                var voided = String(p.status || '').toLowerCase().indexOf('cancel') !== -1
+                var dt = p.date ? new Date(p.date) : null
+                return {
+                  date: formatDate(p.date),
+                  time: '',
+                  type: 'LMS Collection',
+                  source: 'LMS',
+                  mode: isCash ? 'Cash' : 'Bank',
+                  amountPaise: Math.abs(isCash ? raw * 10 : raw),
+                  handledBy: p.entry_by || null,
+                  statusLabel: voided ? 'Cancelled' : 'Completed',
+                  voided: voided,
+                  isReversal: false,
+                  _sortKey: (dt && !isNaN(dt)) ? dt.toISOString() : '',
+                }
+              })
+              transactions = transactions.concat(lmsTransactions).sort(function (a, b) {
+                return (a._sortKey || '').localeCompare(b._sortKey || '')
+              })
+
+              // The table's own In/Out/Net, derived from exactly the rows it
+              // lists, gross -- a voided original genuinely was collected
+              // (it belongs in In) and its reversal genuinely paid that back
+              // out (it belongs in Out); excluding the voided row from In
+              // instead of letting its own reversal net it back out
+              // understated In by the full cancelled amount, same gross/net
+              // convention the in-app Transactions tab already uses. voided
+              // only controls how a row is styled below, never whether it's
+              // counted.
+              var txInPaise = 0, txOutPaise = 0
+              transactions.forEach(function (t) {
+                if (t.isReversal) txOutPaise += t.amountPaise
+                else txInPaise += t.amountPaise
+              })
+
+              await generateContractStatementPdf({
+                contractNo: selected.contract_no,
+                printedOn: formatDate(new Date().toISOString()),
+                clientName: selected.client_name ? titleCase(selected.client_name) : '—',
+                contact: selected.contact_number || '—',
+                contractDate: selected.contract_date ? formatDate(selected.contract_date) : '—',
+                functionDate: selected.function_date ? formatDate(selected.function_date) : '—',
+                department: selected.department || '—',
+                session: selected.session || '—',
+                venue: selected.venue_name || '—',
+                venueType: venueTypeLabel(selected.contract_type),
+                location: selected.location || '—',
+                address: selected.address || '—',
+                totalPlates: (selected.department === 'Venue' || selected.department === 'Catering') ? selected.total_plates : null,
+                pax: selected.pax != null ? selected.pax : (selected.total_plates != null && selected.complementary_plates != null ? selected.total_plates - selected.complementary_plates : null),
+                extra: selected.complementary_plates,
+                functions: functions,
+                packageBreakdown: packageBreakdown,
+                addonItems: addonItems,
+                addonItemsTotalPaise: addonItemsTotalPaise,
+                packageLines: packageLines,
+                totalDealPaise: totalDealPaise,
+                advCashPaise: advCashPaise,
+                advBankPaise: advBankPaise,
+                pendingCashPaise: pendingCashPaise,
+                pendingBankPaise: pendingBankPaise,
+                surplusPaise: surplusPaise,
+                status: isSettled ? 'Settled' : null,
+                addonContracts: addonContracts,
+                missingAddonDepts: missingAddonDepts,
+                transactions: transactions,
+                totals: { inPaise: txInPaise, outPaise: txOutPaise, netPaise: txInPaise - txOutPaise },
+              })
+            } catch (e) {
+              alert('Could not generate the statement: ' + e.message)
+            } finally {
+              setPrinting(false)
+            }
+          }
+
           return (
           <div className="space-y-4 text-sm">
-            <div className="flex items-center gap-2 flex-wrap">
-              {selected.is_tentative && <Badge color="amber">Tentative — no LMS contract yet</Badge>}
-              {selected.department && <Badge color="indigo">{selected.department}</Badge>}
-              {selected.status && <Badge color="gray">{selected.status}</Badge>}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                {selected.is_tentative && <Badge color="amber">Tentative — no LMS contract yet</Badge>}
+                {selected.department && <Badge color="indigo">{selected.department}</Badge>}
+                {selected.status && <Badge color="gray">{selected.status}</Badge>}
+              </div>
+              {isAdmin && liveBalance && (
+                // Same small, discrete grey dot as the pkgX2 "show true
+                // package amount" toggle elsewhere in this modal -- Print
+                // doesn't need its own labeled button competing with the
+                // badges for attention.
+                <button type="button" disabled={printing}
+                  onClick={printStatement}
+                  title={printing ? 'Preparing statement…' : 'Print statement'}
+                  className={'w-2 h-2 rounded-full transition-colors disabled:cursor-wait ' + (printing ? 'bg-amber-400' : 'bg-slate-200 opacity-25 hover:opacity-50')} />
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -809,11 +1391,18 @@ function ContractList({ profile, deepLinkContractId }) {
                   ['Pax', selected.pax != null ? selected.pax : (selected.total_plates != null && selected.complementary_plates != null ? selected.total_plates - selected.complementary_plates : null)],
                   ['Extra', selected.complementary_plates],
                 ] : []),
-                // extra_plates_charge is LMS's per-plate RATE, not what was
-                // actually charged -- the real figure is rate × how many
-                // extra plates were served (complementary_plates, despite
-                // its name -- see the Pax/Extra relabeling above).
-                ['Extra plates charge', (selected.extra_plates_charge > 0 && selected.complementary_plates > 0) ? formatPaise(selected.extra_plates_charge * selected.complementary_plates) : null],
+                // extra_plates_charge is LMS's per-plate RATE -- complementary_
+                // plates ("Extra" above) is a free-pax allowance baked into the
+                // package, not a count of plates actually served/charged past
+                // it, so multiplying the two together (as this used to do) can
+                // produce a real-looking total even when the Extra Plate
+                // Collect system (ExtraPlateCollect.jsx) shows no charge was
+                // ever made for this event -- confirmed live, contract #00568:
+                // rate 1,000 × 25 "free" pax showed a phantom ₹25,000 charge
+                // with zero actual Extra Plate Collect transactions behind it.
+                // Just the rate, for reference -- the real charged amount (if
+                // any) lives in extra_plate_collections, not here.
+                ['Extra Plate Rate', selected.extra_plates_charge > 0 ? formatPaise(selected.extra_plates_charge) : null],
                 ['Menu rate', selected.menu_rate_paise > 0 ? formatPaise(selected.menu_rate_paise) : null],
                 ['Venue rental', selected.venue_rental_paise != null ? formatPaise(selected.venue_rental_paise) : null],
                 ['Venue + Menu', selected.venue_menu_paise != null ? formatPaise(selected.venue_menu_paise) : null],
@@ -917,17 +1506,30 @@ function ContractList({ profile, deepLinkContractId }) {
                         <Badge color={dept === 'Decor' ? 'purple' : 'pink'}>Add-on &middot; {dept === 'Entertainment' ? 'Ent' : dept}</Badge>
                         <span className="font-mono text-xs text-slate-600">#{a.contract_no}</span>
                       </span>
-                      {(a.tally_entered_by || canMarkEntered) && (
-                        <EnteredMark
-                          entered={!!a.tally_entered_by}
-                          enteredByName={enteredNames[a.tally_entered_by]}
-                          enteredAt={a.tally_entered_at}
-                          canToggle={canMarkEntered}
-                          canUnenter={a.tally_entered_by === profile.id || isSysAdmin}
-                          busy={enteringId === a.id}
-                          onToggle={function () { toggleContractEntered(a.id) }}
-                        />
-                      )}
+                      <span className="inline-flex items-center gap-2">
+                        {(a.tally_entered_by || canMarkEntered) && (
+                          <EnteredMark
+                            entered={!!a.tally_entered_by}
+                            enteredByName={enteredNames[a.tally_entered_by]}
+                            enteredAt={a.tally_entered_at}
+                            canToggle={canMarkEntered}
+                            canUnenter={a.tally_entered_by === profile.id || isSysAdmin}
+                            busy={enteringId === a.id}
+                            onToggle={function () { toggleContractEntered(a.id) }}
+                          />
+                        )}
+                        {/* Only a manual link (fn_link_addon_contract) is ever
+                            reversible here -- an automatic guest+venue+date
+                            match has no row to clear, it just stops matching
+                            the moment one of those fields changes. */}
+                        {canLinkAddon && a.manual_addon_contract_no === selected.contract_no && a.manual_addon_department === selected.department && (
+                          <button type="button" disabled={unlinkingAddon}
+                            onClick={function () { unlinkAddon(a.id) }}
+                            className="text-[11px] font-semibold text-slate-400 hover:text-red-600 disabled:opacity-50 transition-colors">
+                            Unlink
+                          </button>
+                        )}
+                      </span>
                     </div>
                     <div className="px-3 py-2.5 space-y-1">
                       {[
@@ -954,20 +1556,29 @@ function ContractList({ profile, deepLinkContractId }) {
                           </div>
                         )
                       })}
-                      {isAdmin && (
-                        <div className="flex justify-between gap-3 text-xs pt-1 border-t border-gray-100">
-                          <span className="text-gray-500">Balance</span>
-                          {a.balance_amount != null ? (
-                            a.balance_amount === 0 ? (
-                              <span className="font-bold text-emerald-600">{formatPaise(0)} <span className="font-semibold opacity-80">settled</span></span>
-                            ) : (
-                              <span className={'font-bold ' + (a.balance_amount < 0 ? 'text-red-600' : 'text-emerald-600')}>
-                                {formatPaise(Math.abs(a.balance_amount))} <span className="font-semibold opacity-80">{a.balance_amount < 0 ? 'due' : 'adv'}</span>
-                              </span>
-                            )
-                          ) : <span className="text-gray-300">—</span>}
-                        </div>
-                      )}
+                      {isAdmin && (function () {
+                        // Live, reconciled per-contract figure (see the
+                        // liveBalance effect above) in place of the stale
+                        // LMS-synced balance_amount this used to read --
+                        // same reasoning as the list's own Balance column
+                        // (reconciledDueDisplay's own note).
+                        var addonLb = addonLiveBalances[dept + '|' + a.contract_no]
+                        var disp = reconciledDueDisplay(addonLb)
+                        return (
+                          <div className="flex justify-between gap-3 text-xs pt-1 border-t border-gray-100">
+                            <span className="text-gray-500">Balance</span>
+                            {disp ? (
+                              disp.settled ? (
+                                <span className="font-bold text-emerald-600">{formatPaise(0)} <span className="font-semibold opacity-80">settled</span></span>
+                              ) : (
+                                <span className={'font-bold ' + (disp.label === 'due' ? 'text-red-600' : 'text-emerald-600')}>
+                                  {formatPaise(disp.amountPaise)} <span className="font-semibold opacity-80">{disp.label}</span>
+                                </span>
+                              )
+                            ) : <span className="text-gray-300">—</span>}
+                          </div>
+                        )
+                      })()}
                       {a.pdf_link && (
                         <div className="pt-1">
                           <a href={a.pdf_link} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">View contract PDF ↗</a>
@@ -990,8 +1601,8 @@ function ContractList({ profile, deepLinkContractId }) {
               <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Balance</p>
-                  {liveBalance && Number(liveBalance.pending_cash_paise || 0) === 0 &&
-                    (Number(liveBalance.pending_bank_paise || 0) + Number(liveBalance.pending_tax_paise || 0)) === 0 && (
+                  {liveBalance && Number(liveBalance.pending_cash_paise || 0) <= 0 &&
+                    (Number(liveBalance.pending_bank_paise || 0) + Number(liveBalance.pending_tax_paise || 0)) <= 0 && (
                     <span className="inline-flex items-center text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wide">Settled</span>
                   )}
                 </div>
@@ -1032,10 +1643,49 @@ function ContractList({ profile, deepLinkContractId }) {
                   // separate Pending tax line (effective agreed bank = agreed
                   // bank + agreed tax, per the user's own framing).
                   var pendingBank = Number(liveBalance.pending_bank_paise || 0) + Number(liveBalance.pending_tax_paise || 0)
-                  // extra_plates_charge is LMS's per-plate RATE -- see the
-                  // same fix in the main field list above.
-                  var extraPlatesActual = (selected.extra_plates_charge > 0 && selected.complementary_plates > 0)
-                    ? selected.extra_plates_charge * selected.complementary_plates : 0
+                  // What finance actually means by "the LMS package" is this
+                  // package+tax total, not LMS's own agreed_cash/agreed_bank
+                  // fields that pending_cash/bank_paise above are settled
+                  // against -- those can quietly drift from the package (an
+                  // LMS-side edit to one and not the other), so a real contract
+                  // was seen fully "Settled" against agreed_cash/bank while
+                  // still having collected far more than this package total.
+                  // Surplus can't be read off venuePkg/decor.pkg/ent.pkg and
+                  // collected_cash_paise directly -- those mix whatever scale
+                  // each line happens to be shown at (venuePkg masked ÷2,
+                  // decor/ent only ×2'd when the
+                  // pkgX2 toggle is on, collected_cash_paise always masked ÷10),
+                  // so subtracting them produced a number that was neither the
+                  // masked nor the true surplus -- confirmed live, it didn't
+                  // match the real figure once cash and package happened to be
+                  // masked by two different factors. Surplus is always computed
+                  // fully revealed instead, independent of what the lines above
+                  // it are showing.
+                  var decorTrue = (function () {
+                    var list = (selectedAddons && selectedAddons.Decor) || []
+                    var pkg = 0, tax = 0
+                    list.forEach(function (g) {
+                      var a = g.rows[0]
+                      var pkgFromTotal = a.total_amount_paise > 0
+                      pkg += (pkgFromTotal ? a.total_amount_paise : (a.net_amount_paise || 0)) * 2
+                      if (pkgFromTotal) tax += Number(a.tax_amount_paise || 0)
+                    })
+                    return { pkg: pkg, tax: tax }
+                  })()
+                  var entTrue = (function () {
+                    var list = (selectedAddons && selectedAddons.Entertainment) || []
+                    var pkg = 0, tax = 0
+                    list.forEach(function (g) {
+                      var a = g.rows[0]
+                      var pkgFromTotal = a.total_amount_paise > 0
+                      pkg += (pkgFromTotal ? a.total_amount_paise : (a.net_amount_paise || 0)) * 2
+                      if (pkgFromTotal) tax += Number(a.tax_amount_paise || 0)
+                    })
+                    return { pkg: pkg, tax: tax }
+                  })()
+                  var trueTotalDealPaise = (venuePkg * 2) + venueTax + decorTrue.pkg + decorTrue.tax + entTrue.pkg + entTrue.tax
+                  var trueTotalCollectedPaise = Number(liveBalance.collected_cash_paise || 0) * 10 + Number(liveBalance.collected_bank_paise || 0)
+                  var surplusVsPackage = trueTotalCollectedPaise > trueTotalDealPaise ? trueTotalCollectedPaise - trueTotalDealPaise : 0
                   function pkgCell(pkg, tax) {
                     if (tax > 0) {
                       return (
@@ -1069,20 +1719,61 @@ function ContractList({ profile, deepLinkContractId }) {
                       )}
                       <div className="flex justify-between pt-1 border-t border-gray-200"><span className="text-gray-500">Advance received — cash</span><span className="font-medium text-gray-800">{formatPaise(liveBalance.collected_cash_paise)}</span></div>
                       <div className="flex justify-between"><span className="text-gray-500">Advance received — bank</span><span className="font-medium text-gray-800">{formatPaise(liveBalance.collected_bank_paise)}</span></div>
-                      {extraPlatesActual > 0 && (
-                        <div className="flex justify-between"><span className="text-gray-500">Extra plates charge</span><span className="font-medium text-gray-800">{formatPaise(extraPlatesActual)}</span></div>
+                      {extraPlateCollected && (extraPlateCollected.cash > 0 || extraPlateCollected.bank > 0) && (
+                        <div className="flex justify-between gap-3 text-[11px] text-gray-400">
+                          <span>↳ incl. Extra plates collected</span>
+                          <span className="text-right">
+                            {[
+                              extraPlateCollected.cash > 0 ? formatPaise(extraPlateCollected.cash) + ' cash' : null,
+                              extraPlateCollected.bank > 0 ? formatPaise(extraPlateCollected.bank) + ' bank' : null,
+                            ].filter(Boolean).join(' + ')}
+                          </span>
+                        </div>
                       )}
                       <div className="flex justify-between pt-1 border-t border-gray-200">
                         <span className="text-gray-500">Pending — cash</span>
-                        <span className={"font-bold " + (pendingCash > 0 ? "text-red-600" : "text-green-600")}>{formatPaise(Math.abs(pendingCash))}</span>
+                        <span className={"font-bold " + (pendingCash > 0 ? "text-red-600" : "text-green-600")}>{formatPaise(pendingCash > 0 ? pendingCash : 0)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-500">Pending — bank</span>
-                        <span className={"font-bold " + (pendingBank > 0 ? "text-red-600" : "text-green-600")}>{formatPaise(Math.abs(pendingBank))}</span>
+                        <span className={"font-bold " + (pendingBank > 0 ? "text-red-600" : "text-green-600")}>{formatPaise(pendingBank > 0 ? pendingBank : 0)}</span>
                       </div>
+                      {/* Real cash+bank collected beyond this package's own
+                          total -- not folded into "Pending — cash" as a green
+                          number (that line settles against LMS's separate
+                          agreed_cash/agreed_bank fields, which can drift from
+                          the package shown above), so finance notices and goes
+                          back to correct the LMS contract. */}
+                      {surplusVsPackage > 0 && (
+                        <div className="flex justify-between pt-1 border-t border-amber-200">
+                          <span className="text-amber-700 font-semibold">Surplus (over LMS total)</span>
+                          <span className="font-bold text-amber-700">{formatPaise(surplusVsPackage)}</span>
+                        </div>
+                      )}
                     </>
                   )
                 })()}
+              </div>
+            )}
+
+            {/* Showing up here at all means this Decor/Entertainment contract
+                isn't currently folded under any Venue contract as an add-on
+                (one that is never gets its own card in the list -- see the
+                grouping pass above) -- a manual link points at a Venue
+                contract that isn't in view right now (e.g. aged past the
+                list's date floor). Linking itself happens from the list's
+                own checkbox "Merge selected" now (submitMergeSelected) --
+                this is Unlink only. */}
+            {canLinkAddon && (selected.department === 'Decor' || selected.department === 'Entertainment') && selected.manual_addon_contract_no && (
+              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 space-y-2">
+                <p className="text-xs text-indigo-700">
+                  Manually linked to {selected.manual_addon_department || 'Venue'} contract #{selected.manual_addon_contract_no} — not showing here because that contract isn't in the current list (check its own date range/filters).
+                </p>
+                <button type="button" disabled={unlinkingAddon}
+                  onClick={function () { unlinkAddon(selected.id) }}
+                  className="w-full py-2 text-sm font-semibold text-indigo-700 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors">
+                  {unlinkingAddon ? 'Unlinking…' : 'Unlink'}
+                </button>
               </div>
             )}
 
