@@ -16,6 +16,29 @@ export async function prepUpload(file, targetKB) {
   }
 }
 
+// Upload with a timeout + one silent retry, for flaky/low-bandwidth
+// connections where a plain upload() can hang indefinitely with no
+// feedback (no default browser timeout on the underlying fetch). The retry
+// reuses the same path with upsert, so a first attempt that actually
+// completes after the timeout just gets overwritten by the second — never
+// a duplicate file.
+export async function uploadWithRetry(bucket, path, file, opts, timeoutMs) {
+  var ms = timeoutMs || 20000
+  function attempt() {
+    return Promise.race([
+      supabase.storage.from(bucket).upload(path, file, opts),
+      new Promise(function (resolve) {
+        setTimeout(function () {
+          resolve({ error: { message: 'Upload timed out — check your connection and try again' } })
+        }, ms)
+      })
+    ])
+  }
+  var first = await attempt()
+  if (!first.error) return first
+  return attempt()
+}
+
 // Route employee file paths to the correct storage bucket.
 // Public-form submissions land under `submissions/` prefix (public bucket).
 // All other paths (including approved/admin-added docs) → employee-docs.

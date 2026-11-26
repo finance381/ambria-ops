@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatDateTime, formatPoints } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
-import { prepUpload } from '../../lib/uploadHelper'
+import { prepUpload, uploadWithRetry } from '../../lib/uploadHelper'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import VoiceInput from '../../components/ui/VoiceInput'
 import { hasPerm } from '../../lib/permissions'
@@ -91,6 +91,7 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
   var [issueImage, setIssueImage] = useState(null)
   var [issueNotes, setIssueNotes] = useState('')
   var [issueSaving, setIssueSaving] = useState(false)
+  var [issueStageMsg, setIssueStageMsg] = useState('')
   var [issueMsg, setIssueMsg] = useState('')
 
   // Collect form
@@ -101,6 +102,7 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
   var [collectNotes, setCollectNotes] = useState('')
   var [collectDiscount, setCollectDiscount] = useState('')
   var [collectSaving, setCollectSaving] = useState(false)
+  var [collectStageMsg, setCollectStageMsg] = useState('')
   var [collectMsg, setCollectMsg] = useState('')
   // The green "Logged …" / "Collected …" note is news, not a status: it
   // goes after a few seconds rather than sitting there after the entry it
@@ -358,13 +360,15 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
     setIssueSaving(true)
     setIssueMsg('')
 
+    setIssueStageMsg('Uploading photo…')
     var cF
-    try { cF = await prepUpload(issueImage, 100) } catch (e) { alert('Image prep failed'); setIssueSaving(false); return }
+    try { cF = await prepUpload(issueImage, 50) } catch (e) { alert('Image prep failed'); setIssueSaving(false); setIssueStageMsg(''); return }
     var ext = (cF.name && cF.name.indexOf('.') !== -1) ? cF.name.split('.').pop() : 'jpg'
     var path = profile.id + '/extra_plate_issue_' + Date.now() + '.' + ext
-    var { error: upErr } = await supabase.storage.from('receipts').upload(path, cF, { upsert: true })
-    if (upErr) { alert('Upload failed: ' + upErr.message); setIssueSaving(false); return }
+    var { error: upErr } = await uploadWithRetry('receipts', path, cF, { upsert: true })
+    if (upErr) { alert('Upload failed: ' + upErr.message); setIssueSaving(false); setIssueStageMsg(''); return }
 
+    setIssueStageMsg('Saving…')
     var { error } = await supabase.rpc('fn_extra_plate_issue_create', {
       p_event_id: Number(eventId),
       p_plates: n,
@@ -375,6 +379,7 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
       alert('Issue failed: ' + error.message)
       try { await supabase.storage.from('receipts').remove([path]) } catch (_) {}
       setIssueSaving(false)
+      setIssueStageMsg('')
       return
     }
     try { await logActivity('EXTRA_PLATE_ISSUE', (eventDetail.event_name || '') + ' | ' + n + ' plates') } catch (_) {}
@@ -383,6 +388,7 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
     setIssueImage(null)
     setIssueNotes('')
     setIssueSaving(false)
+    setIssueStageMsg('')
     loadEventState(Number(eventId), eventDetail)
   }
 
@@ -412,13 +418,15 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
     setCollectSaving(true)
     setCollectMsg('')
 
+    setCollectStageMsg('Uploading photo…')
     var cF
-    try { cF = await prepUpload(collectImage, 100) } catch (e) { alert('Image prep failed'); setCollectSaving(false); return }
+    try { cF = await prepUpload(collectImage, 50) } catch (e) { alert('Image prep failed'); setCollectSaving(false); setCollectStageMsg(''); return }
     var ext = (cF.name && cF.name.indexOf('.') !== -1) ? cF.name.split('.').pop() : 'jpg'
     var path = profile.id + '/extra_plate_collect_' + Date.now() + '.' + ext
-    var { error: upErr } = await supabase.storage.from('receipts').upload(path, cF, { upsert: true })
-    if (upErr) { alert('Upload failed: ' + upErr.message); setCollectSaving(false); return }
+    var { error: upErr } = await uploadWithRetry('receipts', path, cF, { upsert: true })
+    if (upErr) { alert('Upload failed: ' + upErr.message); setCollectSaving(false); setCollectStageMsg(''); return }
 
+    setCollectStageMsg('Saving…')
     var { data, error } = await supabase.rpc('fn_extra_plate_collect', {
       p_event_id: Number(eventId),
       p_plates: n,
@@ -433,6 +441,7 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
       alert((wasteOnly ? 'Log returns' : 'Collection') + ' failed: ' + error.message)
       if (path) { try { await supabase.storage.from('receipts').remove([path]) } catch (_) {} }
       setCollectSaving(false)
+      setCollectStageMsg('')
       return
     }
     try {
@@ -451,6 +460,7 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
     setCollectNotes('')
     setCollectDiscount('')
     setCollectSaving(false)
+    setCollectStageMsg('')
     if (onBalanceChange) onBalanceChange()
     loadEventState(Number(eventId), eventDetail)
   }
@@ -756,7 +766,10 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
         </p>
         {noteField(issueNotes, setIssueNotes, showIssueNote, setShowIssueNote, 'e.g. first batch, top-up', desk)}
         {successNote(issueMsg)}
-        {primaryBtn(submitIssue, !canIssue, issueSaving ? 'Saving…' : <><Icon name="download" size={16} />Log issue</>)}
+        {issueStageMsg === 'Uploading photo…' && (
+          <p className="-mt-1 text-[11.5px] text-slate-500">This can take a moment on a weak connection — hang tight.</p>
+        )}
+        {primaryBtn(submitIssue, !canIssue, issueSaving ? (issueStageMsg || 'Saving…') : <><Icon name="download" size={16} />Log issue</>)}
       </div>
     )
   }
@@ -878,8 +891,11 @@ function ExtraPlateCollect({ profile, onBalanceChange, inAdmin }) {
         {noteField(collectNotes, setCollectNotes, showCollectNote, setShowCollectNote, 'Notes', desk)}
         {successNote(collectMsg)}
         {!discountValid && <p className="text-[12.5px] font-semibold text-red-600">The discount is more than the amount</p>}
+        {collectStageMsg === 'Uploading photo…' && (
+          <p className="-mt-1 text-[11.5px] text-slate-500">This can take a moment on a weak connection — hang tight.</p>
+        )}
         {primaryBtn(submitCollect, !canCollect,
-          collectSaving ? 'Saving…'
+          collectSaving ? (collectStageMsg || 'Saving…')
             : isWasteOnly ? <><Icon name="undo" size={16} />Log {thisReturned} returned plates</>
             : isCollection ? (
               <span className="inline-flex items-center gap-2">
