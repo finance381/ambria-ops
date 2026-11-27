@@ -1220,6 +1220,33 @@ function ContractList({ profile, deepLinkContractId }) {
           // moment one is linked.
           var extraEventIdsForLedger = selectedLinkedVenue ? addonEventIds.concat([selectedLinkedVenue.rows[0].id]) : addonEventIds
 
+          // The linked Venue sibling's own plate/package figures, ADDED to
+          // this contract's own -- a real combined deal (e.g. a Sagan +
+          // a Wedding the same weekend) really does have 310 Sagan plates
+          // plus 600 Wedding plates, one deal with 910 plates total, not two
+          // numbers sitting side by side. null+null stays null (nothing to
+          // show); either side alone is just that side's own figure.
+          var linkedRow = selectedLinkedVenue ? selectedLinkedVenue.rows[0] : null
+          function mergedSum(key) {
+            var a = selected[key], b = linkedRow ? linkedRow[key] : null
+            if (a == null && b == null) return null
+            return (a || 0) + (b || 0)
+          }
+          function paxOf(row) {
+            return row.pax != null ? row.pax : (row.total_plates != null && row.complementary_plates != null ? row.total_plates - row.complementary_plates : null)
+          }
+          var mergedPax = (function () {
+            var a = paxOf(selected), b = linkedRow ? paxOf(linkedRow) : null
+            if (a == null && b == null) return null
+            return (a || 0) + (b || 0)
+          })()
+          var mergedTotalPlates = mergedSum('total_plates')
+          var mergedComplementary = mergedSum('complementary_plates')
+          var mergedVenueRental = mergedSum('venue_rental_paise')
+          var mergedVenueMenu = mergedSum('venue_menu_paise')
+          var mergedDecorAmount = mergedSum('decor_amount_paise')
+          var mergedEntAmount = mergedSum('entertainment_amount_paise')
+
           async function printStatement() {
             if (!liveBalance || printing) return
             setPrinting(true)
@@ -1325,10 +1352,10 @@ function ContractList({ profile, deepLinkContractId }) {
               // scale (see the comment above this block), so doubled here.
               var packageBreakdown = [
                 ['Menu rate', selected.menu_rate_paise > 0 ? selected.menu_rate_paise * 2 : null],
-                ['Venue rental', selected.venue_rental_paise != null ? selected.venue_rental_paise * 2 : null],
-                ['Venue + Menu', selected.venue_menu_paise != null ? selected.venue_menu_paise * 2 : null],
-                ['Decor amount', selected.decor_amount_paise > 0 ? selected.decor_amount_paise * 2 : null],
-                ['Entertainment amount', selected.entertainment_amount_paise > 0 ? selected.entertainment_amount_paise * 2 : null],
+                ['Venue rental', mergedVenueRental != null ? mergedVenueRental * 2 : null],
+                ['Venue + Menu', mergedVenueMenu != null ? mergedVenueMenu * 2 : null],
+                ['Decor amount', mergedDecorAmount > 0 ? mergedDecorAmount * 2 : null],
+                ['Entertainment amount', mergedEntAmount > 0 ? mergedEntAmount * 2 : null],
               ].filter(function (r) { return r[1] != null }).map(function (r) { return { label: r[0], amountPaise: r[1] } })
 
               // Multi-function contract (Lunch+Dinner+Sagan etc. under one
@@ -1575,9 +1602,9 @@ function ContractList({ profile, deepLinkContractId }) {
                 venueType: venueTypeLabel(selected.contract_type),
                 location: selected.location || '—',
                 address: selected.address || '—',
-                totalPlates: (selected.department === 'Venue' || selected.department === 'Catering') ? selected.total_plates : null,
-                pax: selected.pax != null ? selected.pax : (selected.total_plates != null && selected.complementary_plates != null ? selected.total_plates - selected.complementary_plates : null),
-                extra: selected.complementary_plates,
+                totalPlates: (selected.department === 'Venue' || selected.department === 'Catering') ? mergedTotalPlates : null,
+                pax: mergedPax,
+                extra: mergedComplementary,
                 functions: functions,
                 packageBreakdown: packageBreakdown,
                 addonItems: addonItems,
@@ -1646,15 +1673,15 @@ function ContractList({ profile, deepLinkContractId }) {
                 // rather than null, so without this department gate every
                 // Decor/Entertainment contract would show a false "0 Pax".
                 ...(selected.department === 'Venue' || selected.department === 'Catering' ? [
-                  ['Total plates', selected.total_plates],
+                  ['Total plates', mergedTotalPlates],
                   // selected.pax is only ever set on a manually-created
                   // tentative contract (no LMS data yet) -- every synced LMS
                   // contract leaves it null, so the paying count is derived
                   // here instead: total_plates already includes the free/extra
                   // quota (see sync-events' mapRow), so subtracting it back out
                   // recovers the base Pax LMS itself shows for the contract.
-                  ['Pax', selected.pax != null ? selected.pax : (selected.total_plates != null && selected.complementary_plates != null ? selected.total_plates - selected.complementary_plates : null)],
-                  ['Extra', selected.complementary_plates],
+                  ['Pax', mergedPax],
+                  ['Extra', mergedComplementary],
                   ['Plates used', platesUsed],
                 ] : []),
                 // extra_plates_charge is LMS's per-plate RATE -- complementary_
@@ -1670,10 +1697,10 @@ function ContractList({ profile, deepLinkContractId }) {
                 // any) lives in extra_plate_collections, not here.
                 ['Extra Plate Rate', selected.extra_plates_charge > 0 ? formatPaise(selected.extra_plates_charge) : null],
                 ['Menu rate', selected.menu_rate_paise > 0 ? formatPaise(selected.menu_rate_paise) : null],
-                ['Venue rental', selected.venue_rental_paise != null ? formatPaise(selected.venue_rental_paise) : null],
-                ['Venue + Menu', selected.venue_menu_paise != null ? formatPaise(selected.venue_menu_paise) : null],
-                ['Decor amount', selected.decor_amount_paise > 0 ? formatPaise(selected.decor_amount_paise) : null],
-                ['Entertainment amount', selected.entertainment_amount_paise > 0 ? formatPaise(selected.entertainment_amount_paise) : null],
+                ['Venue rental', mergedVenueRental != null ? formatPaise(mergedVenueRental) : null],
+                ['Venue + Menu', mergedVenueMenu != null ? formatPaise(mergedVenueMenu) : null],
+                ['Decor amount', mergedDecorAmount > 0 ? formatPaise(mergedDecorAmount) : null],
+                ['Entertainment amount', mergedEntAmount > 0 ? formatPaise(mergedEntAmount) : null],
                 ['Enquiry mode', selected.enquiry_mode],
                 ['Priority', selected.priority],
                 ['Created by (LMS)', selected.created_user_name],
