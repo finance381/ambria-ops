@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
 import { filterVisibleVendors } from '../../lib/vendorGating'
+import { matchesAmountQuery } from '../../lib/format'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import SearchDropdown from '../../components/ui/SearchDropdown'
 import DescriptionNote from '../../components/ui/DescriptionNote'
@@ -581,7 +582,8 @@ function Vendors({ profile }) {
 
   var filtered = vendors.filter(function (v) {
     if (!showInactive && !v.active) return false
-    if (search && v.name.toLowerCase().indexOf(search.toLowerCase()) === -1) return false
+    if (search && v.name.toLowerCase().indexOf(search.toLowerCase()) === -1 &&
+        !matchesAmountQuery(search, v.opening_balance_paise)) return false
     if (catFilter && (v.category_ids || []).indexOf(Number(catFilter)) === -1) return false
     if (estFilter && (v.expense_sub_type_ids || []).indexOf(Number(estFilter)) === -1) return false
     return true
@@ -1173,7 +1175,7 @@ function Vendors({ profile }) {
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-sm">🔍</span>
           <input type="text" value={search}
             onChange={function (e) { setSearch(e.target.value) }}
-            placeholder="Search vendors..."
+            placeholder="Search vendors or opening balance..."
             className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
             style={{ fontSize: '16px' }} />
         </div>

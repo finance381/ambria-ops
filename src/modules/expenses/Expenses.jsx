@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase, isJwtExpiredError } from '../../lib/supabase'
-import { formatDate, formatPoints } from '../../lib/format'
+import { formatDate, formatPoints, parseAmountQuery } from '../../lib/format'
 import ExpenseFormMulti from './ExpenseForm'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import ExpenseTypeMaster from './ExpenseTypeMaster'
@@ -171,6 +171,8 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
     if (!safe) return null
     var lower = safe.toLowerCase()
     var parts = ['description.ilike.%' + safe + '%']
+    var amt = parseAmountQuery(safe)
+    if (amt != null) parts.push('amount_paise.eq.' + Math.round(amt * 100))
 
     function idsOf(list, getId, getName) {
       var out = []
@@ -831,7 +833,7 @@ function Expenses({ profile, masterMode, inAdmin, deepLinkExpense, onDeepLinkHan
                   type="text"
                   value={expSearch}
                   onChange={function (e) { setExpSearch(e.target.value) }}
-                  placeholder="Search expenses"
+                  placeholder="Search expenses or amount"
                   className={FIELD_SEARCH + (glass ? " ambria-glass-chip !border-white/60" : "")}
                   style={{ fontSize: '16px' }}
                 />

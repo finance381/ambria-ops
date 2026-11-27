@@ -3,7 +3,7 @@ import { pushBack } from '../../lib/backNav'
 import { supabase } from '../../lib/supabase'
 import { fetchAllRows } from '../../lib/fetchAll'
 import { logActivity } from '../../lib/logger'
-import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
+import { formatPoints, formatDate, formatDateTime, matchesAmountQuery } from '../../lib/format'
 import PayVendorModal from './PayVendorModal'
 import PaymentProofThumbs from '../../components/ledger/PaymentProofThumbs'
 import SearchDropdown from '../../components/ui/SearchDropdown'
@@ -1149,7 +1149,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
     var hasAnyDropdownFilter = !!(fExpType || fExpSubType || fCategory || fSubCategory)
     var filtered = vendors.filter(function (v) {
       if (!v.vendor_active) return false
-      if (q && searchKey(v.vendor_name).indexOf(q) === -1) return false
+      if (q && searchKey(v.vendor_name).indexOf(q) === -1 && !matchesAmountQuery(deferredSearch, v.balance_paise)) return false
       if (deferredStatus === 'with_balance' && (v.balance_paise || 0) === 0) return false
       if (deferredStatus === 'incomplete' && v.vendor_status !== 'incomplete') return false
       if (deferredStatus === 'overdue' && (v.overdue_count || 0) === 0) return false
@@ -1350,7 +1350,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
 
           <div className="flex items-center gap-2.5">
             <div className="flex-1 min-w-0">
-              <SearchField value={search} onChange={function (v) { setSearch(v) }} placeholder="Search vendors..." />
+              <SearchField value={search} onChange={function (v) { setSearch(v) }} placeholder="Search vendors or balance..." />
             </div>
             {canManageVendors && (
               <button type="button" onClick={function () { setShowMergeModal(true) }}
@@ -1486,7 +1486,7 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
         <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-3">
           <div className="flex items-center gap-2">
             <div className="flex-1 min-w-0">
-              <SearchField value={search} onChange={function (v) { setSearch(v) }} placeholder="Search vendors..." />
+              <SearchField value={search} onChange={function (v) { setSearch(v) }} placeholder="Search vendors or balance..." />
             </div>
             {/* Merging vendors is a housekeeping job, not a filter, so it
                 ends the bar rather than sitting in the middle of it. */}

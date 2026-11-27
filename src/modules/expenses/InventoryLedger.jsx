@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase, fetchAll } from '../../lib/supabase'
-import { formatDate, formatDateTime, formatPaise } from '../../lib/format'
+import { formatDate, formatDateTime, formatPaise, matchesAmountQuery } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import { scrollToTopOf } from '../../lib/scrollToTop'
 import { registerPdfFont } from '../../lib/pdfFont'
@@ -421,7 +421,14 @@ function InventoryLedger({ profile, deepLinkInventoryItem, onDeepLinkInventoryIt
       }
       if (q) {
         var hay = (i.name + ' ' + (i.code || '') + ' ' + (i.cat || '') + ' ' + (i.subcat || '')).toLowerCase()
-        if (hay.indexOf(q) === -1) return false
+        if (hay.indexOf(q) === -1) {
+          // Not a name/code hit -- still worth surfacing if this is the one
+          // item whose rate, or some past purchase's line total, is the
+          // number someone typed in.
+          var amtHit = matchesAmountQuery(q, i.rate_paise) ||
+            rows.some(function (r) { return matchesAmountQuery(q, [r.amount_paise, r.rate_paise]) })
+          if (!amtHit) return false
+        }
       }
       return true
     })
@@ -792,7 +799,7 @@ function InventoryLedger({ profile, deepLinkInventoryItem, onDeepLinkInventoryIt
           <SearchField
             value={search}
             onChange={function (v) { setSearch(v) }}
-            placeholder="Search items, code, category..."
+            placeholder="Search items, code, category or amount..."
             className="basis-full @lg:basis-auto flex-1 min-w-0 @lg:min-w-[220px]"
           />
           <button type="button" onClick={function () { setShowFilters(!showFilters) }} aria-pressed={showFilters}

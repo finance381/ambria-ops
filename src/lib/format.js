@@ -69,3 +69,44 @@ export function formatPointsPlain(paise) {
   if (paise == null) return '—'
   return (paise / 100).toLocaleString('en-IN')
 }
+
+// Several amount_paise-shaped columns in this schema are plain Postgres
+// `int` (max 2,147,483,647), not `bigint` -- a search term that parses past
+// that as paise would otherwise go out as `amount_paise.eq.<N>` and the
+// server would 400 the whole query. Capped here, at the one shared spot,
+// rather than per caller.
+var INT4_MAX = 2147483647
+
+// A typed search term, read as a rupee amount (commas/whitespace and an
+// optional trailing "pts" stripped) and matched EXACTLY against one or more
+// paise-denominated fields on a row -- so "3000" finds a ₹3,000 row but not
+// a ₹33,000 one. Returns false for a non-numeric term (or one no real amount
+// could be -- the all-zero case matches almost everything and is never what
+// someone actually typed a search for); callers fall back to their own text
+// match in that case. Reference: the amount half of WalletManager's
+// transaction search.
+export function matchesAmountQuery(query, paiseValues) {
+  var qNum = String(query || '').trim().toLowerCase().replace(/[,\s]/g, '').replace(/pts?$/, '')
+  if (!qNum || !/^\d+(\.\d+)?$/.test(qNum)) return false
+  var target = Math.round(parseFloat(qNum) * 100)
+  if (target === 0 || target > INT4_MAX) return false
+  var values = Array.isArray(paiseValues) ? paiseValues : [paiseValues]
+  // A debit/outstanding figure is sometimes stored signed; nobody searching
+  // for an amount types the minus sign, so this matches on magnitude.
+  return values.some(function (v) { return v != null && target === Math.abs(v) })
+}
+
+// Same idea, but the query is already a plain rupee number string (no paise
+// conversion) -- for the handful of lists whose amount column is stored in
+// rupees, not paise, and for callers that build their own paise-equality
+// filter. Returns null (not a usable amount) once converting to paise would
+// overflow an `int` column -- see INT4_MAX above -- so an oversized numeric
+// term (a pasted UTR, a phone number) falls through to the caller's own text
+// search instead of erroring the request.
+export function parseAmountQuery(query) {
+  var qNum = String(query || '').trim().toLowerCase().replace(/[,\s]/g, '').replace(/pts?$/, '')
+  if (!qNum || !/^\d+(\.\d+)?$/.test(qNum)) return null
+  var amt = parseFloat(qNum)
+  if (Math.round(amt * 100) > INT4_MAX) return null
+  return amt
+}

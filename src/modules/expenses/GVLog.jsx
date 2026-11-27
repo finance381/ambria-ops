@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatDate, formatDateTime, formatPoints } from '../../lib/format'
+import { formatDate, formatDateTime, formatPoints, matchesAmountQuery } from '../../lib/format'
 import { hasPerm } from '../../lib/permissions'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
 import SearchField from '../../components/ui/SearchField'
@@ -85,6 +85,7 @@ function GVLog({ profile, onNavigateToExpenses }) {
     if (String(g.gv_number).toLowerCase().indexOf(searchLower) !== -1) return true
     if (String(g.expense_id).indexOf(searchLower) !== -1) return true
     if ((g.reason || '').toLowerCase().indexOf(searchLower) !== -1) return true
+    if (matchesAmountQuery(searchLower, (expenseMap[g.expense_id] || {}).amount_paise)) return true
     return false
   })
 
@@ -135,7 +136,7 @@ function GVLog({ profile, onNavigateToExpenses }) {
         <SearchField
           value={search}
           onChange={function (v) { setSearch(v) }}
-          placeholder="Search by JV #, expense ID, or reason..."
+          placeholder="Search by JV #, expense ID, reason, or amount..."
           className="w-full"
         />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">

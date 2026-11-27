@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
+import { formatPoints, formatDate, formatDateTime, matchesAmountQuery } from '../../lib/format'
 import { pushBack } from '../../lib/backNav'
 import { registerPdfFont } from '../../lib/pdfFont'
 import { openOrSharePdf } from '../../lib/pdfOutput'
@@ -1277,7 +1277,8 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
         if (!q) return true
         if (typeMatch) return true
         var sn = r.subTypeId ? (subTypeMap[r.subTypeId] || '') : ''
-        return sn.toLowerCase().indexOf(q) !== -1
+        if (sn.toLowerCase().indexOf(q) !== -1) return true
+        return matchesAmountQuery(q, [r.total, r.pending, r.committed, r.credit])
       })
       if (pendingOnly && t.pending === 0 && subRows.length === 0) return null
       if (q && !typeMatch && subRows.length === 0) return null
@@ -1872,7 +1873,7 @@ function Ledgers({ profile, onNavigateToExpenses, inAdmin }) {
             <SearchField
               value={search}
               onChange={function (v) { setSearch(v) }}
-              placeholder="Search dept / type / sub-type..."
+              placeholder="Search dept / type / sub-type / amount..."
               className="w-full"
             />
           </div>

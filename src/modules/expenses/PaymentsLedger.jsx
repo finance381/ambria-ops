@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { fetchAllRows } from '../../lib/fetchAll'
-import { formatPoints, formatPointsPlain, formatDate, formatDateTime } from '../../lib/format'
+import { formatPoints, formatPointsPlain, formatDate, formatDateTime, matchesAmountQuery } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import { scrollToTopOf } from '../../lib/scrollToTop'
 import { hasPerm } from '../../lib/permissions'
@@ -685,7 +685,7 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
         // name ("SANGEET") -- without it, searching the guest's own name found
         // nothing.
         var hay = [r.party_name, r._clientName, r.description, r.collector_name, r.recorded_by, r.type_label, r._receiptNo].join(' ').toLowerCase()
-        if (hay.indexOf(q) === -1) return false
+        if (hay.indexOf(q) === -1 && !matchesAmountQuery(q, r.amount_paise)) return false
       }
       return true
     })
@@ -922,7 +922,7 @@ function PaymentsLedger({ profile, onNavigateToExpenses }) {
                 it does not live one press deep behind More Filters. On a phone
                 it takes what the row has left. */}
             <SearchField value={search} onChange={function (v) { setSearch(v) }}
-              placeholder="Search transactions..." className="flex-1 min-w-0 @3xl:flex-none @3xl:w-[220px]" />
+              placeholder="Search transactions or amount..." className="flex-1 min-w-0 @3xl:flex-none @3xl:w-[220px]" />
             <button type="button" onClick={function () { setShowMore(!showMore) }} aria-pressed={showMore}
               className={'shrink-0 h-10 @3xl:h-9 px-3 inline-flex items-center gap-1.5 rounded-xl border text-[12.5px] font-bold transition-colors ' +
                 (showMore || typeFilter

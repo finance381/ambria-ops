@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { pushBack, unwind } from '../../lib/backNav'
 import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
-import { formatPoints, formatDate, formatDateTime, titleCase } from '../../lib/format'
+import { formatPoints, formatDate, formatDateTime, titleCase, matchesAmountQuery } from '../../lib/format'
 import EventCalendar from '../../components/ui/EventCalendar'
 import { venueColor } from '../../lib/venueColors'
 import ImageLightbox from '../../components/ui/ImageLightbox'
@@ -1251,7 +1251,7 @@ function EventLedger(props) {
       if (q) {
         var hay = [e.description, e.payment_mode, entryLabel(e.entry_type), rowPerson(e),
           formatPoints(e.amount_paise), formatDate(rowDate(e))].join(' ').toLowerCase()
-        if (hay.indexOf(q) === -1) return false
+        if (hay.indexOf(q) === -1 && !matchesAmountQuery(q, e.amount_paise)) return false
       }
       return true
     })

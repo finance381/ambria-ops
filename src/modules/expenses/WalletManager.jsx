@@ -2487,6 +2487,20 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     return mergeExpenseWalletRows(visible)
   }
 
+  // A transfer is logged (both sides) only once the recipient confirms it,
+  // days after it was actually sent -- but it still carries the date the
+  // sender meant it for (transfer_date, set once at send time). The on-screen
+  // list already shows that date instead of the real logging time; these
+  // exports didn't, so a statement for either wallet showed the acceptance
+  // date instead of the date the money was actually sent for. Position and
+  // balance_after_paise stay anchored to the real created_at (that's when the
+  // balance actually moved) -- only this displayed date changes.
+  function displayDateFor(t) {
+    var tr = t.reference_type === 'transfer' && t.reference_id ? transferParties[t.reference_id] : null
+    if (tr && tr.transfer_date && tr.transfer_date !== String(t.created_at).slice(0, 10)) return tr.transfer_date
+    return t.created_at
+  }
+
   function exportWalletCSV() {
     if (!walletTxns.length || !selectedWallet) return
     var userName = walletProfiles[selectedWallet.user_id]?.name || 'user'
@@ -2501,8 +2515,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     }).map(function (t) {
       var isExpRow = (t.reference_type === 'expense' || t.reference_type === 'expense_refund') && t.reference_id
       var isDeletedExp = isExpRow && !!expenseRefs[t.reference_id] && !!expenseRefs[t.reference_id].deleted_at
+      var dd = displayDateFor(t)
       return [
-        t.created_at ? t.created_at.split('T')[0] : '',
+        dd ? String(dd).split('T')[0] : '',
         t.type || '',
         t.amount_paise ? (t.amount_paise / 100) : 0,
         t.balance_after_paise ? (t.balance_after_paise / 100) : 0,
@@ -2690,7 +2705,16 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       var particularsMeta = []
       var body = chrono.map(function (t, idx) {
         var dt = t.created_at ? new Date(t.created_at) : null
-        var dm = { top: dt ? fmtD(t.created_at.split('T')[0]) : '—', bottom: dt ? dt.toTimeString().slice(0, 5) : '' }
+        var ddFor = displayDateFor(t)
+        var isBackdated = dt && String(ddFor).slice(0, 10) !== String(t.created_at).slice(0, 10)
+        // A backdated transfer's TIME label would otherwise pair the real
+        // logging time with the business date shown above it -- e.g.
+        // "01-Oct / 14:32" when 14:32 was actually three days later. Printing
+        // the real date alongside its own time instead keeps the pair true.
+        var dm = {
+          top: dt ? fmtD(String(ddFor).split('T')[0]) : '—',
+          bottom: !dt ? '' : (isBackdated ? fmtD(t.created_at.split('T')[0]) + ' ' + dt.toTimeString().slice(0, 5) : dt.toTimeString().slice(0, 5)),
+        }
         dateMeta.push(dm)
         var pLines = particularsLinesFor(t)
         // chrono is oldest -> newest, so idx-1 is the row right before this one

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { pushBack } from '../../lib/backNav'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../lib/logger'
-import { formatPoints, formatDate, formatDateTime } from '../../lib/format'
+import { formatPoints, formatDate, formatDateTime, matchesAmountQuery } from '../../lib/format'
 import PaySalaryModal from './PaySalaryModal'
 import AccrueSalariesModal from './AccrueSalariesModal'
 import AdjustSalaryModal from './AdjustSalaryModal'
@@ -370,7 +370,7 @@ function SalaryLedger({ profile, inAdmin, onNavigateToExpenses }) {
     var filtered = employees.filter(function (e) {
       if (q) {
         var hay = ((e.employee_name || '') + ' ' + (e.employee_code || '') + ' ' + (e.designation || '')).toLowerCase()
-        if (hay.indexOf(q) === -1) return false
+        if (hay.indexOf(q) === -1 && !matchesAmountQuery(q, [e.balance_paise, e.cash_balance_paise, e.bank_balance_paise])) return false
       }
       if (statusFilter === 'with_balance' && (e.balance_paise || 0) === 0) return false
       if (statusFilter === 'stale' && ((e.unpaid_since_days || 0) < 30)) return false
@@ -451,7 +451,7 @@ function SalaryLedger({ profile, inAdmin, onNavigateToExpenses }) {
         {/* Filter row */}
         <div className="flex flex-col sm:flex-row gap-2">
           <input type="text" value={search} onChange={function (e) { setSearch(e.target.value) }}
-            placeholder="Search name / code / designation..."
+            placeholder="Search name / code / designation / balance..."
             className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 bg-white"
             style={{ fontSize: '16px' }} />
           <select value={deptFilter} onChange={function (e) { setDeptFilter(e.target.value) }}

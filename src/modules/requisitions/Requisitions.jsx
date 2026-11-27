@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { supabase, isJwtExpiredError } from '../../lib/supabase'
 import { stopAllVoice } from '../../lib/voiceRegistry'
 import { useVoice } from '../../hooks/useVoice'
-import { titleCase, formatDate, formatPoints } from '../../lib/format'
+import { titleCase, formatDate, formatPoints, parseAmountQuery } from '../../lib/format'
 import { logActivity } from '../../lib/logger'
 import { useRealtime } from '../../lib/useRealtime'
 import Modal from '../../components/ui/Modal'
@@ -24,6 +24,19 @@ import DescriptionNote from '../../components/ui/DescriptionNote'
 import { useBackButtonClose } from '../../lib/useBackButtonClose'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
+
+// A numeric search should still find a requisition by its purpose text (a
+// quoted bill number, a room number) as well as by its exact linked expense
+// amount -- replacing the purpose search outright would also stop it
+// matching anything for every non-expense requisition, where
+// expense_amount_paise is null. Same comma/paren/quote stripping as the
+// description search elsewhere, since PostgREST reads or=() as a
+// comma-separated list.
+function applyReqSearch(query, search, amt) {
+  if (amt == null) return query.ilike('purpose', '%' + search + '%')
+  var safe = String(search).replace(/[,()"\\]/g, ' ').trim()
+  return query.or('purpose.ilike.%' + safe + '%,expense_amount_paise.eq.' + Math.round(amt * 100))
+}
 
 var PAGE_SIZE = 20
 var URGENCY_COLORS = {
@@ -164,7 +177,7 @@ function Requisitions({ profile, onBack, onNavigateToExpenses }) {
     if (urgencyFilter) query = query.eq('urgency', urgencyFilter)
     if (dateFrom) query = query.gte('created_at', dateFrom)
     if (dateTo) query = query.lte('created_at', dateTo + 'T23:59:59.999')
-    if (reqSearchDebounced) query = query.ilike('purpose', '%' + reqSearchDebounced + '%')
+    if (reqSearchDebounced) query = applyReqSearch(query, reqSearchDebounced, parseAmountQuery(reqSearchDebounced))
     if (subDeptFilter) query = query.eq('sub_department_id', Number(subDeptFilter))
     if (deptFilter) {
       var selMyDept = departments.find(function (d) { return String(d.id) === deptFilter })
@@ -215,7 +228,7 @@ function Requisitions({ profile, onBack, onNavigateToExpenses }) {
     if (urgencyFilter) query = query.eq('urgency', urgencyFilter)
     if (dateFrom) query = query.gte('created_at', dateFrom)
     if (dateTo) query = query.lte('created_at', dateTo + 'T23:59:59.999')
-    if (reqSearchDebounced) query = query.ilike('purpose', '%' + reqSearchDebounced + '%')
+    if (reqSearchDebounced) query = applyReqSearch(query, reqSearchDebounced, parseAmountQuery(reqSearchDebounced))
     if (userFilter) query = query.eq('requested_by', userFilter)
     if (subDeptFilter) query = query.eq('sub_department_id', Number(subDeptFilter))
     if (deptFilter) {
@@ -271,7 +284,7 @@ function Requisitions({ profile, onBack, onNavigateToExpenses }) {
     if (urgencyFilter) query = query.eq('urgency', urgencyFilter)
     if (dateFrom) query = query.gte('created_at', dateFrom)
     if (dateTo) query = query.lte('created_at', dateTo + 'T23:59:59.999')
-    if (reqSearchDebounced) query = query.ilike('purpose', '%' + reqSearchDebounced + '%')
+    if (reqSearchDebounced) query = applyReqSearch(query, reqSearchDebounced, parseAmountQuery(reqSearchDebounced))
     if (userFilter) query = query.eq('requested_by', userFilter)
     if (subDeptFilter) query = query.eq('sub_department_id', Number(subDeptFilter))
     if (deptFilter) {
@@ -450,7 +463,7 @@ function Requisitions({ profile, onBack, onNavigateToExpenses }) {
       {/* Search + Filters — My / Approvals / All tabs */}
       {(view === 'list' || view === 'approve' || view === 'all') && (
         <input type="text" value={reqSearch} onChange={function (e) { setReqSearch(e.target.value) }}
-          placeholder="Search purpose..."
+          placeholder="Search purpose or amount..."
           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           style={{ fontSize: '16px' }} />
       )}

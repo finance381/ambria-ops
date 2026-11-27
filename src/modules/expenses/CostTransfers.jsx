@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import Modal from '../../components/ui/Modal'
 import FilterDropdown from '../../components/ui/FilterDropdown'
 import { logActivity } from '../../lib/logger'
-import { formatDate, formatDateTime } from '../../lib/format'
+import { formatDate, formatDateTime, parseAmountQuery } from '../../lib/format'
 import { hasPerm } from '../../lib/permissions'
 import { useReferenceData } from '../../lib/referenceData.jsx'
 import VoiceInput from '../../components/ui/VoiceInput'
@@ -334,7 +334,15 @@ function CostTransfers({ profile, inAdmin }) {
       if (toPartyFilter) q = q.eq('to_party_type', toPartyFilter)
       if (dateFrom) q = q.gte('effective_date', dateFrom)
       if (dateTo) q = q.lte('effective_date', dateTo)
-      if (searchD) q = q.ilike('description', '%' + searchD + '%')
+      if (searchD) {
+        var searchAmt = parseAmountQuery(searchD)
+        if (searchAmt != null) {
+          var searchSafe = String(searchD).replace(/[,()"\\]/g, ' ').trim()
+          q = q.or('description.ilike.%' + searchSafe + '%,amount_paise.eq.' + Math.round(searchAmt * 100))
+        } else {
+          q = q.ilike('description', '%' + searchD + '%')
+        }
+      }
       var res = await q
       if (ticket !== loadReqRef.current) return
       if (res.error) throw res.error
@@ -1356,7 +1364,7 @@ function CostTransfers({ profile, inAdmin }) {
           <SearchField
             value={searchRaw}
             onChange={function (v) { setSearchRaw(v) }}
-            placeholder="Search description..."
+            placeholder="Search description or amount..."
             className="flex-1 min-w-0"
           />
           <button type="button" onClick={function () { setFiltersOpen(!filtersOpen) }} aria-expanded={filtersOpen}
@@ -1396,7 +1404,7 @@ function CostTransfers({ profile, inAdmin }) {
           <SearchField
             value={searchRaw}
             onChange={function (v) { setSearchRaw(v) }}
-            placeholder="Search description..."
+            placeholder="Search description or amount..."
             className="flex-1 min-w-0"
           />
           <button type="button" onClick={function () { setFiltersOpen(!filtersOpen) }} aria-expanded={filtersOpen}

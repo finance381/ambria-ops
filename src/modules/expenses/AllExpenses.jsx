@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatDate, formatDateTime, formatPoints } from '../../lib/format'
+import { formatDate, formatDateTime, formatPoints, parseAmountQuery } from '../../lib/format'
 import { APPROVAL_STATUS_COLORS, APPROVAL_STATUS_LABELS } from '../../lib/constants'
 import FilterDropdown from '../../components/ui/FilterDropdown'
 import EventDatePicker from '../../components/ui/EventDatePicker'
@@ -17,6 +17,18 @@ import DescriptionNote from '../../components/ui/DescriptionNote'
 import { hasPerm } from '../../lib/permissions'
 
 function byName(a, b) { return (a.name || '').localeCompare(b.name || '') }
+
+// A numeric search term should still find the expense by description (a
+// bill/invoice number quoted there) as well as by its exact amount — an
+// amount-only match would silently stop finding "4521" in the text the
+// moment it also parsed as ₹4,521. PostgREST reads or=() as a comma-
+// separated list, so the same characters .ilike() escapes on its own
+// (`,()"\`) are stripped here before building the raw filter string.
+function applyExpenseSearch(query, search, amt) {
+  if (amt == null) return query.ilike('description', '%' + search + '%')
+  var safe = String(search).replace(/[,()"\\]/g, ' ').trim()
+  return query.or('description.ilike.%' + safe + '%,amount_paise.eq.' + Math.round(amt * 100))
+}
 
 // 'YYYY-MM-DD' -> the next calendar day, same format — used to turn a single
 // picked date into a [day, next day) bound against a timestamptz column.
@@ -183,7 +195,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
     if (allExpStatus === 'acknowledged' && ackDateFilter) {
       query = query.gte('acknowledged_at', ackDateFilter).lt('acknowledged_at', nextDay(ackDateFilter))
     }
-    if (allExpSearchD) query = query.ilike('description', '%' + allExpSearchD + '%')
+    if (allExpSearchD) query = applyExpenseSearch(query, allExpSearchD, parseAmountQuery(allExpSearchD))
     if (userFilter) query = query.eq('user_id', userFilter)
     if (deptFilter) query = query.eq('expense_allocations.department_id', Number(deptFilter))
     if (expTypeFilter) query = query.eq('expense_allocations.expense_type_id', Number(expTypeFilter))
@@ -247,7 +259,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
       if (allExpStatus === 'acknowledged' && ackDateFilter) {
         totalQuery = totalQuery.gte('acknowledged_at', ackDateFilter).lt('acknowledged_at', nextDay(ackDateFilter))
       }
-      if (allExpSearchD) totalQuery = totalQuery.ilike('description', '%' + allExpSearchD + '%')
+      if (allExpSearchD) totalQuery = applyExpenseSearch(totalQuery, allExpSearchD, parseAmountQuery(allExpSearchD))
       if (userFilter) totalQuery = totalQuery.eq('user_id', userFilter)
       if (deptFilter) totalQuery = totalQuery.eq('expense_allocations.department_id', Number(deptFilter))
       if (expTypeFilter) totalQuery = totalQuery.eq('expense_allocations.expense_type_id', Number(expTypeFilter))
@@ -350,7 +362,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
         if (allExpStatus === 'acknowledged' && ackDateFilter) {
           q = q.gte('acknowledged_at', ackDateFilter).lt('acknowledged_at', nextDay(ackDateFilter))
         }
-        if (allExpSearchD) q = q.ilike('description', '%' + allExpSearchD + '%')
+        if (allExpSearchD) q = applyExpenseSearch(q, allExpSearchD, parseAmountQuery(allExpSearchD))
         if (userFilter) q = q.eq('user_id', userFilter)
         if (deptFilter) q = q.eq('expense_allocations.department_id', Number(deptFilter))
         if (expTypeFilter) q = q.eq('expense_allocations.expense_type_id', Number(expTypeFilter))
@@ -691,7 +703,7 @@ function AllExpenses({ onBack, onOpenDetail, embedded, scopeDeptIds, glass, prof
         <SearchField
           value={allExpSearch}
           onChange={function (v) { setAllExpSearch(v) }}
-          placeholder="Search description..."
+          placeholder="Search description or amount..."
           className="w-full"
         />
       </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
-import { formatPoints, formatDate } from '../../lib/format'
+import { formatPoints, formatDate, matchesAmountQuery } from '../../lib/format'
 import { useRealtime } from '../../lib/useRealtime'
 import PayVendorModal from './PayVendorModal'
 import { hasPerm } from '../../lib/permissions'
@@ -242,7 +242,7 @@ function Payments({ profile }) {
 
     function apply(list) {
       var out = list.filter(function (r) {
-        if (q && (r.vendor_name || '').toLowerCase().indexOf(q) === -1) return false
+        if (q && (r.vendor_name || '').toLowerCase().indexOf(q) === -1 && !matchesAmountQuery(q, r.balance)) return false
         if (vendorTypeFilter && r._vendorType !== vendorTypeFilter) return false
         if (deptId && (r._deptIds || []).indexOf(deptId) === -1) return false
         if (minAmt > 0 && r.balance < minAmt) return false
@@ -343,7 +343,7 @@ function Payments({ profile }) {
         <SearchField
           value={search}
           onChange={function (v) { setSearch(v) }}
-          placeholder="Search vendor name..."
+          placeholder="Search vendor name or amount..."
           className="w-full"
         />
 
