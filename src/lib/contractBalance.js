@@ -52,7 +52,7 @@ var EVT_COLS = 'id, event_name, function_date, venue_name, location, client_name
 // Whatever's left after all three targets are satisfied is real
 // over-collection beyond the whole deal, folded back into cash (negative =
 // over-collected), the same convention pending_cash_paise already had.
-function settleAcrossChannels(agreedCash, collCash, agreedBank, collBank, tax) {
+export function settleAcrossChannels(agreedCash, collCash, agreedBank, collBank, tax) {
   var pool = collCash + Math.round(collBank / 10)
 
   var cashApplied = Math.min(pool, Math.max(0, agreedCash))

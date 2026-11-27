@@ -10,7 +10,7 @@ import EnteredMark from '../../components/ui/EnteredMark'
 import Icon from '../../components/ui/Icon'
 import EventLedger from '../expenses/EventLedger'
 import EventDatePicker from '../../components/ui/EventDatePicker'
-import { fetchContractBalanceSummary, fetchConsolidatedContractBalance, fetchContractBalancesBatch, isLmsRowCancelled } from '../../lib/contractBalance'
+import { fetchContractBalanceSummary, fetchConsolidatedContractBalance, fetchContractBalancesBatch, fetchLmsCollected, settleAcrossChannels, isLmsRowCancelled } from '../../lib/contractBalance'
 import { generateContractStatementPdf } from '../../lib/pdfContractStatement'
 
 // The list's columns from sm up: event, contract, date, venue, balance, Tally.
@@ -533,7 +533,42 @@ function ContractList({ profile, deepLinkContractId }) {
       if (cancelled) return
       var next = {}
       results.forEach(function (b, i) { if (b) next[groupsToShow[i].rows[0].id] = b })
-      setListBalances(next)
+
+      // fetchContractBalancesBatch is Ambria Ops' own money only (see its own
+      // comment) -- a contract collected straight through LMS instead showed
+      // "due" here while its own detail view (which does pull LMS) correctly
+      // said Settled. Fetching LMS for the whole visible page would be slow
+      // (one live edge-function call per contract), so it's only done for
+      // rows this batch itself says still have something due -- a contract
+      // already Settled can only stay Settled with MORE money counted in.
+      var dueGroups = groupsToShow.filter(function (g) {
+        var b = next[g.rows[0].id]
+        var d = b && reconciledDueDisplay(b)
+        return d && !d.settled
+      })
+      if (dueGroups.length === 0) { setListBalances(next); return }
+      Promise.all(dueGroups.map(function (g) {
+        var p = g.rows[0]
+        return fetchLmsCollected(p.contract_no, p.department).then(function (lms) { return { id: p.id, lms: lms } })
+      })).then(function (lmsResults) {
+        if (cancelled) return
+        lmsResults.forEach(function (r) {
+          if (!r.lms) return
+          var b = next[r.id]
+          if (!b) return
+          var collCash = Number(b.collected_cash_paise || 0) + Number(r.lms.cash || 0)
+          var collBank = Number(b.collected_bank_paise || 0) + Number(r.lms.bank || 0)
+          var pending = settleAcrossChannels(Number(b.agreed_cash_paise || 0), collCash, Number(b.agreed_bank_paise || 0), collBank, Number(b.tax_amount_paise || 0))
+          next[r.id] = Object.assign({}, b, {
+            collected_cash_paise: collCash,
+            collected_bank_paise: collBank,
+            pending_cash_paise: pending.pending_cash_paise,
+            pending_bank_paise: pending.pending_bank_paise,
+            pending_tax_paise: pending.pending_tax_paise,
+          })
+        })
+        setListBalances(next)
+      })
     })
     return function () { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
