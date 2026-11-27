@@ -1,5 +1,18 @@
 import { supabase } from './supabase'
 
+// LMS marks a mis-entered collection cancelled by flipping pr_status to "C"
+// on the same row (pr_cancel_remarks carries the reason) rather than deleting
+// it or posting a paired reversal entry the way Ambria Ops' own wallet
+// cancellations do. Confirmed live against get_all_payment_collection: a
+// ₹19,90,000 fat-finger entry (meant to be ₹1,99,000) sat with status "C" and
+// a remark saying so, while every genuine row around it was "N". Every
+// consumer of lms-payment-collections' output must exclude a row this flags
+// from any money total — there's nothing that nets it back out the way an
+// Ambria Ops reversal does.
+export function isLmsRowCancelled(r) {
+  return String((r && r.status) || '').trim().toUpperCase() === 'C'
+}
+
 // An LMS resync mints a new event row for the same function rather than
 // updating the old one, marking the old one lms_cancelled_at, so one real
 // function can appear as several rows sharing a contract_no. Every pool this
@@ -75,6 +88,7 @@ export async function fetchLmsCollected(contractNo, department) {
     if (lmsRes.error) return null
     var cash = 0, bank = 0
     ;((lmsRes.data && lmsRes.data.data) || []).forEach(function (r) {
+      if (isLmsRowCancelled(r)) return
       var isCash = String(r.pay_mode || '').toLowerCase().indexOf('cash') !== -1
       if (isCash) cash += Number(r.net_amount_paise || 0)
       else bank += Number(r.net_amount_paise || 0)

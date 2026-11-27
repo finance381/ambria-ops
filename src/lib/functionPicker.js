@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { deptOrder } from './ui'
+import { isLmsRowCancelled } from './contractBalance'
 
 // Shared by every "For a function?" cost/collection entry point (Expense,
 // Decor Var Cost, GV, Wallet Collect) so a fix to the grouping or the
@@ -205,9 +206,18 @@ export async function computeContractBalance(pool, lmsRows) {
   // LMS-only collections (never touched Ambria Ops' own wallet) count toward
   // the real total too — otherwise "Collected" understates what the
   // contract has actually taken in, and "Pending" overstates what's owed.
+  //
+  // lmsRows here is the RAW lms-payment-collections response (pay_mode/
+  // net_amount_paise), not the payment_mode/amount_paise shape EventLedger.jsx's
+  // own fetchLmsPayments remaps to for its Transactions tab — this previously
+  // read those wrong field names, so every row fell through to the `else`
+  // (collBank) with amount_paise always undefined → 0: LMS collections were
+  // silently never actually counted here at all, cancelled or not.
   ;(lmsRows || []).forEach(function (r) {
-    if (r.payment_mode === 'cash') collCash += Number(r.amount_paise || 0)
-    else collBank += Number(r.amount_paise || 0)
+    if (isLmsRowCancelled(r)) return
+    var isCash = String(r.pay_mode || '').toLowerCase().indexOf('cash') !== -1
+    if (isCash) collCash += Number(r.net_amount_paise || 0)
+    else collBank += Number(r.net_amount_paise || 0)
   })
   var pending = settleAcrossChannels(agreedCash, collCash, agreedBank, collBank, tax)
   return {

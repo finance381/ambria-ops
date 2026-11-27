@@ -14,6 +14,7 @@ import { useVoice } from '../../hooks/useVoice'
 import { useAudioRecorder } from '../../hooks/useAudioRecorder'
 import { generateCollectionReceiptPdf } from '../../lib/pdfReceipt'
 import { loadFunctionPickerPool, buildDeptContractBuckets, computeContractBalance, loadFullContractPool } from '../../lib/functionPicker'
+import { isLmsRowCancelled } from '../../lib/contractBalance'
 // Imported rather than read out of public/, for the same reasons PageBackdrop
 // gives: the base path is handled for us, and the content hash means a new
 // backdrop is never served from a stale cache. It was a 1.05MB PNG; as WebP at
@@ -1534,6 +1535,12 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
           enteredBy: p.entry_by || null,
           receiptUrl: p.receipt_url || null,
           orderNo: p.order_no || null,
+          // A cancelled LMS row (mis-entered amount, corrected elsewhere) is
+          // kept visible here, struck through, rather than hidden — the
+          // amount itself is excluded from computeContractBalance's totals
+          // above regardless (see isLmsRowCancelled).
+          isCancelled: isLmsRowCancelled(p),
+          cancelRemarks: p.cancel_remarks || null,
         }
       })
       setCollectHistory(opsRows.concat(lmsNormalized).sort(function (a, b) { return new Date(b.date || 0) - new Date(a.date || 0) }))
@@ -3064,7 +3071,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                     <div className="space-y-1.5">
                       {collectHistory.map(function (p) {
                         return (
-                          <div key={p.key} className="flex items-start justify-between gap-2 text-[11.5px] bg-white border border-slate-100 rounded-lg px-2.5 py-2">
+                          <div key={p.key} className={'flex items-start justify-between gap-2 text-[11.5px] bg-white border border-slate-100 rounded-lg px-2.5 py-2' + (p.isCancelled ? ' opacity-40 line-through' : '')}>
                             <div className="min-w-0">
                               <div className="font-semibold text-slate-800">
                                 {p.date ? formatDate(p.date) : '—'}
@@ -3073,6 +3080,11 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
                                 <span className={p.source === 'lms' ? 'text-amber-700' : 'text-emerald-700'}>
                                   {p.source === 'lms' ? 'LMS' : 'Ambria Ops'}
                                 </span>
+                                {p.isCancelled && (
+                                  <span title={p.cancelRemarks || 'Cancelled in LMS'} className="ml-1.5 inline-flex items-center px-1.5 rounded text-[10px] font-bold uppercase bg-rose-100 text-rose-700">
+                                    Cancelled
+                                  </span>
+                                )}
                               </div>
                               <DescriptionNote text={p.description} label="Remarks" className="mt-1" />
                               <div className="text-slate-400 mt-0.5 flex items-center gap-2">

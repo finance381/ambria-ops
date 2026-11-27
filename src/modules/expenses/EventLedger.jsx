@@ -9,6 +9,7 @@ import ImageLightbox from '../../components/ui/ImageLightbox'
 import Icon from '../../components/ui/Icon'
 import DescriptionNote from '../../components/ui/DescriptionNote'
 import { hasPerm } from '../../lib/permissions'
+import { isLmsRowCancelled } from '../../lib/contractBalance'
 import { scrollToTopOf } from '../../lib/scrollToTop'
 import eventBg from '../../assets/event-bg.webp'
 import { useExpenseDetailModal } from '../../hooks/useExpenseDetailModal.jsx'
@@ -654,6 +655,7 @@ function EventLedger(props) {
     // toward the real total too — otherwise "Collected" understates what the
     // contract has actually taken in, and "Pending" overstates what's owed.
     ;(lmsRows || []).forEach(function (r) {
+      if (isLmsRowCancelled(r)) return
       if (r.payment_mode === 'cash') collCash += Number(r.amount_paise || 0)
       else collBank += Number(r.amount_paise || 0)
     })
@@ -881,6 +883,8 @@ function EventLedger(props) {
         created_by: null,
         created_at: p.date,
         event_id: null,
+        status: p.status,
+        _lmsCancelRemarks: p.cancel_remarks || null,
         _lmsEntryBy: p.entry_by || null,
         _checkedBy: p.checked_by || null,
         _checkedAt: p.checked_at || null,
@@ -1331,13 +1335,14 @@ function EventLedger(props) {
           var isExpRow = e.entry_type === 'expense' && !!e.reference_id
           var isCollRow = e.entry_type === 'collection' && !!e._wt
           var isLmsRow = e.reference_type === 'lms_payment'
+          var isLmsCancelled = isLmsRow && isLmsRowCancelled(e)
           var isClickable = isExpRow || isCollRow
           var person = rowPerson(e)
           var on = isExpRow ? e._checkedBy : (isCollRow ? e._wt.checked_by : (isLmsRow ? e._checkedBy : null))
           var onEntered = isExpRow ? e._enteredBy : (isCollRow ? e._wt.tally_entered_by : (isLmsRow ? e._enteredBy : null))
           return (
             <div key={e.id} onClick={function () { openRow(e) }}
-              className={'px-4 py-3 ' + (isClickable ? 'cursor-pointer active:bg-indigo-50/60' : '')}>
+              className={'px-4 py-3 ' + (isClickable ? 'cursor-pointer active:bg-indigo-50/60' : '') + (isLmsCancelled ? ' opacity-40 line-through' : '')}>
               <div className="flex items-start justify-between gap-3">
                 <span className="inline-flex items-center gap-1">
                   <span className={'shrink-0 inline-flex items-center h-[22px] px-2 rounded-md text-[11px] font-bold ' + badgeClass(e.entry_type, e.direction)}>
@@ -1346,6 +1351,11 @@ function EventLedger(props) {
                   {isLmsRow && (
                     <span title="Collected outside Ambria Ops, per LMS's own record" className="shrink-0 inline-flex items-center h-[22px] px-1.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-500">
                       LMS
+                    </span>
+                  )}
+                  {isLmsCancelled && (
+                    <span title={e._lmsCancelRemarks || 'Cancelled in LMS'} className="shrink-0 inline-flex items-center h-[22px] px-1.5 rounded-md text-[10px] font-bold uppercase bg-rose-100 text-rose-700">
+                      Cancelled
                     </span>
                   )}
                 </span>
@@ -1444,13 +1454,16 @@ function EventLedger(props) {
             {rows.map(function (e) {
               var isExpRow = e.entry_type === 'expense' && !!e.reference_id
               var isCollRow = e.entry_type === 'collection' && !!e._wt
+              var isLmsRowDesk = e.reference_type === 'lms_payment'
+              var isLmsCancelledDesk = isLmsRowDesk && isLmsRowCancelled(e)
               var isClickable = isExpRow || isCollRow
               var person = rowPerson(e)
               return (
                 <tr key={e.id}
                   onClick={function () { openRow(e) }}
                   className={'border-b border-slate-100 last:border-b-0 transition-colors ' +
-                    (isClickable ? 'cursor-pointer hover:bg-indigo-50/40' : '')}>
+                    (isClickable ? 'cursor-pointer hover:bg-indigo-50/40' : '') +
+                    (isLmsCancelledDesk ? ' opacity-40 line-through' : '')}>
                   <td className="px-3 py-2.5 align-top whitespace-nowrap" data-notranslate>
                     <div className="text-[13px] font-semibold text-slate-700">{formatDate(rowDate(e))}</div>
                     <div className="text-[11px] text-slate-400">Logged {formatDateTime(e.created_at)}</div>
@@ -1460,9 +1473,14 @@ function EventLedger(props) {
                       <span className={'shrink-0 inline-flex items-center h-[22px] px-2 rounded-md text-[11px] font-bold ' + badgeClass(e.entry_type, e.direction)}>
                         {entryLabel(e.entry_type)}
                       </span>
-                      {e.reference_type === 'lms_payment' && (
+                      {isLmsRowDesk && (
                         <span title="Collected outside Ambria Ops, per LMS's own record" className="shrink-0 inline-flex items-center h-[22px] px-1.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-500">
                           LMS
+                        </span>
+                      )}
+                      {isLmsCancelledDesk && (
+                        <span title={e._lmsCancelRemarks || 'Cancelled in LMS'} className="shrink-0 inline-flex items-center h-[22px] px-1.5 rounded-md text-[10px] font-bold uppercase bg-rose-100 text-rose-700">
+                          Cancelled
                         </span>
                       )}
                     </div>

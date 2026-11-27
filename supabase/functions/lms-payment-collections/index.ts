@@ -101,6 +101,14 @@ serve(async (req) => {
         receive_type: r.pr_receive_typ || null,
         remarks: r.pr_remarks || null,
         status: r.pr_status || null,
+        // "C" = cancelled (confirmed against the live API: a corrected/mis-entered
+        // collection keeps its row with pr_status flipped to "C" and this remark
+        // explaining why, rather than being deleted or paired with a reversal
+        // entry — unlike Ambria Ops' own wallet cancellations). Every consumer of
+        // this data must exclude a cancelled row from any money total; it's kept
+        // in the list (not filtered out here) only so it can still be shown,
+        // struck through, for audit purposes.
+        cancel_remarks: r.pr_cancel_remarks || null,
         guest_name: r.guestname || null,
         entry_by: r.entryby || null,
         order_no: r.pr_order_no || null,

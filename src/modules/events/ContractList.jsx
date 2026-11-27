@@ -10,7 +10,7 @@ import EnteredMark from '../../components/ui/EnteredMark'
 import Icon from '../../components/ui/Icon'
 import EventLedger from '../expenses/EventLedger'
 import EventDatePicker from '../../components/ui/EventDatePicker'
-import { fetchContractBalanceSummary, fetchConsolidatedContractBalance, fetchContractBalancesBatch } from '../../lib/contractBalance'
+import { fetchContractBalanceSummary, fetchConsolidatedContractBalance, fetchContractBalancesBatch, isLmsRowCancelled } from '../../lib/contractBalance'
 import { generateContractStatementPdf } from '../../lib/pdfContractStatement'
 
 // The list's columns from sm up: event, contract, date, venue, balance, Tally.
@@ -1264,7 +1264,11 @@ function ContractList({ profile, deepLinkContractId }) {
               var lmsTransactions = lmsRows.map(function (p) {
                 var isCash = String(p.pay_mode || '').toLowerCase().indexOf('cash') !== -1
                 var raw = Number(p.net_amount_paise || 0)
-                var voided = String(p.status || '').toLowerCase().indexOf('cancel') !== -1
+                // LMS's pr_status is a bare letter code ("C"/"N"), never the word
+                // "cancel" -- a substring check here could never match. See
+                // isLmsRowCancelled's own note: confirmed live against a real
+                // mis-entered collection (status "C", cancel_remarks explaining it).
+                var voided = isLmsRowCancelled(p)
                 var dt = p.date ? new Date(p.date) : null
                 return {
                   date: formatDate(p.date),
@@ -1285,16 +1289,26 @@ function ContractList({ profile, deepLinkContractId }) {
               })
 
               // The table's own In/Out/Net, derived from exactly the rows it
-              // lists, gross -- a voided original genuinely was collected
-              // (it belongs in In) and its reversal genuinely paid that back
-              // out (it belongs in Out); excluding the voided row from In
-              // instead of letting its own reversal net it back out
+              // lists, gross -- a voided Ambria Ops original genuinely was
+              // collected (it belongs in In) and its reversal genuinely paid
+              // that back out (it belongs in Out); excluding the voided row
+              // from In instead of letting its own reversal net it back out
               // understated In by the full cancelled amount, same gross/net
-              // convention the in-app Transactions tab already uses. voided
-              // only controls how a row is styled below, never whether it's
-              // counted.
+              // convention the in-app Transactions tab already uses.
+              //
+              // LMS rows are NOT the same shape: a cancelled LMS collection
+              // (source: 'LMS', voided: true) never gets a paired reversal --
+              // LMS just flips a status flag on the same row (see
+              // isLmsRowCancelled) -- so nothing would ever land in Out to net
+              // it back out. Counting it in In the way an Ambria Ops voided
+              // row is counted would overstate the total by the full
+              // cancelled amount with nothing to offset it (confirmed live:
+              // exactly this inflated a real contract's collections by
+              // ₹19,90,000). An LMS voided row is excluded from both sides
+              // entirely -- still listed below, struck through, for audit.
               var txInPaise = 0, txOutPaise = 0
               transactions.forEach(function (t) {
+                if (t.voided && t.source === 'LMS') return
                 if (t.isReversal) txOutPaise += t.amountPaise
                 else txInPaise += t.amountPaise
               })
