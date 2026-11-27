@@ -1,22 +1,24 @@
 -- Other Income can now be tagged to a Department + Expense Type, posted as a
 -- credit against that expense type's own ledger -- the same existing
 -- mechanism a vendor-deduction credit already uses (cost_transfers,
--- to_party_type='expense'), which Ledgers.jsx already aggregates per
--- department/expense type as a credit reducing net spend. Required for bank
--- collections (that's the real use case: bank income landing against a
--- department's books), optional for cash.
+-- from_party_type='expense' -- confirmed against v_ledger's own definition:
+-- that side gets a NEGATIVE amount_paise, i.e. a credit reducing net spend;
+-- to_party_type='expense' is the opposite, a positive row / extra debit).
+-- Ledgers.jsx already aggregates this per department/expense type as a
+-- credit. Required for bank collections (that's the real use case: bank
+-- income landing against a department's books), optional for cash.
 --
 -- cost_transfers models a transfer BETWEEN two tracked internal parties
 -- (vendor/employee/event/expense) -- there's no existing party type for
 -- "money from outside the system" the way Other Income actually is.
--- from_party_type has no CHECK constraint restricting its values (only
--- fn_create_cost_transfer's own IS NULL check), and _post_cost_transfer_
--- ledgers already has no branch for 'expense' (Ledgers.jsx reads those rows
--- directly) -- adding 'external' as a new from_party_type works the same
--- way today with zero schema change: it simply falls through every existing
--- IF/ELSIF with no ledger_entries row posted on that side, exactly like
--- 'expense' already does. This writes a real cost_transfers row (not
--- through fn_create_cost_transfer's own RPC, which is gated on
+-- from_party_type/to_party_type have no CHECK constraint restricting their
+-- values (only fn_create_cost_transfer's own IS NULL check), and
+-- _post_cost_transfer_ledgers already has no branch for 'expense' (Ledgers.jsx
+-- reads those rows directly) -- adding 'external' as a new to_party_type
+-- works the same way today with zero schema change: it simply falls through
+-- every existing IF/ELSIF with no ledger_entries row posted on that side,
+-- exactly like 'expense' already does. This writes a real cost_transfers row
+-- (not through fn_create_cost_transfer's own RPC, which is gated on
 -- user_can('finance.cost_transfers') -- Other Income stays open to any
 -- staff member with a wallet, same as event collections).
 ALTER TABLE public.other_income_entries
@@ -107,10 +109,15 @@ BEGIN
   RETURNING id INTO v_tx_id;
 
   IF p_department_id IS NOT NULL THEN
+    -- v_ledger (confirmed via pg_get_viewdef) gives a from_party_type='expense'
+    -- row a NEGATIVE amount_paise -- a credit reducing that expense type's net
+    -- spend, same as a vendor-deduction credit. to_party_type='expense' is the
+    -- opposite: a positive row, i.e. an extra DEBIT. Income must be the credit
+    -- side, so expense is 'from' here, not 'to'.
     INSERT INTO public.cost_transfers
-      (amount_paise, from_party_type, to_party_type, to_expense_type_id, description, reason_note, effective_date, created_by, metadata, receipt_path)
+      (amount_paise, from_party_type, from_expense_type_id, to_party_type, description, reason_note, effective_date, created_by, metadata, receipt_path)
     VALUES
-      (p_amount_paise, 'external', 'expense', p_expense_type_id,
+      (p_amount_paise, 'expense', p_expense_type_id, 'external',
        'Other income: ' || p_description, 'Wallet > Collect > Other Income', COALESCE(p_entry_date, current_date), auth.uid(),
        jsonb_build_object('source', 'other_income', 'other_income_entry_id', v_entry_id), p_receipt_path)
     RETURNING id INTO v_transfer_id;
