@@ -559,6 +559,14 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [otherIncomeSaving, setOtherIncomeSaving] = useState(false)
   var [otherIncomeMsg, setOtherIncomeMsg] = useState('')
   var [otherIncomeError, setOtherIncomeError] = useState('')
+  // Department + Expense Type -- required for bank (posts a credit against
+  // that expense type's own ledger, same mechanism a vendor-deduction
+  // credit already uses), optional for cash.
+  var [otherIncomeDeptId, setOtherIncomeDeptId] = useState('')
+  var [otherIncomeExpTypeId, setOtherIncomeExpTypeId] = useState('')
+  var [oiDepartments, setOiDepartments] = useState([])
+  var [oiSubDepartments, setOiSubDepartments] = useState([])
+  var [oiExpenseTypes, setOiExpenseTypes] = useState([])
   var [collectDate, setCollectDate] = useState('')
   var [collectEvents, setCollectEvents] = useState([])
   var [collectAllEventRows, setCollectAllEventRows] = useState([])
@@ -1434,9 +1442,22 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setOtherIncomeImage(null)
     setOtherIncomeMsg('')
     setOtherIncomeError('')
+    setOtherIncomeDeptId('')
+    setOtherIncomeExpTypeId('')
     if (incomeTypes.length === 0) {
       supabase.from('income_types').select('id, name').eq('active', true).order('sort_order').order('name')
         .then(function (res) { setIncomeTypes(res.data || []) })
+    }
+    if (oiDepartments.length === 0) {
+      Promise.all([
+        supabase.from('departments').select('id, name').order('name'),
+        supabase.from('sub_departments').select('id, department_id'),
+        supabase.from('expense_types').select('id, name, department_id, sub_department_id').eq('active', true).order('sort_order').order('name'),
+      ]).then(function (res) {
+        setOiDepartments(res[0].data || [])
+        setOiSubDepartments(res[1].data || [])
+        setOiExpenseTypes(res[2].data || [])
+      })
     }
   }
 
@@ -2356,6 +2377,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     if (!otherIncomeDate) { setOtherIncomeError('Select the entry date'); return }
     if (!otherIncomeMode) { setOtherIncomeError('Select Cash or Bank'); return }
     if (otherIncomeMode === 'bank' && !otherIncomeBankPaymentType) { setOtherIncomeError('Select a payment type'); return }
+    if (otherIncomeMode === 'bank' && (!otherIncomeDeptId || !otherIncomeExpTypeId)) { setOtherIncomeError('Select a department and expense type'); return }
     if (!otherIncomeImage) { setOtherIncomeError('Receipt photo is required'); return }
     stopAllVoice()
     setOtherIncomeSaving(true)
@@ -2378,6 +2400,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
       p_receipt_path: imagePath,
       p_bank_payment_type: otherIncomeMode === 'bank' ? otherIncomeBankPaymentType : null,
       p_entry_date: otherIncomeDate,
+      p_department_id: otherIncomeDeptId ? Number(otherIncomeDeptId) : null,
+      p_expense_type_id: otherIncomeExpTypeId ? Number(otherIncomeExpTypeId) : null,
     })
     if (error) { setOtherIncomeError('Collection failed: ' + error.message); setOtherIncomeSaving(false); return }
     try { await logActivity('WALLET_OTHER_INCOME', typeName + ' | ' + otherIncomeMode + ' | ' + formatPoints(amountPaise)) } catch (_) {}
@@ -2389,6 +2413,8 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setOtherIncomeMode('')
     setOtherIncomeBankPaymentType('')
     setOtherIncomeImage(null)
+    setOtherIncomeDeptId('')
+    setOtherIncomeExpTypeId('')
     setOtherIncomeSaving(false)
     refreshBalance()
     openWalletTxns(null)
@@ -3391,9 +3417,49 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             </div>
           )}
 
+          {otherIncomeMode && (function () {
+            // An expense type belongs to a department either directly or by
+            // way of a sub_department — same resolution ExpenseForm.jsx uses
+            // when it resolves an entry's department for its own allocation.
+            var deptExpTypes = oiExpenseTypes.filter(function (t) {
+              if (!otherIncomeDeptId) return false
+              if (t.department_id != null) return String(t.department_id) === String(otherIncomeDeptId)
+              if (t.sub_department_id != null) {
+                var sd = oiSubDepartments.find(function (s) { return s.id === t.sub_department_id })
+                return sd && String(sd.department_id) === String(otherIncomeDeptId)
+              }
+              return false
+            })
+            return (
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  7. Department &amp; Expense Type {otherIncomeMode === 'bank' && <span className="text-red-500">*</span>}
+                  {otherIncomeMode === 'cash' && <span className="text-gray-400 normal-case">(optional)</span>}
+                </label>
+                <p className="-mt-1 mb-2 text-[11.5px] text-slate-500">Credits this amount against that expense type's own ledger.</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <select value={otherIncomeDeptId}
+                    onChange={function (e) { setOtherIncomeDeptId(e.target.value); setOtherIncomeExpTypeId('') }}
+                    className="h-11 px-3 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 appearance-none focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                    style={{ fontSize: '16px' }}>
+                    <option value="">Department…</option>
+                    {oiDepartments.map(function (d) { return <option key={d.id} value={d.id}>{d.name}</option> })}
+                  </select>
+                  <select value={otherIncomeExpTypeId} onChange={function (e) { setOtherIncomeExpTypeId(e.target.value) }}
+                    disabled={!otherIncomeDeptId}
+                    className="h-11 px-3 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 appearance-none focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
+                    style={{ fontSize: '16px' }}>
+                    <option value="">Expense type…</option>
+                    {deptExpTypes.map(function (t) { return <option key={t.id} value={t.id}>{t.name}</option> })}
+                  </select>
+                </div>
+              </div>
+            )
+          })()}
+
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-              {otherIncomeMode === 'bank' ? '7' : '6'}. Receipt Photo <span className="text-red-500">*</span>
+              {otherIncomeMode === 'bank' ? '8' : '7'}. Receipt Photo <span className="text-red-500">*</span>
             </label>
             {otherIncomeImage ? (
               <div className="flex items-center gap-2 px-3 py-2.5 border border-green-300 bg-green-50 rounded-lg">
@@ -3459,7 +3525,9 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
             ) : (
               (function () {
                 var canSubmitOI = otherIncomeTypeId && otherIncomeAmount && Number(otherIncomeAmount) > 0 && otherIncomeDate &&
-                  otherIncomeMode && (otherIncomeMode === 'cash' || otherIncomeBankPaymentType) && otherIncomeImage && !otherIncomeSaving
+                  otherIncomeMode && (otherIncomeMode === 'cash' || otherIncomeBankPaymentType) &&
+                  (otherIncomeMode === 'cash' || (otherIncomeDeptId && otherIncomeExpTypeId)) &&
+                  otherIncomeImage && !otherIncomeSaving
                 return (
                   <button type="button" onClick={submitOtherIncome} disabled={!canSubmitOI}
                     className={"flex-1 h-12 inline-flex items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold text-white transition-all " +
