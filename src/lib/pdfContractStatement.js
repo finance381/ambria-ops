@@ -217,7 +217,14 @@ function drawAddonsPage(doc, FONT, d) {
     doc.text(a.chipLabel, MARGIN + 4, y + 8)
     y += 14
     y = row(doc, FONT, y, a.department + ' contract #', a.contractNo)
-    y = row(doc, FONT, y, 'Linked Venue contract', '#' + d.contractNo)
+    // "Linked Venue contract" means this card's own HOST contract (the
+    // primary, d.contractNo) -- for a Decor/Ent add-on that's unambiguous,
+    // but this same card shape is also used for a linked Venue SIBLING
+    // (chipLabel 'Linked Venue', department 'Venue'), where the line right
+    // above it already says "Venue contract #<this card's own number>" --
+    // "Primary Venue contract" here instead of repeating "Linked Venue"
+    // keeps the two lines from reading as the same fact twice.
+    y = row(doc, FONT, y, a.department === 'Venue' ? 'Primary Venue contract' : 'Linked Venue contract', '#' + d.contractNo)
     // A multi-function add-on (its own Wedding+Haldi+Sangeet, say) has no
     // single Function date/Session to show -- functionDate/session are only
     // ever its first row's, so every sibling function gets its own line
@@ -279,6 +286,7 @@ async function drawTransactionsPage(doc, FONT, autoTable, d) {
       (t.isReversal ? '-' : '') + fmt(t.amountPaise),
       t.handledBy || '—',
       t.statusLabel,
+      t.description || '—',
     ]
   })
 
@@ -287,12 +295,20 @@ async function drawTransactionsPage(doc, FONT, autoTable, d) {
     // Every row here is a collection (or its reversal) -- Type never said
     // anything else, so it's gone; Source (LMS vs OPs) is what actually
     // varies and matters, now in its place.
-    head: [['Date', 'Source', 'Mode', 'Amount', 'Handled by', 'Status']],
+    head: [['Date', 'Source', 'Mode', 'Amount', 'Handled by', 'Status', 'Description']],
     body: rows,
     theme: 'grid',
     styles: { font: FONT, fontSize: 8, cellPadding: 2.4, textColor: DARK, valign: 'top' },
     headStyles: { font: FONT, fillColor: DARK, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
-    columnStyles: { 3: { halign: 'right' } },
+    columnStyles: {
+      0: { cellWidth: 20 },
+      1: { cellWidth: 14 },
+      2: { cellWidth: 12 },
+      3: { cellWidth: 20, halign: 'right' },
+      4: { cellWidth: 20 },
+      5: { cellWidth: 16 },
+      6: { cellWidth: 'auto' },
+    },
     margin: { left: MARGIN, right: 14 },
     didParseCell: function (data) {
       if (data.section !== 'body') return

@@ -12,6 +12,7 @@ import EventLedger from '../expenses/EventLedger'
 import EventDatePicker from '../../components/ui/EventDatePicker'
 import { fetchContractBalanceSummary, fetchConsolidatedContractBalance, fetchContractBalancesBatch, fetchLmsCollected, settleAcrossChannels, isLmsRowCancelled } from '../../lib/contractBalance'
 import { generateContractStatementPdf } from '../../lib/pdfContractStatement'
+import { computePlateSummary } from '../../lib/plateInfo'
 
 // The list's columns from sm up: event, contract, date, venue, balance, Tally.
 var COLS = 'sm:grid-cols-[minmax(0,2.2fr)_140px_110px_minmax(0,1.5fr)_150px_120px]'
@@ -52,7 +53,7 @@ var CONTRACT_SELECT = 'id, lms_event_id, contract_no, contract_date, function_da
   'is_tentative, pax, function_type, merged_into_id, tally_entered_by, tally_entered_at, ' +
   'menu_rate_paise, venue_rental_paise, decor_amount_paise, entertainment_amount_paise, tentative_created_at, ' +
   'venue_menu_paise, addons_json, total_amount_paise, net_amount_paise, tax_amount_paise, ' +
-  'manual_addon_contract_no, manual_addon_department'
+  'manual_addon_contract_no, manual_addon_department, manual_venue_link_contract_no'
 
 // LMS's own indoor/outdoor flag — confirmed directly against the live API:
 // every department returns a `lead_type` field, "I" (one of Ambria's own
@@ -91,6 +92,14 @@ function ContractList({ profile, deepLinkContractId }) {
   // group (see the consolidation pass above), or null for a standalone
   // contract / a non-Venue selection. { Decor: [group,...], Entertainment: [group,...] }
   var [selectedAddons, setSelectedAddons] = useState(null)
+  // The one other Venue group manually linked to this one (fn_link_venue_contracts,
+  // see the fold pass below) -- a genuinely separate real booking (its own
+  // contract_no, often its own venue entirely) for the same deal, not an
+  // add-on. Folded into Balance/plates/collections/print the same way an
+  // add-on is, under its own key so it never gets mixed into the
+  // Decor/Entertainment-specific UI (the "+N add-ons" chip, missingAddonDepts,
+  // etc). null for a contract with no linked sibling.
+  var [selectedLinkedVenue, setSelectedLinkedVenue] = useState(null)
   // Every function row in selected's own group (see groupsMap above) -- just
   // selected itself for a single-function contract, but the full sibling set
   // for a multi-function one (e.g. Lunch+Dinner+Sagan under one contract_no),
@@ -142,6 +151,37 @@ function ContractList({ profile, deepLinkContractId }) {
   // into "Advance received" above -- shown here only as a labeled breakdown
   // of that figure, never added on top of it.
   var [extraPlateCollected, setExtraPlateCollected] = useState(null)
+  // Plates actually served -- issued minus returned, same math as the Extra
+  // Plate Collect tab's own "Actual" tile (computePlateSummary), pooled
+  // across every function under this whole contract (and a linked Venue
+  // sibling's, if any) -- distinct from Pax/Extra above, which are just
+  // LMS's own per-function booked quota, not what the kitchen actually sent
+  // out across the deal.
+  var [platesUsed, setPlatesUsed] = useState(null)
+
+  useEffect(function () {
+    setPlatesUsed(null)
+    if (!selected) return
+    var cancelled = false
+    // Queried fresh by contract_no+department (poolIdsFor), not off
+    // selectedGroupRows -- that only ever reflects whatever the list's own
+    // current date-floor/search/filter state happened to have loaded, so a
+    // function outside those filters would silently undercount "Plates
+    // used" the same way the print export's own collections pool used to.
+    // A linked Venue sibling's own functions pool in here too, the same way
+    // its Balance/collections already do.
+    Promise.all([poolIdsFor(selected.contract_no, selected.department, selected.id)]
+      .concat(selectedLinkedVenue ? [poolIdsFor(selectedLinkedVenue.rows[0].contract_no, 'Venue', selectedLinkedVenue.rows[0].id)] : []))
+      .then(function (idLists) {
+        if (cancelled) return
+        return computePlateSummary([].concat.apply([], idLists))
+      })
+      .then(function (summary) {
+        if (cancelled) return
+        setPlatesUsed(summary ? summary.actual : null)
+      })
+    return function () { cancelled = true }
+  }, [selected && selected.id, selectedLinkedVenue])
 
   useEffect(function () {
     setExtraPlateCollected(null)
@@ -152,6 +192,20 @@ function ContractList({ profile, deepLinkContractId }) {
       if (selected.contract_no) {
         var poolRes = await supabase.from('events').select('id').eq('contract_no', selected.contract_no).eq('department', selected.department)
         if (poolRes.data && poolRes.data.length > 0) ids = poolRes.data.map(function (r) { return r.id })
+      }
+      // A linked Venue sibling's own Extra Plate Collect history pools in
+      // here too -- otherwise this breakdown quietly stops matching
+      // "Advance received" above the moment it includes one (see the
+      // live-balance effect, which already pools the linked contract).
+      if (selectedLinkedVenue) {
+        var linkedId = selectedLinkedVenue.rows[0].id
+        var linkedContractNo = selectedLinkedVenue.rows[0].contract_no
+        var linkedPoolRes = linkedContractNo
+          ? await supabase.from('events').select('id').eq('contract_no', linkedContractNo).eq('department', 'Venue')
+          : null
+        ids = ids.concat(linkedPoolRes && linkedPoolRes.data && linkedPoolRes.data.length > 0
+          ? linkedPoolRes.data.map(function (r) { return r.id })
+          : [linkedId])
       }
       var res = await supabase.from('extra_plate_collections').select('total_paise, discount_paise, payment_mode').in('event_id', ids).is('cancelled_at', null)
       if (cancelled) return
@@ -168,7 +222,7 @@ function ContractList({ profile, deepLinkContractId }) {
       setExtraPlateCollected({ cash: cash, bank: bank })
     })()
     return function () { cancelled = true }
-  }, [selected && selected.id])
+  }, [selected && selected.id, selectedLinkedVenue])
 
   // Reset the financials disclosure whenever a different contract is opened,
   // so it doesn't stay expanded (showing the previous contract's figures for
@@ -187,6 +241,11 @@ function ContractList({ profile, deepLinkContractId }) {
     var addonPrimaries = selectedAddons
       ? [].concat(selectedAddons.Decor || [], selectedAddons.Entertainment || []).map(function (g) { return g.rows[0] })
       : []
+    // A manually linked sibling Venue contract (fn_link_venue_contracts)
+    // pools into this same combined balance exactly like an add-on does --
+    // fetchConsolidatedContractBalance doesn't care what department a
+    // "primary" row belongs to.
+    if (selectedLinkedVenue) addonPrimaries = addonPrimaries.concat([selectedLinkedVenue.rows[0]])
     // fetchConsolidatedContractBalance already reconciles each add-on
     // contract on its own (byContract) on the way to the combined total --
     // keyed here by department|contract_no so each Add-on card's own mini
@@ -208,7 +267,7 @@ function ContractList({ profile, deepLinkContractId }) {
       setLiveBalance(b)
       setLiveBalanceLoading(false)
     })
-  }, [selected && selected.id, selectedAddons])
+  }, [selected && selected.id, selectedAddons, selectedLinkedVenue])
 
   // Deep-link from a "new contract synced" notification — pins the view to
   // just that one contract regardless of the normal date-floor/search/filter
@@ -231,6 +290,7 @@ function ContractList({ profile, deepLinkContractId }) {
         setPinnedContract(res.data || null)
         setSelected(res.data || null)
         setSelectedAddons(null)
+        setSelectedLinkedVenue(null)
         setSelectedGroupRows(null)
         if (res.data) loadEnteredNames([res.data])
         setPinnedLoading(false)
@@ -335,7 +395,30 @@ function ContractList({ profile, deepLinkContractId }) {
       var patchGroups = function (groups) { return (groups || []).map(function (g) { return Object.assign({}, g, { rows: patchRows(g.rows) }) }) }
       return { Decor: patchGroups(prev.Decor), Entertainment: patchGroups(prev.Entertainment) }
     })
+    // Same live-patch as selectedAddons above, for the linked Venue sibling's
+    // own card.
+    setSelectedLinkedVenue(function (prev) {
+      if (!prev || !prev.rows.some(function (r) { return r.id === id })) return prev
+      return Object.assign({}, prev, { rows: prev.rows.map(function (r) { return r.id === id ? Object.assign({}, r, patch) : r }) })
+    })
     if (res.data && profile.name) setEnteredNames(function (prev) { return Object.assign({}, prev, { [profile.id]: profile.name }) })
+  }
+
+  // Every real function row sharing contractNo+department, resync
+  // duplicates excluded (merged_into_id IS NULL) -- queried fresh rather
+  // than read off whatever a group's own `rows` happens to hold, which only
+  // ever reflects the current list's own date-floor/search/filter state
+  // (confirmed live: two of three real collections on a multi-function
+  // contract were silently dropped from the print, and "Plates used" could
+  // undercount the same way, when one sibling function fell outside the
+  // list's own filters). fallbackId covers a contract with no contract_no
+  // yet (tentative).
+  async function poolIdsFor(contractNo, department, fallbackId) {
+    if (!contractNo) return [fallbackId]
+    var res = await supabase.from('events').select('id')
+      .eq('contract_no', contractNo).eq('department', department).is('merged_into_id', null)
+    var ids = (res.data || []).map(function (r) { return r.id })
+    return ids.length > 0 ? ids : [fallbackId]
   }
 
   async function unlinkAddon(addonEventId) {
@@ -345,7 +428,18 @@ function ContractList({ profile, deepLinkContractId }) {
     var res = await supabase.rpc('fn_unlink_addon_contract', { p_addon_event_id: addonEventId })
     setUnlinkingAddon(false)
     if (res.error) { alert('Unlink failed: ' + res.error.message); return }
-    setSelected(null); setSelectedAddons(null); setSelectedGroupRows(null)
+    setSelected(null); setSelectedAddons(null); setSelectedLinkedVenue(null); setSelectedGroupRows(null)
+    load()
+  }
+
+  async function unlinkVenueLink(venueEventId) {
+    if (unlinkingAddon) return
+    if (!(await appConfirm('Unlink this Venue contract? It goes back to showing its own separate balance, plates and statement.'))) return
+    setUnlinkingAddon(true)
+    var res = await supabase.rpc('fn_unlink_venue_contract', { p_event_id: venueEventId })
+    setUnlinkingAddon(false)
+    if (res.error) { alert('Unlink failed: ' + res.error.message); return }
+    setSelected(null); setSelectedAddons(null); setSelectedLinkedVenue(null); setSelectedGroupRows(null)
     load()
   }
 
@@ -394,8 +488,47 @@ function ContractList({ profile, deepLinkContractId }) {
 
     var venueGroups = realGroups.filter(function (g) { return g.rows[0].department === 'Venue' })
     var addonGroups = realGroups.filter(function (g) { return g.rows[0].department === 'Decor' || g.rows[0].department === 'Entertainment' })
+
+    // Two separate real Venue contracts for the same deal (e.g. a Sagan at
+    // one venue + a Wedding at another, same weekend) -- a different case
+    // from Venue+Decor/Ent below, so it's checked first. realGroups.length
+    // === 2 (not just venueGroups.length) so a Venue+Venue+Catering (or any
+    // other third) selection falls through to the ordinary error below
+    // instead of silently merging the two Venues and ignoring the rest.
+    if (venueGroups.length === 2 && addonGroups.length === 0 && realGroups.length === 2) {
+      // Earliest date across EACH contract's own pool, not just whichever
+      // single function row happened to be rows[0] -- the list sorts a
+      // multi-function group's rows newest-first, so rows[0] is routinely
+      // that contract's LAST date, not its first. fn_link_venue_contracts
+      // makes the same pool-wide comparison server-side and is the one that
+      // actually decides/enforces it; this is only a pre-check so the
+      // confirm dialog itself doesn't say the wrong thing.
+      function earliestDate(rows) {
+        var dates = rows.map(function (r) { return r.function_date }).filter(Boolean).sort()
+        return dates[0] || null
+      }
+      var vA = venueGroups[0].rows[0], vB = venueGroups[1].rows[0]
+      var vADate = earliestDate(venueGroups[0].rows), vBDate = earliestDate(venueGroups[1].rows)
+      if (!vADate || !vBDate || vADate === vBDate) {
+        alert('Both Venue contracts need a function date, and they can\'t be the same date, so there\'s a clear earlier one to make primary.')
+        return
+      }
+      var earlier = vADate < vBDate ? vA : vB
+      var later = vADate < vBDate ? vB : vA
+      var earlierDate = vADate < vBDate ? vADate : vBDate
+      var laterDate = vADate < vBDate ? vBDate : vADate
+      if (!(await appConfirm('Merge #' + earlier.contract_no + ' (' + formatDate(earlierDate) + ') and #' + later.contract_no + ' (' + formatDate(laterDate) + ')? #' + earlier.contract_no + ' becomes primary -- their balance, plates and collections pool together, nothing is destroyed, and either can be unlinked again later.'))) return
+      setMerging(true)
+      var vRes = await supabase.rpc('fn_link_venue_contracts', { p_event_id_a: earlier.id, p_event_id_b: later.id })
+      setMerging(false)
+      setMergeSelectIds([])
+      if (vRes.error) alert('Could not merge: ' + vRes.error.message)
+      load()
+      return
+    }
+
     if (venueGroups.length !== 1) {
-      alert('Select exactly one Venue contract (the one everything else merges into), plus one or more Decor/Entertainment contracts for the same guest.')
+      alert('Select either exactly two Venue contracts to link them together, or exactly one Venue contract plus one or more Decor/Entertainment contracts for the same guest.')
       return
     }
     if (addonGroups.length === 0) {
@@ -514,6 +647,45 @@ function ContractList({ profile, deepLinkContractId }) {
     if (!matched) return
     if (!matched.addons) matched.addons = { Decor: [], Entertainment: [] }
     matched.addons[dept].push(g)
+    consumedKeys[g.key] = true
+  })
+  // A second, separate Venue contract manually linked to this one (see
+  // fn_link_venue_contracts) -- a real booking in its own right, not an
+  // add-on, so it gets its own key (linkedVenue) rather than joining the
+  // Decor/Entertainment addons bucket above. Always manual (there's no
+  // automatic guest+venue+date match here the way there is for add-ons --
+  // two Venue contracts for the same deal are often two different venues
+  // entirely, so client+venue can never match).
+  groups.forEach(function (g) {
+    if (g.rows[0].department !== 'Venue' || consumedKeys[g.key]) return
+    var linkNo = g.rows[0].manual_venue_link_contract_no
+    if (!linkNo) return
+    var primaryGroup = venueGroupsByContractKey['Venue|' + linkNo]
+    // Guard against more than one secondary ever landing on the same
+    // primary (the RPC itself now refuses to create that state, but this
+    // is the difference between a confusing display and one contract
+    // silently vanishing if a bad row ever existed) -- first one in wins,
+    // same "first match sticks" rule the add-on fold above already uses.
+    if (!primaryGroup || primaryGroup.key === g.key || primaryGroup.linkedVenue || consumedKeys[primaryGroup.key]) return
+    // A chain (C linked to B, B linked to A) rather than a straight pair --
+    // the RPC itself refuses to create this, but if a chain ever existed
+    // (bad/hand-edited data) folding B into A here, before this loop also
+    // reaches C, would leave C reachable only through B.linkedVenue, which
+    // nothing renders -- so C would vanish instead of just showing as its
+    // own group. Skipping it here means it stays visible as its own
+    // top-level card instead, rather than disappearing silently.
+    if (g.linkedVenue) return
+    primaryGroup.linkedVenue = g
+    // The secondary's OWN Decor/Entertainment add-ons (automatic match or
+    // their own manual link) would otherwise vanish entirely -- folded
+    // away here, but with nothing left to show them -- so they're carried
+    // over onto the primary's own addons bucket, the same one every
+    // balance/collections/print consolidation already reads.
+    if (g.addons) {
+      if (!primaryGroup.addons) primaryGroup.addons = { Decor: [], Entertainment: [] }
+      primaryGroup.addons.Decor = (primaryGroup.addons.Decor || []).concat(g.addons.Decor || [])
+      primaryGroup.addons.Entertainment = (primaryGroup.addons.Entertainment || []).concat(g.addons.Entertainment || [])
+    }
     consumedKeys[g.key] = true
   })
   groups = groups.filter(function (g) { return !consumedKeys[g.key] })
@@ -768,8 +940,8 @@ function ContractList({ profile, deepLinkContractId }) {
             return (
               <div key={g.key}
                 role="button" tabIndex={0}
-                onClick={function () { setSelected(c); setSelectedAddons(g.addons || null); setSelectedGroupRows(g.rows) }}
-                onKeyDown={function (e) { if (e.key === 'Enter') { setSelected(c); setSelectedAddons(g.addons || null); setSelectedGroupRows(g.rows) } }}
+                onClick={function () { setSelected(c); setSelectedAddons(g.addons || null); setSelectedLinkedVenue(g.linkedVenue || null); setSelectedGroupRows(g.rows) }}
+                onKeyDown={function (e) { if (e.key === 'Enter') { setSelected(c); setSelectedAddons(g.addons || null); setSelectedLinkedVenue(g.linkedVenue || null); setSelectedGroupRows(g.rows) } }}
                 className={'group bg-white border border-slate-200 rounded-xl shadow-[0_1px_2px_rgba(15,23,42,0.05)] px-4 py-3.5 transition-colors sm:grid ' + COLS + ' sm:gap-3 sm:items-center cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/40'}>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -789,6 +961,12 @@ function ContractList({ profile, deepLinkContractId }) {
                       <span className={'shrink-0 text-[10.5px] font-bold px-1.5 py-0.5 rounded ' + (addonNotEntered > 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600')}
                         title={addonRows.map(function (r) { return r.department + ' #' + r.contract_no + (r.tally_entered_by ? ' — entered' : ' — not entered'); }).join(', ')}>
                         +{addonRows.length} add-on{addonRows.length === 1 ? '' : 's'}{addonNotEntered > 0 ? ' · ' + addonNotEntered + ' not entered' : ''}
+                      </span>
+                    )}
+                    {g.linkedVenue && (
+                      <span className="shrink-0 text-[10.5px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700"
+                        title={'Linked Venue contract #' + g.linkedVenue.rows[0].contract_no + ' (' + (g.linkedVenue.rows[0].event_name || '—') + ') — balance, plates and collections pool together'}>
+                        linked #{g.linkedVenue.rows[0].contract_no}
                       </span>
                     )}
                   </div>
@@ -929,8 +1107,8 @@ function ContractList({ profile, deepLinkContractId }) {
                         var rVenueLine = (r.venue_name !== c.venue_name || r.location) ? [rVenueName, r.location].filter(Boolean).join(' · ') : null
                         return (
                           <div key={r.id} role="button" tabIndex={0}
-                            onClick={function (ev) { ev.stopPropagation(); setSelected(r); setSelectedAddons(g.addons || null); setSelectedGroupRows(g.rows) }}
-                            onKeyDown={function (ev) { if (ev.key === 'Enter') { setSelected(r); setSelectedAddons(g.addons || null); setSelectedGroupRows(g.rows) } }}
+                            onClick={function (ev) { ev.stopPropagation(); setSelected(r); setSelectedAddons(g.addons || null); setSelectedLinkedVenue(g.linkedVenue || null); setSelectedGroupRows(g.rows) }}
+                            onKeyDown={function (ev) { if (ev.key === 'Enter') { setSelected(r); setSelectedAddons(g.addons || null); setSelectedLinkedVenue(g.linkedVenue || null); setSelectedGroupRows(g.rows) } }}
                             className="flex items-start justify-between gap-3 px-2.5 py-2 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2 flex-wrap text-[12.5px]">
@@ -1029,13 +1207,18 @@ function ContractList({ profile, deepLinkContractId }) {
       )}
 
       {/* ═══ CONTRACT DETAIL MODAL — every events_safe field ═══ */}
-      <Modal open={!!selected} onClose={function () { setSelected(null); setSelectedAddons(null); setSelectedGroupRows(null) }}
+      <Modal open={!!selected} onClose={function () { setSelected(null); setSelectedAddons(null); setSelectedLinkedVenue(null); setSelectedGroupRows(null) }}
         title={selected ? (selected.event_name || '—') : ''} wide>
         {selected && (function () {
           var addonEventIds = selectedAddons
             ? [].concat(selectedAddons.Decor || [], selectedAddons.Entertainment || []).map(function (g) { return g.rows[0].id })
             : []
           var hasAddons = addonEventIds.length > 0
+          // EventLedger's own "Show financials" pool needs the linked Venue
+          // sibling too, or it stops agreeing with the Balance box above
+          // (which already pools it, see the live-balance effect) the
+          // moment one is linked.
+          var extraEventIdsForLedger = selectedLinkedVenue ? addonEventIds.concat([selectedLinkedVenue.rows[0].id]) : addonEventIds
 
           async function printStatement() {
             if (!liveBalance || printing) return
@@ -1055,14 +1238,11 @@ function ContractList({ profile, deepLinkContractId }) {
               // which only ever reflects whatever the current list's own
               // filters happened to have loaded) so it's never short a
               // function the same way the Balance box above isn't.
-              async function poolIdsFor(contractNo, department, fallbackId) {
-                if (!contractNo) return [fallbackId]
-                var res = await supabase.from('events').select('id')
-                  .eq('contract_no', contractNo).eq('department', department).is('merged_into_id', null)
-                var ids = (res.data || []).map(function (r) { return r.id })
-                return ids.length > 0 ? ids : [fallbackId]
-              }
               var addonGroupsList = [].concat(selectedAddons ? (selectedAddons.Decor || []) : [], selectedAddons ? (selectedAddons.Entertainment || []) : [])
+              // A linked Venue sibling pools its own collections in here the
+              // exact same way an add-on contract does -- poolIdsFor doesn't
+              // care what department it's given.
+              if (selectedLinkedVenue) addonGroupsList = addonGroupsList.concat([selectedLinkedVenue])
               var poolIdsNested = await Promise.all(
                 [poolIdsFor(selected.contract_no, selected.department, selected.id)]
                   .concat(addonGroupsList.map(function (g) { var a = g.rows[0]; return poolIdsFor(a.contract_no, a.department, a.id) }))
@@ -1101,6 +1281,7 @@ function ContractList({ profile, deepLinkContractId }) {
               // showed Settled: the gap matched a cash collection landing
               // between the two reads almost paisa-for-paisa).
               var addonPrimariesForBalance = [].concat(selectedAddons ? (selectedAddons.Decor || []) : [], selectedAddons ? (selectedAddons.Entertainment || []) : []).map(function (g) { return g.rows[0] })
+              if (selectedLinkedVenue) addonPrimariesForBalance = addonPrimariesForBalance.concat([selectedLinkedVenue.rows[0]])
               var balance = (addonPrimariesForBalance.length > 0
                 ? await fetchConsolidatedContractBalance([selected].concat(addonPrimariesForBalance)).then(function (r) { return r && r.total })
                 : await fetchContractBalanceSummary(selected.id)) || liveBalance
@@ -1109,7 +1290,16 @@ function ContractList({ profile, deepLinkContractId }) {
               var venueTax = Number(selected.tax_amount_paise || 0)
               var decor = addonPkgTax('Decor')
               var ent = addonPkgTax('Entertainment')
-              var totalDealPaise = venuePkg + venueTax + (decor.pkg * 2) + decor.tax + (ent.pkg * 2) + ent.tax
+              var linkedVenueRow = selectedLinkedVenue ? selectedLinkedVenue.rows[0] : null
+              // Same net_amount_paise-fallback / tax-only-when-total rule as
+              // the on-screen linkedTrue (and decor/ent above) -- so a
+              // linked contract with no Deal Amount entered at all agrees
+              // between print and screen instead of the print alone showing
+              // a bare 0 + its tax.
+              var linkedPkgFromTotal = linkedVenueRow && linkedVenueRow.total_amount_paise > 0
+              var linkedPkg = linkedVenueRow ? (linkedPkgFromTotal ? linkedVenueRow.total_amount_paise : (linkedVenueRow.net_amount_paise || 0)) * 2 : 0
+              var linkedTax = linkedPkgFromTotal ? Number(linkedVenueRow.tax_amount_paise || 0) : 0
+              var totalDealPaise = venuePkg + venueTax + (decor.pkg * 2) + decor.tax + (ent.pkg * 2) + ent.tax + linkedPkg + linkedTax
               var advCashPaise = Number(balance.collected_cash_paise || 0) * 10
               var advBankPaise = Number(balance.collected_bank_paise || 0)
               var pendingCashPaise = Number(balance.pending_cash_paise || 0) * 10
@@ -1124,6 +1314,7 @@ function ContractList({ profile, deepLinkContractId }) {
               }]
               if (decor.pkg > 0) packageLines.push({ label: 'Add-on Decor package', pkgPaise: decor.pkg * 2, taxPaise: decor.tax })
               if (ent.pkg > 0) packageLines.push({ label: 'Add-on Entertainment package', pkgPaise: ent.pkg * 2, taxPaise: ent.tax })
+              if (linkedVenueRow) packageLines.push({ label: 'Linked Venue contract #' + linkedVenueRow.contract_no + ' package', pkgPaise: linkedPkg, taxPaise: linkedTax })
 
               // LMS's own per-department split of this Venue contract's total
               // (Menu rate/Venue rental/Venue+Menu/Decor amount/Entertainment
@@ -1192,6 +1383,22 @@ function ContractList({ profile, deepLinkContractId }) {
                   })
                 })
               })
+              // A linked Venue sibling prints on this same page, the same
+              // card shape as an add-on -- it's a real contract in its own
+              // right (own package, own functions), not folded line-by-line
+              // into the primary's own package breakdown above.
+              if (linkedVenueRow) {
+                addonContracts.push({
+                  chipLabel: 'Linked Venue',
+                  department: 'Venue',
+                  contractNo: linkedVenueRow.contract_no || '—',
+                  functionDate: linkedVenueRow.function_date ? formatDate(linkedVenueRow.function_date) : '—',
+                  session: linkedVenueRow.session || '—',
+                  pkgPaise: linkedPkg,
+                  taxPaise: linkedTax,
+                  functions: selectedLinkedVenue.rows.length > 1 ? rowsToFunctions(selectedLinkedVenue.rows) : null,
+                })
+              }
               // Decor/Entertainment are the only real "add-on contract" types
               // this app folds under a Venue contract -- Catering is its own
               // standalone department contract (see ExtraPlateCollect.jsx /
@@ -1208,7 +1415,7 @@ function ContractList({ profile, deepLinkContractId }) {
               // not an event id) is fetched as a second pass so either
               // cancellation shape still shows up here.
               var collRes = await supabase.from('wallet_transactions')
-                .select('id, reference_type, reference_id, payment_mode, amount_paise, status, created_at, performed_by')
+                .select('id, reference_type, reference_id, payment_mode, amount_paise, status, created_at, performed_by, description')
                 .in('reference_id', poolIds.map(String))
                 .eq('reference_type', 'collection')
                 .order('created_at', { ascending: true })
@@ -1217,7 +1424,7 @@ function ContractList({ profile, deepLinkContractId }) {
               collRows.forEach(function (w) { collById[String(w.id)] = w })
               var cancelRes = collRows.length > 0
                 ? await supabase.from('wallet_transactions')
-                    .select('id, reference_type, reference_id, payment_mode, amount_paise, status, created_at, performed_by')
+                    .select('id, reference_type, reference_id, payment_mode, amount_paise, status, created_at, performed_by, description')
                     .in('reference_id', collRows.map(function (w) { return String(w.id) }))
                     .eq('reference_type', 'collection_cancel')
                 : { data: [] }
@@ -1254,6 +1461,11 @@ function ContractList({ profile, deepLinkContractId }) {
                   mode: mode === 'bank' ? 'Bank' : 'Cash',
                   amountPaise: Math.abs((original && original.amount_paise) || w.amount_paise || 0),
                   handledBy: names[w.performed_by] || null,
+                  // The cancel leg's own description is usually just "Collection
+                  // cancelled" boilerplate -- the original collection's own note
+                  // (what it was actually for) reads better here regardless of
+                  // which leg this row is.
+                  description: (original && original.description) || w.description || null,
                   statusLabel: voided ? 'Cancelled' : (isCancelLeg ? 'Reversed' : 'Completed'),
                   voided: voided,
                   isReversal: isCancelLeg,
@@ -1289,6 +1501,7 @@ function ContractList({ profile, deepLinkContractId }) {
                   if (a.contract_no) lmsTargets.push({ contractNo: a.contract_no, department: dept })
                 })
               })
+              if (linkedVenueRow && linkedVenueRow.contract_no) lmsTargets.push({ contractNo: linkedVenueRow.contract_no, department: 'Venue' })
               var lmsRowsNested = await Promise.all(lmsTargets.map(function (t) { return fetchLmsRows(t.contractNo, t.department) }))
               var lmsRows = [].concat.apply([], lmsRowsNested)
               // LMS reports cash at the same hidden ÷10 scale as everywhere
@@ -1313,6 +1526,7 @@ function ContractList({ profile, deepLinkContractId }) {
                   mode: isCash ? 'Cash' : 'Bank',
                   amountPaise: Math.abs(isCash ? raw * 10 : raw),
                   handledBy: p.entry_by || null,
+                  description: p.remarks || p.cancel_remarks || null,
                   statusLabel: voided ? 'Cancelled' : 'Completed',
                   voided: voided,
                   isReversal: false,
@@ -1441,6 +1655,7 @@ function ContractList({ profile, deepLinkContractId }) {
                   // recovers the base Pax LMS itself shows for the contract.
                   ['Pax', selected.pax != null ? selected.pax : (selected.total_plates != null && selected.complementary_plates != null ? selected.total_plates - selected.complementary_plates : null)],
                   ['Extra', selected.complementary_plates],
+                  ['Plates used', platesUsed],
                 ] : []),
                 // extra_plates_charge is LMS's per-plate RATE -- complementary_
                 // plates ("Extra" above) is a free-pax allowance baked into the
@@ -1641,6 +1856,104 @@ function ContractList({ profile, deepLinkContractId }) {
               })
             })}
 
+            {/* Linked Venue — a second, genuinely separate real Venue
+                contract manually linked to this one (fn_link_venue_contracts,
+                see the fold pass in ContractList.jsx), not an add-on under
+                it. Same card shape as the Add-on Decor/Ent cards above, with
+                that contract's own Venue fields instead (it can be, and
+                often is, an entirely different venue). */}
+            {selectedLinkedVenue && (function () {
+              var a = selectedLinkedVenue.rows[0]
+              var pkgFromTotal = a.total_amount_paise > 0
+              var pkgRaw = pkgFromTotal ? a.total_amount_paise : a.net_amount_paise
+              var pkg = pkgFromTotal && pkgX2 ? pkgRaw * 2 : pkgRaw
+              return (
+                <div className="rounded-lg border border-slate-200 overflow-hidden">
+                  <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-50 border-b border-slate-200">
+                    <span className="inline-flex items-center gap-2">
+                      <Badge color="blue">Linked Venue</Badge>
+                      <span className="font-mono text-xs text-slate-600">#{a.contract_no}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-2">
+                      {(a.tally_entered_by || canMarkEntered) && (
+                        <EnteredMark
+                          entered={!!a.tally_entered_by}
+                          enteredByName={enteredNames[a.tally_entered_by]}
+                          enteredAt={a.tally_entered_at}
+                          canToggle={canMarkEntered}
+                          canUnenter={a.tally_entered_by === profile.id || isSysAdmin}
+                          busy={enteringId === a.id}
+                          onToggle={function () { toggleContractEntered(a.id) }}
+                        />
+                      )}
+                      {canLinkAddon && (
+                        <button type="button" disabled={unlinkingAddon}
+                          onClick={function () { unlinkVenueLink(a.id) }}
+                          className="text-[11px] font-semibold text-slate-400 hover:text-red-600 disabled:opacity-50 transition-colors">
+                          Unlink
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                  <div className="px-3 py-2.5 space-y-1">
+                    {[
+                      ['Venue', a.venue_name ? (venueMap[a.venue_name] ? (venueMap[a.venue_name] + ' — ' + a.venue_name) : a.venue_name) : null],
+                      ['Contract date', a.contract_date ? formatDate(a.contract_date) : null],
+                      ['Function date', a.function_date ? formatDate(a.function_date) : null],
+                      ['Session', a.session],
+                      ['Venue type', venueTypeLabel(a.contract_type)],
+                      ['Catering', a.catering],
+                      ['Total plates', a.total_plates],
+                      ['Pax', a.pax != null ? a.pax : (a.total_plates != null && a.complementary_plates != null ? a.total_plates - a.complementary_plates : null)],
+                      ['Extra', a.complementary_plates],
+                      ['Venue rental', a.venue_rental_paise != null ? formatPaise(a.venue_rental_paise) : null],
+                      ['Venue + Menu', a.venue_menu_paise != null ? formatPaise(a.venue_menu_paise) : null],
+                      ['Decor amount', a.decor_amount_paise > 0 ? formatPaise(a.decor_amount_paise) : null],
+                      ['Entertainment amount', a.entertainment_amount_paise > 0 ? formatPaise(a.entertainment_amount_paise) : null],
+                      ['Priority', a.priority],
+                      ['Created by (LMS)', a.created_user_name],
+                      [pkgFromTotal ? (
+                        <>Package<button type="button"
+                          title={pkgX2 ? 'Showing true package amount — click to hide' : 'Show true package amount'}
+                          onClick={function (e) { e.stopPropagation(); setPkgX2(function (v) { return !v }) }}
+                          className={'ml-1.5 inline-block w-2 h-2 align-middle rounded-full transition-colors ' + (pkgX2 ? 'bg-amber-400' : 'bg-slate-200 opacity-25 hover:opacity-50')} /></>
+                      ) : 'Package', pkg != null ? formatPaise(pkg) : null],
+                    ].filter(function (row) { return row[1] != null && row[1] !== '' }).map(function (row, ri) {
+                      return (
+                        <div key={ri} className="flex justify-between gap-3 text-xs">
+                          <span className="text-gray-500">{row[0]}</span>
+                          <span className="font-medium text-gray-800 text-right">{row[1]}</span>
+                        </div>
+                      )
+                    })}
+                    {isAdmin && (function () {
+                      var linkedLb = addonLiveBalances['Venue|' + a.contract_no]
+                      var disp = reconciledDueDisplay(linkedLb)
+                      return (
+                        <div className="flex justify-between gap-3 text-xs pt-1 border-t border-gray-100">
+                          <span className="text-gray-500">Balance</span>
+                          {disp ? (
+                            disp.settled ? (
+                              <span className="font-bold text-emerald-600">{formatPaise(0)} <span className="font-semibold opacity-80">settled</span></span>
+                            ) : (
+                              <span className={'font-bold ' + (disp.label === 'due' ? 'text-red-600' : 'text-emerald-600')}>
+                                {formatPaise(disp.amountPaise)} <span className="font-semibold opacity-80">{disp.label}</span>
+                              </span>
+                            )
+                          ) : <span className="text-gray-300">—</span>}
+                        </div>
+                      )
+                    })()}
+                    {a.pdf_link && (
+                      <div className="pt-1">
+                        <a href={a.pdf_link} target="_blank" rel="noreferrer" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">View contract PDF ↗</a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
+
             {/* The real, reconciled balance — every function under this
                 contract pooled together and LMS's own payment history
                 folded in, the same numbers "Show financials" shows in full
@@ -1688,6 +2001,17 @@ function ContractList({ profile, deepLinkContractId }) {
                   var ent = addonPkgTax('Entertainment')
                   var hasDecorAddon = ((selectedAddons && selectedAddons.Decor) || []).length > 0
                   var hasEntAddon = ((selectedAddons && selectedAddons.Entertainment) || []).length > 0
+                  // Same masked/pkgX2-aware shape as decor/ent above, for the
+                  // linked Venue sibling's own package -- distinct from
+                  // linkedTrue below, which is always fully revealed and
+                  // only ever feeds the Surplus math.
+                  var linkedDisp = selectedLinkedVenue ? (function () {
+                    var a = selectedLinkedVenue.rows[0]
+                    var pkgFromTotal = a.total_amount_paise > 0
+                    var pkgRaw = pkgFromTotal ? a.total_amount_paise : (a.net_amount_paise || 0)
+                    var pkg = pkgFromTotal && pkgX2 ? pkgRaw * 2 : pkgRaw
+                    return { pkg: pkg, tax: pkgFromTotal ? Number(a.tax_amount_paise || 0) : 0 }
+                  })() : null
                   var pendingCash = Number(liveBalance.pending_cash_paise || 0)
                   // Tax is an agreed-bank item, not its own collection channel
                   // -- clubbed into Pending bank here rather than shown as a
@@ -1734,7 +2058,21 @@ function ContractList({ profile, deepLinkContractId }) {
                     })
                     return { pkg: pkg, tax: tax }
                   })()
-                  var trueTotalDealPaise = (venuePkg * 2) + venueTax + decorTrue.pkg + decorTrue.tax + entTrue.pkg + entTrue.tax
+                  // A linked Venue sibling's own package pools into the
+                  // deal total the same way the print export already does
+                  // (totalDealPaise there) -- without this, liveBalance
+                  // above (which DOES already pool its collections, see the
+                  // balance effect) made it look like money had been
+                  // collected with nothing to show for it, a false "Surplus"
+                  // warning the moment the linked contract had any money in.
+                  var linkedTrue = selectedLinkedVenue ? (function () {
+                    var a = selectedLinkedVenue.rows[0]
+                    var pkgFromTotal = a.total_amount_paise > 0
+                    var pkg = (pkgFromTotal ? a.total_amount_paise : (a.net_amount_paise || 0)) * 2
+                    var tax = pkgFromTotal ? Number(a.tax_amount_paise || 0) : 0
+                    return { pkg: pkg, tax: tax }
+                  })() : { pkg: 0, tax: 0 }
+                  var trueTotalDealPaise = (venuePkg * 2) + venueTax + decorTrue.pkg + decorTrue.tax + entTrue.pkg + entTrue.tax + linkedTrue.pkg + linkedTrue.tax
                   var trueTotalCollectedPaise = Number(liveBalance.collected_cash_paise || 0) * 10 + Number(liveBalance.collected_bank_paise || 0)
                   var surplusVsPackage = trueTotalCollectedPaise > trueTotalDealPaise ? trueTotalCollectedPaise - trueTotalDealPaise : 0
                   function pkgCell(pkg, tax) {
@@ -1762,10 +2100,13 @@ function ContractList({ profile, deepLinkContractId }) {
                       {hasEntAddon && (
                         <div className="flex justify-between"><span className="text-gray-500">Add-on Entertainment package</span>{pkgCell(ent.pkg, ent.tax)}</div>
                       )}
-                      {(hasDecorAddon || hasEntAddon) && (
+                      {linkedDisp && (
+                        <div className="flex justify-between"><span className="text-gray-500">Linked Venue package (#{selectedLinkedVenue.rows[0].contract_no})</span>{pkgCell(linkedDisp.pkg, linkedDisp.tax)}</div>
+                      )}
+                      {(hasDecorAddon || hasEntAddon || linkedDisp) && (
                         <div className="flex justify-between pt-1 border-t border-gray-200">
                           <span className="text-gray-700 font-semibold">Total Deal</span>
-                          <span className="font-bold text-gray-900">{formatPaise(venuePkg + venueTax + decor.pkg + decor.tax + ent.pkg + ent.tax)}</span>
+                          <span className="font-bold text-gray-900">{formatPaise(venuePkg + venueTax + decor.pkg + decor.tax + ent.pkg + ent.tax + (linkedDisp ? linkedDisp.pkg + linkedDisp.tax : 0))}</span>
                         </div>
                       )}
                       <div className="flex justify-between pt-1 border-t border-gray-200"><span className="text-gray-500">Advance received — cash</span><span className="font-medium text-gray-800">{formatPaise(liveBalance.collected_cash_paise)}</span></div>
@@ -1847,7 +2188,7 @@ function ContractList({ profile, deepLinkContractId }) {
                         payment history alongside Ambria Ops' own wallet
                         collections — one list, one place, markable the same
                         way — so there's nothing left to render here. */}
-                    <EventLedger profile={profile} eventId={selected.id} extraEventIds={addonEventIds} />
+                    <EventLedger profile={profile} eventId={selected.id} extraEventIds={extraEventIdsForLedger} />
                   </div>
                 )}
               </div>
