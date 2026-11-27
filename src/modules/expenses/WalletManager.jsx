@@ -543,6 +543,22 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
   var [cancelReason, setCancelReason] = useState('')
   var [cancelSaving, setCancelSaving] = useState(false)
   var [collectModal, setCollectModal] = useState(false)
+  // Which kind of collection the sheet is logging — 'event' is the original
+  // flow (pick a function, collect against its balance). 'other_income' is
+  // money with no event behind it at all (interest, scrap sale, etc.) — a
+  // Restaurant Collection kind is coming once its own form is defined.
+  var [collectKind, setCollectKind] = useState('event')
+  var [incomeTypes, setIncomeTypes] = useState([])
+  var [otherIncomeDate, setOtherIncomeDate] = useState(new Date().toISOString().split('T')[0])
+  var [otherIncomeTypeId, setOtherIncomeTypeId] = useState('')
+  var [otherIncomeAmount, setOtherIncomeAmount] = useState('')
+  var [otherIncomeDesc, setOtherIncomeDesc] = useState('')
+  var [otherIncomeMode, setOtherIncomeMode] = useState('')
+  var [otherIncomeBankPaymentType, setOtherIncomeBankPaymentType] = useState('')
+  var [otherIncomeImage, setOtherIncomeImage] = useState(null)
+  var [otherIncomeSaving, setOtherIncomeSaving] = useState(false)
+  var [otherIncomeMsg, setOtherIncomeMsg] = useState('')
+  var [otherIncomeError, setOtherIncomeError] = useState('')
   var [collectDate, setCollectDate] = useState('')
   var [collectEvents, setCollectEvents] = useState([])
   var [collectAllEventRows, setCollectAllEventRows] = useState([])
@@ -1397,6 +1413,7 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
 
   async function openCollectModal() {
     setCollectModal(true)
+    setCollectKind('event')
     setCollectDate('')
     setCollectEvents([])
     setCollectEventId('')
@@ -1408,6 +1425,19 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     setCollectTxnDate(toYMD(new Date()))
     setCollectImage(null)
     setCollectJustSaved(false)
+    setOtherIncomeDate(toYMD(new Date()))
+    setOtherIncomeTypeId('')
+    setOtherIncomeAmount('')
+    setOtherIncomeDesc('')
+    setOtherIncomeMode('')
+    setOtherIncomeBankPaymentType('')
+    setOtherIncomeImage(null)
+    setOtherIncomeMsg('')
+    setOtherIncomeError('')
+    if (incomeTypes.length === 0) {
+      supabase.from('income_types').select('id, name').eq('active', true).order('sort_order').order('name')
+        .then(function (res) { setIncomeTypes(res.data || []) })
+    }
   }
 
   async function loadFunctionsForDate(dateStr) {
@@ -2319,6 +2349,51 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     openWalletTxns(null)
   }
 
+  async function submitOtherIncome() {
+    if (otherIncomeSaving) return
+    if (!otherIncomeTypeId) { setOtherIncomeError('Select a type of income'); return }
+    if (!otherIncomeAmount || Number(otherIncomeAmount) <= 0) { setOtherIncomeError('Enter amount'); return }
+    if (!otherIncomeDate) { setOtherIncomeError('Select the entry date'); return }
+    if (!otherIncomeMode) { setOtherIncomeError('Select Cash or Bank'); return }
+    if (otherIncomeMode === 'bank' && !otherIncomeBankPaymentType) { setOtherIncomeError('Select a payment type'); return }
+    if (!otherIncomeImage) { setOtherIncomeError('Receipt photo is required'); return }
+    stopAllVoice()
+    setOtherIncomeSaving(true)
+    setOtherIncomeError('')
+    var amountPaise = Math.round(Number(otherIncomeAmount) * 100)
+
+    var cF = await prepUpload(otherIncomeImage, 100)
+    var ext = (cF.name && cF.name.indexOf('.') !== -1) ? cF.name.split('.').pop() : 'jpg'
+    var imagePath = 'wallet/other_income/' + profile.id + '_' + Date.now() + '.' + ext
+    var { error: upErr } = await supabase.storage.from('receipts').upload(imagePath, cF, { upsert: true })
+    if (upErr) { setOtherIncomeError('Receipt upload failed: ' + upErr.message); setOtherIncomeSaving(false); return }
+
+    var typeName = (incomeTypes.find(function (t) { return String(t.id) === String(otherIncomeTypeId) }) || {}).name || 'Other income'
+    var desc = otherIncomeDesc.trim() ? otherIncomeDesc.trim() + ' — ' + typeName : typeName
+    var { data, error } = await supabase.rpc('fn_wallet_collect_other_income', {
+      p_income_type_id: Number(otherIncomeTypeId),
+      p_payment_mode: otherIncomeMode,
+      p_amount_paise: amountPaise,
+      p_description: desc,
+      p_receipt_path: imagePath,
+      p_bank_payment_type: otherIncomeMode === 'bank' ? otherIncomeBankPaymentType : null,
+      p_entry_date: otherIncomeDate,
+    })
+    if (error) { setOtherIncomeError('Collection failed: ' + error.message); setOtherIncomeSaving(false); return }
+    try { await logActivity('WALLET_OTHER_INCOME', typeName + ' | ' + otherIncomeMode + ' | ' + formatPoints(amountPaise)) } catch (_) {}
+
+    setOtherIncomeMsg('Logged ' + formatPoints(amountPaise) + ' — ' + typeName + (data && data.receipt_no ? ' (#' + data.receipt_no + ')' : ''))
+    setOtherIncomeTypeId('')
+    setOtherIncomeAmount('')
+    setOtherIncomeDesc('')
+    setOtherIncomeMode('')
+    setOtherIncomeBankPaymentType('')
+    setOtherIncomeImage(null)
+    setOtherIncomeSaving(false)
+    refreshBalance()
+    openWalletTxns(null)
+  }
+
   async function runBulkIssue() {
     var userIds = Object.keys(bulkSelected).filter(function (k) { return bulkSelected[k] })
     if (bulkSaving || !userIds.length || !bulkAmount || Number(bulkAmount) <= 0) return
@@ -2864,6 +2939,22 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
     return (
       <BottomSheet open={true} onClose={function () { setCollectModal(false) }} title="Collect Payment">
         <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-2">
+            {[{ v: 'event', label: 'Event Collection' }, { v: 'other_income', label: 'Other Income' }].map(function (opt) {
+              var active = collectKind === opt.v
+              return (
+                <button key={opt.v} type="button" aria-pressed={active}
+                  onClick={function () { setCollectKind(opt.v) }}
+                  className={"h-11 rounded-xl border text-[13px] font-bold transition-colors " +
+                    (active ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-slate-300 text-slate-700")}>
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {collectKind === 'event' && (
+          <>
           <EventDatePicker label="1. Event Date" value={collectDate} collapsible
             onChange={function (dateStr) { loadFunctionsForDate(dateStr) }} />
 
@@ -3225,32 +3316,177 @@ function WalletManager({ profile, isAdmin, isAuditor, myWallet, walletBalance, o
               )}
             </div>
           )}
+          </>
+          )}
+
+          {collectKind === 'other_income' && (
+          <>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">1. Entry Date</label>
+            <EventDatePicker value={otherIncomeDate} collapsible includePast
+              onChange={function (v) { setOtherIncomeDate(v) }} />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">2. Type of Income</label>
+            <div className="relative">
+              <select value={otherIncomeTypeId} onChange={function (e) { setOtherIncomeTypeId(e.target.value) }}
+                className="w-full h-11 px-3 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 appearance-none focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                style={{ fontSize: '16px' }}>
+                <option value="">Select…</option>
+                {incomeTypes.map(function (t) {
+                  return <option key={t.id} value={t.id}>{t.name}</option>
+                })}
+              </select>
+            </div>
+            {incomeTypes.length === 0 && (
+              <p className="mt-1 text-[11.5px] text-slate-400">No income types set up yet — add them under Categories &gt; Income Types.</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">3. Amount (pts)</label>
+            <input type="number" inputMode="decimal" value={otherIncomeAmount}
+              onChange={function (e) { setOtherIncomeAmount(e.target.value) }}
+              placeholder="0" min="0" step="any"
+              className="w-full h-11 px-3 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 tabular-nums focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+              style={{ fontSize: '16px' }} />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">4. Description</label>
+            <VoiceInput type="text" value={otherIncomeDesc}
+              onChange={function (e) { setOtherIncomeDesc(e.target.value) }}
+              placeholder="Details (optional)"
+              className="w-full h-11 px-3 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">5. Payment Mode</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={function () { setOtherIncomeMode('cash'); setOtherIncomeBankPaymentType('') }}
+                aria-pressed={otherIncomeMode === 'cash'}
+                className={"h-12 inline-flex items-center justify-center gap-2 rounded-xl border text-[14px] font-bold transition-colors " +
+                  (otherIncomeMode === 'cash' ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-slate-300 text-slate-700")}>
+                Cash
+              </button>
+              <button type="button" onClick={function () { setOtherIncomeMode('bank') }}
+                aria-pressed={otherIncomeMode === 'bank'}
+                className={"h-12 inline-flex items-center justify-center gap-2 rounded-xl border text-[14px] font-bold transition-colors " +
+                  (otherIncomeMode === 'bank' ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-slate-300 text-slate-700")}>
+                Bank
+              </button>
+            </div>
+          </div>
+
+          {otherIncomeMode === 'bank' && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">6. Bank Payment Type</label>
+              <select value={otherIncomeBankPaymentType} onChange={function (e) { setOtherIncomeBankPaymentType(e.target.value) }}
+                className="w-full h-11 px-3 bg-white border border-slate-300 rounded-xl text-[13px] text-slate-900 appearance-none focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                style={{ fontSize: '16px' }}>
+                <option value="">Select…</option>
+                {BANK_PAYMENT_TYPES.map(function (t) { return <option key={t} value={t}>{t}</option> })}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              {otherIncomeMode === 'bank' ? '7' : '6'}. Receipt Photo <span className="text-red-500">*</span>
+            </label>
+            {otherIncomeImage ? (
+              <div className="flex items-center gap-2 px-3 py-2.5 border border-green-300 bg-green-50 rounded-lg">
+                <Icon name="checkCircle" size={16} className="shrink-0 text-emerald-600" />
+                <span className="flex-1 min-w-0 text-[13px] font-medium text-emerald-800 truncate">{otherIncomeImage.name}</span>
+                <button type="button" onClick={function () { setOtherIncomeImage(null) }} aria-label="Remove photo"
+                  className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-lg text-red-600 hover:bg-red-100 transition-colors">
+                  <Icon name="close" size={14} />
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={function () { setCameraFor('other_income') }}
+                  className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                  <Icon name="camera" size={16} />
+                  Camera
+                </button>
+                <label className="h-12 inline-flex items-center justify-center gap-2 text-[13px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl cursor-pointer hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                  <Icon name="gallery" size={16} />
+                  Gallery
+                  <input type="file" accept="image/*" className="sr-only"
+                    onChange={function (e) { if (e.target.files?.[0]) setOtherIncomeImage(e.target.files[0]); e.target.value = '' }} />
+                </label>
+              </div>
+            )}
+          </div>
+
+          {otherIncomeError && (
+            <p className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-rose-50 border border-rose-200 text-[12.5px] font-semibold text-rose-700">
+              {otherIncomeError}
+            </p>
+          )}
+          {otherIncomeMsg && (
+            <p className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-[12.5px] font-semibold text-emerald-700">
+              {otherIncomeMsg}
+            </p>
+          )}
+          </>
+          )}
 
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={function () { setCollectModal(false) }}
               className="flex-1 h-12 rounded-xl text-[14px] font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 active:scale-[0.98] transition-all">
               Cancel
             </button>
-            <button type="button" onClick={submitCollection} disabled={!canSubmit}
-              className={"flex-1 h-12 inline-flex items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold text-white transition-all " +
-                (canSubmit
-                  ? "bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.30)] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98]"
-                  : "bg-slate-300 cursor-not-allowed")}>
-              {collectSaving
-                ? 'Saving…'
-                : (
-                  <>
-                    Collect
-                    {collectAmount && Number(collectAmount) > 0 && (
-                      <span className="tabular-nums" data-notranslate>{Number(collectAmount).toLocaleString('en-IN') + ' pts'}</span>
-                    )}
-                  </>
-                )}
-            </button>
+            {collectKind === 'event' ? (
+              <button type="button" onClick={submitCollection} disabled={!canSubmit}
+                className={"flex-1 h-12 inline-flex items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold text-white transition-all " +
+                  (canSubmit
+                    ? "bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.30)] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98]"
+                    : "bg-slate-300 cursor-not-allowed")}>
+                {collectSaving
+                  ? 'Saving…'
+                  : (
+                    <>
+                      Collect
+                      {collectAmount && Number(collectAmount) > 0 && (
+                        <span className="tabular-nums" data-notranslate>{Number(collectAmount).toLocaleString('en-IN') + ' pts'}</span>
+                      )}
+                    </>
+                  )}
+              </button>
+            ) : (
+              (function () {
+                var canSubmitOI = otherIncomeTypeId && otherIncomeAmount && Number(otherIncomeAmount) > 0 && otherIncomeDate &&
+                  otherIncomeMode && (otherIncomeMode === 'cash' || otherIncomeBankPaymentType) && otherIncomeImage && !otherIncomeSaving
+                return (
+                  <button type="button" onClick={submitOtherIncome} disabled={!canSubmitOI}
+                    className={"flex-1 h-12 inline-flex items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold text-white transition-all " +
+                      (canSubmitOI
+                        ? "bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.30)] hover:from-indigo-600 hover:to-indigo-700 active:scale-[0.98]"
+                        : "bg-slate-300 cursor-not-allowed")}>
+                    {otherIncomeSaving
+                      ? 'Saving…'
+                      : (
+                        <>
+                          Collect
+                          {otherIncomeAmount && Number(otherIncomeAmount) > 0 && (
+                            <span className="tabular-nums" data-notranslate>{Number(otherIncomeAmount).toLocaleString('en-IN') + ' pts'}</span>
+                          )}
+                        </>
+                      )}
+                  </button>
+                )
+              })()
+            )}
           </div>
         </div>
         {cameraFor === 'collect' && (
           <CameraCapture onCapture={function (file) { setCollectImage(file); setCameraFor(null) }} onClose={function () { setCameraFor(null) }} />
+        )}
+        {cameraFor === 'other_income' && (
+          <CameraCapture onCapture={function (file) { setOtherIncomeImage(file); setCameraFor(null) }} onClose={function () { setCameraFor(null) }} />
         )}
       </BottomSheet>
     )

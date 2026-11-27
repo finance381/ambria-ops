@@ -14,7 +14,7 @@ function Categories() {
   var [subCategories, setSubCategories] = useState([])
   var [venues, setVenues] = useState([])
   var [loading, setLoading] = useState(true)
-  useRealtime(['categories', 'sub_categories', 'departments', 'sub_departments', 'venues', 'sub_venues'], function () { if (!saving) loadAll() })
+  useRealtime(['categories', 'sub_categories', 'departments', 'sub_departments', 'venues', 'sub_venues', 'income_types'], function () { if (!saving) loadAll() })
 
   // Add form state
   var [newDept, setNewDept] = useState('')
@@ -49,6 +49,11 @@ function Categories() {
   var [expenseTypes, setExpenseTypes] = useState([])
   var [expenseSubTypes, setExpenseSubTypes] = useState([])
 
+  // Income types (Wallet > Collect > Other Income's "type of income" dropdown)
+  var [incomeTypes, setIncomeTypes] = useState([])
+  var [newIncomeType, setNewIncomeType] = useState('')
+  var [incomeTypeSearch, setIncomeTypeSearch] = useState('')
+
   // Category edit modal
   var [editCat, setEditCat] = useState(null)
   var [editCatName, setEditCatName] = useState('')
@@ -70,7 +75,7 @@ function Categories() {
   }, [])
 
   async function loadAll() {
-    var [deptRes, catRes, subRes, venueRes, subDeptRes, subVenueRes, etRes, estRes] = await Promise.all([
+    var [deptRes, catRes, subRes, venueRes, subDeptRes, subVenueRes, etRes, estRes, itRes] = await Promise.all([
       supabase.from('departments').select('*').order('name'),
       supabase.from('categories').select('*').order('name'),
       supabase.from('sub_categories').select('*, categories(name)').order('name'),
@@ -79,6 +84,7 @@ function Categories() {
       supabase.from('sub_venues').select('*').order('name'),
       supabase.from('expense_types').select('id, name').eq('active', true).order('sort_order').order('name'),
       supabase.from('expense_sub_types').select('id, name, expense_type_id').eq('active', true).order('sort_order').order('name'),
+      supabase.from('income_types').select('*').order('sort_order').order('name'),
     ])
     // departments.category_ids is an ad-hoc bigint[] column -- PostgREST
     // hands its elements back as JSON strings, which would otherwise never
@@ -93,6 +99,7 @@ function Categories() {
     setSubVenues(subVenueRes.data || [])
     setExpenseTypes(etRes.data || [])
     setExpenseSubTypes(estRes.data || [])
+    setIncomeTypes(itRes.data || [])
     setLoading(false)
   }
 
@@ -394,6 +401,36 @@ function Categories() {
     if (err) { setError(err.message) } else { setEditing(null); loadAll() }
   }
 
+  // ═══ INCOME TYPE CRUD (Wallet > Collect > Other Income) ═══
+
+  async function addIncomeType(e) {
+    e.preventDefault()
+    if (!newIncomeType.trim()) return
+    if (dupExists(incomeTypes, function (t) { return t.name }, newIncomeType)) { setError('Income type "' + newIncomeType.trim() + '" already exists'); return }
+    setSaving(true); setError('')
+    var { error: err } = await supabase.from('income_types').insert({ name: newIncomeType.trim(), sort_order: incomeTypes.length })
+    if (err) { setError(err.message) } else { setNewIncomeType(''); loadAll() }
+    setSaving(false)
+  }
+
+  async function toggleIncomeType(t) {
+    await supabase.from('income_types').update({ active: !t.active }).eq('id', t.id)
+    loadAll()
+  }
+
+  async function deleteIncomeType(t) {
+    if (!(await appConfirm('Delete income type "' + t.name + '"?'))) return
+    var { error: err } = await supabase.from('income_types').delete().eq('id', t.id)
+    if (err) { setError(err.message) } else { loadAll() }
+  }
+
+  async function saveEditIncomeType(t) {
+    if (!editVal.trim()) return
+    if (dupExists(incomeTypes, function (x) { return x.name }, editVal, t.id)) { setError('Income type "' + editVal.trim() + '" already exists'); return }
+    var { error: err } = await supabase.from('income_types').update({ name: editVal.trim() }).eq('id', t.id)
+    if (err) { setError(err.message) } else { setEditing(null); loadAll() }
+  }
+
   // ═══ CSV EXPORT/IMPORT ═══
   function exportCSV() {
     function esc(v) { var s = String(v == null ? '' : v); if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) return '"' + s.replace(/"/g, '""') + '"'; return s }
@@ -656,8 +693,8 @@ function Categories() {
     <div className="space-y-4">
       {/* Tabs */}
       <div className="flex gap-0 bg-white border border-gray-200 rounded-lg overflow-hidden">
-        {['departments', 'categories', 'venues'].map(function (t) {
-          var labels = { departments: 'Departments', categories: 'Categories', venues: 'Venues' }
+        {['departments', 'categories', 'venues', 'income_types'].map(function (t) {
+          var labels = { departments: 'Departments', categories: 'Categories', venues: 'Venues', income_types: 'Income Types' }
           return (
             <button
               key={t}
@@ -1145,6 +1182,70 @@ function Categories() {
             })}
             {venues.length === 0 && (
               <div className="px-4 py-6 text-center text-gray-400 text-sm">No venues yet</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === 'income_types' && (
+        <div className="space-y-4">
+          <p className="text-xs text-gray-500">
+            Shown in Wallet &gt; Collect &gt; Other Income's "type of income" dropdown.
+          </p>
+          <input type="text" value={incomeTypeSearch}
+            onChange={function (e) { setIncomeTypeSearch(e.target.value) }}
+            placeholder="Search income types..."
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <form onSubmit={addIncomeType} className="flex gap-2 flex-wrap">
+            <input type="text" value={newIncomeType} onChange={function (e) { setNewIncomeType(e.target.value) }}
+              placeholder="Income type name (e.g. Restaurant Sale, Scrap Sale)"
+              className="flex-1 min-w-[150px] px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <button type="submit" disabled={saving || !newIncomeType.trim()}
+              className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors font-medium">
+              + Add
+            </button>
+          </form>
+
+          <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100">
+            {incomeTypes.filter(function (t) {
+              return !incomeTypeSearch || t.name.toLowerCase().includes(incomeTypeSearch.toLowerCase())
+            }).map(function (t) {
+              return (
+                <div key={t.id} className="px-4 py-3">
+                  {editing === 'inc-' + t.id ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <input type="text" value={editVal} onChange={function (e) { setEditVal(e.target.value) }}
+                        className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        onKeyDown={function (e) { if (e.key === 'Enter') saveEditIncomeType(t) }} />
+                      <button onClick={function () { saveEditIncomeType(t) }} className="text-xs px-2 py-1 rounded bg-indigo-600 text-white">Save</button>
+                      <button onClick={function () { setEditing(null) }} className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600">Cancel</button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className={"text-sm " + (t.active ? "text-gray-600" : "text-gray-400 line-through")}>{t.name}</span>
+                        <span className={"text-xs px-1.5 py-0.5 rounded-full font-medium " +
+                          (t.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>
+                          {t.active ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={function () { setEditing('inc-' + t.id); setEditVal(t.name) }}
+                          className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">Edit</button>
+                        <button onClick={function () { toggleIncomeType(t) }}
+                          className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
+                          {t.active ? 'Deactivate' : 'Activate'}
+                        </button>
+                        <button onClick={function () { deleteIncomeType(t) }}
+                          className="text-xs px-2 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100 transition-colors">Delete</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            {incomeTypes.length === 0 && (
+              <div className="px-4 py-6 text-center text-gray-400 text-sm">No income types yet</div>
             )}
           </div>
         </div>
