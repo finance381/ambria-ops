@@ -236,14 +236,24 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
 
   const totalAmtP = safePaise(e[h + "total_amt"] || 0)
   const venueMenuP = dep.menuValue ? safePaise(e[dep.menuValue] || 0) : null
+  const venueRentalP = dep.venueValue ? safePaise(e[dep.venueValue] || 0) : null
   const decorAmtP = dep.decorLumpsum ? safePaise(e[dep.decorLumpsum] || 0) : null
   const entAmtP = dep.entertainLumpsum ? safePaise(e[dep.entertainLumpsum] || 0) : null
   // Only meaningful on a Venue contract — the other three departments never
-  // populate venue_menu/decor/entertainment, so there's nothing to net
-  // total_amt against (subtracting zero would just reproduce total_amt
-  // itself, not a real addon figure).
+  // populate venue_menu/venue_rental/decor/entertainment, so there's nothing
+  // to net total_amt against (subtracting zero would just reproduce
+  // total_amt itself, not a real addon figure).
+  //
+  // Previously left venue_rental (fiscd_venue_value) out of this subtraction
+  // entirely — the one contract (#00568) this residual was confirmed against
+  // happened to have no venue rental split, so the gap didn't show. Checked
+  // live on contract #00863 (Ashish, Venue): total_amt 1,700,000 minus
+  // (venue_menu 1,012,500 + decor 262,500) left a "residual" of 425,000 —
+  // reported as a phantom addon in the UI even though LMS shows none — which
+  // is exactly venue_rental_paise (425,000) on that same contract, to the
+  // rupee. Netting it out here too.
   const addonsTotalP = venueMenuP != null
-    ? totalAmtP - (venueMenuP + (decorAmtP || 0) + (entAmtP || 0))
+    ? totalAmtP - (venueMenuP + (venueRentalP || 0) + (decorAmtP || 0) + (entAmtP || 0))
     : null
 
   return {
@@ -310,7 +320,7 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
     // LMS-computed, Venue contracts only (see migration 00094) — null for
     // every other department, same convention as pax/freePax/extraPlate above.
     menu_rate_paise: dep.menuRate ? safePaise(e[dep.menuRate] || 0) : null,
-    venue_rental_paise: dep.venueValue ? safePaise(e[dep.venueValue] || 0) : null,
+    venue_rental_paise: venueRentalP,
     decor_amount_paise: decorAmtP,
     entertainment_amount_paise: entAmtP,
     // Confirmed directly against the live API (contract #00568):
@@ -320,15 +330,13 @@ function mapRow(e: any, dep: typeof DEPARTMENTS[0], lmsUserMap: Record<string, s
     // (25000.0)"), but it isn't in this list endpoint's own response as a
     // distinct field -- checked live: fisc_addon exists but was empty on
     // the one contract confirmed to have a real addon in the UI, and a scan
-    // of ~190 other live contracts found zero non-empty values either. It
-    // IS recoverable as a residual though: confirmed live on that same
-    // contract (#00568) -- fisc_total_amt (1,400,000) minus (venue_menu
-    // 1,132,500 + decor 225,000 + entertainment 17,500) = exactly 25,000,
-    // matching the UI's own addon figure to the rupee. Not itemized (LMS
-    // doesn't expose individual addon lines/labels this way, only the
-    // combined effect on the grand total) -- surfaced as a single synthetic
-    // line so the UI's existing Add-ons section at least shows the right
-    // total instead of nothing.
+    // of ~190 other live contracts found zero non-empty values either. It IS
+    // recoverable as a residual though -- see addonsTotalP above for the
+    // computation and what it's netted against. Not itemized (LMS doesn't
+    // expose individual addon lines/labels this way, only the combined
+    // effect on the grand total) -- surfaced as a single synthetic line so
+    // the UI's existing Add-ons section at least shows the right total
+    // instead of nothing.
     addons_json: addonsTotalP != null && addonsTotalP > 0
       ? [{ label: "Add-ons (LMS total, not itemized)", amount_paise: addonsTotalP }]
       : null,

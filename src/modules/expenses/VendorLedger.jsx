@@ -1591,9 +1591,35 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
       var pageW = doc.internal.pageSize.getWidth()
       var pageH = doc.internal.pageSize.getHeight()
 
-      // Chronological, deleted excluded (matches on-screen balance math)
-      var chrono = entries.filter(function (e) { return !e.deleted_at }).slice().sort(function (a, b) {
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      // Deleted excluded, same order `entries` already arrived in (the
+      // loadEntries query orders by entry_date, id -- the same order the
+      // on-screen running balance walks), not a re-sort by created_at --
+      // a backdated entry has a created_at that disagrees with its own
+      // entry_date, and re-sorting by the wrong one would print rows (and
+      // their running Balance) in a different order than the screen shows.
+      //
+      // When the on-screen Entries From/To filter is set, the statement is
+      // scoped to it too -- same field (entry_date) the filter itself uses --
+      // rather than always printing the vendor's whole history regardless of
+      // what's on screen. A row before the range still moves the opening
+      // balance forward (so Opening is the real balance the range actually
+      // started from, not the vendor's all-time opening); a row after the
+      // range is simply left off the end, same as the on-screen list. A row
+      // with no entry_date at all can't be placed in the range either way --
+      // same as the on-screen filter (visibleEntries below), which hides it
+      // whenever either bound is set -- so it's folded into Opening rather
+      // than shown with a date it doesn't have.
+      var allNonDeleted = entries.filter(function (e) { return !e.deleted_at })
+      var opening = selectedVendor._opening_paise || 0
+      var chrono = []
+      var rangeActive = !!(entryFrom || entryTo)
+      allNonDeleted.forEach(function (e) {
+        if (rangeActive && (!e.entry_date || (entryFrom && e.entry_date < entryFrom))) {
+          opening += (e.credit_paise || 0) - (e.debit_paise || 0)
+          return
+        }
+        if (entryTo && e.entry_date > entryTo) return
+        chrono.push(e)
       })
 
       var totalCr = 0, totalDb = 0
@@ -1601,12 +1627,11 @@ function VendorLedger({ profile, onNavigateToExpenses, inAdmin }) {
         totalCr += (e.credit_paise || 0)
         totalDb += (e.debit_paise || 0)
       })
-      var opening = selectedVendor._opening_paise || 0
       var closing = opening + totalCr - totalDb
       var oldest = chrono[0]
       var newest = chrono[chrono.length - 1]
-      var periodFrom = oldest && oldest.created_at ? oldest.created_at.split('T')[0] : ''
-      var periodTo   = newest && newest.created_at ? newest.created_at.split('T')[0] : ''
+      var periodFrom = entryFrom || (oldest && oldest.entry_date ? oldest.entry_date : (oldest && oldest.created_at ? oldest.created_at.split('T')[0] : ''))
+      var periodTo   = entryTo || (newest && newest.entry_date ? newest.entry_date : (newest && newest.created_at ? newest.created_at.split('T')[0] : ''))
 
       var vendorName = selectedVendor.vendor_name || 'Vendor #' + selectedVendor.vendor_id
       var mm = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
