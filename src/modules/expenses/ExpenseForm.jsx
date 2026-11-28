@@ -1111,10 +1111,16 @@ function ExpenseForm({ profile, walletBalance, editExp, onDone, inAdmin, onCance
         if (i !== entryIdx) return e
         var cur = e._editingItemIdx == null ? -1 : e._editingItemIdx
         var next = cur === itemIdx ? -1 : (cur > itemIdx ? cur - 1 : cur)
+        var remaining = e.items.filter(function (_, j) { return j !== itemIdx })
         var updated = Object.assign({}, e, {
-          items: e.items.filter(function (_, j) { return j !== itemIdx }),
+          items: remaining,
           _editingItemIdx: next,
         })
+        // Zero items left means item-purchase mode has nothing to validate --
+        // and on edit the "Item select" switch itself is disabled, so without
+        // this there would be no way back out of item-purchase mode at all,
+        // leaving submit permanently blocked on "Add at least one item".
+        if (remaining.length === 0) updated.isItemPurchase = false
         return syncAmountToItemsFloor(e, updated)
       })
     })
